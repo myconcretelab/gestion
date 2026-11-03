@@ -1,5 +1,6 @@
+import { useBookingSourceOptions } from "../utils/bookingSourceOptions";
 import CleaningBillingControl from "./shared/CleaningBillingControl";
-import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
+import { getBookingSource } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import type { TouristTaxStay } from "@contrats/shared";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -101,6 +102,7 @@ type EditorMode = "create" | "edit";
 type QuickReservationSaveState = "idle" | "saving" | "saved";
 
 const MobileReservationEditorPage = () => {
+  const bookingSources = useBookingSourceOptions();
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -731,7 +733,7 @@ const MobileReservationEditorPage = () => {
                   value={quickReservationDraft.booking_source || getBookingSource({ source_paiement: quickReservationDraft.source_paiement })}
                   onChange={(event) => handleQuickReservationFieldChange("booking_source", event.target.value)}
                 >
-                  {BOOKING_SOURCES.map((source) => (
+                  {bookingSources.map((source) => (
                     <option key={source} value={source}>
                       {source}
                     </option>
@@ -831,8 +833,8 @@ const MobileReservationEditorPage = () => {
               </label>
             </section>
 
-            <TouristTaxStayEditor value={touristTaxStay} settings={selectedGite?.taxe_sejour_config}
-              onChange={setTouristTaxStay} initialize={!editingReservation}
+            <TouristTaxStayEditor source={getBookingSource(quickReservationDraft)} value={touristTaxStay} settings={selectedGite?.taxe_sejour_config}
+              onChange={setTouristTaxStay} initialize={!editingReservation || editingReservation.gite_id !== selectedGiteId}
               nights={quickReservationDateSummary.nights} adults={Number(quickReservationDraft.nb_adultes)} children={taxChildren}
               onChildrenChange={setTaxChildren} start={quickReservationDraft.date_entree}
               accommodation={quickReservationSeasonalPrice?.is_mixed ? quickReservationSeasonalPrice.prix_total : Number(quickReservationDraft.prix_par_nuit.replace(",", ".")) * quickReservationDateSummary.nights} />

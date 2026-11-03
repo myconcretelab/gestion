@@ -1,5 +1,7 @@
 import ical from "node-ical";
 import prisma from "../db/prisma.js";
+import { newReservationTouristTax } from "./touristTaxCollection.js";
+import { encodeJsonField } from "../utils/jsonFields.js";
 import { env } from "../config/env.js";
 import { appendImportLog, buildImportLogEntry, readImportLog } from "./importLog.js";
 import {
@@ -1147,7 +1149,8 @@ const runSync = async (): Promise<IcalSyncResult> => {
 
   for (const item of preview.reservations) {
     if (item.status === "new") {
-      await prisma.reservation.create({ data: toCreatePayload(item) });
+      const touristTax = await newReservationTouristTax(item.gite_id, resolveReservationSource(item));
+      await prisma.reservation.create({ data: { ...toCreatePayload(item), options: encodeJsonField(touristTax ? { tourist_tax: touristTax } : {}) } });
       created_count += 1;
       inserted_items.push({
         giteName: item.gite_nom,

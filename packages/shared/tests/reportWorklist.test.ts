@@ -151,6 +151,78 @@ test("le suivi commence en septembre après la reprise des périodes déjà trai
   assert.equal(quarterly[0].period.end, "2026-10-01");
 });
 
+test("un début de suivi propre remet juillet et août à traiter pour ce seul rapport", () => {
+  const state = workspace();
+  state.worklistStartMonth = "2026-09";
+  const report = state.reports[2];
+  state.operations.push(
+    ...["2026-07", "2026-08"].map((month) => ({
+      ...state.operations[0],
+      id: `nights-${month}`,
+      basis: "nights" as const,
+      nights: 8,
+      stayDate: `${month}-10`,
+    })),
+  );
+  const before = buildReportWorklist(state, now).map((item) => item.key);
+  report.worklistStartMonth = "2026-07";
+  const items = buildReportWorklist(state, now);
+  assert.deepEqual(
+    items
+      .filter((item) => !before.includes(item.key))
+      .map((item) => [item.report.id, item.month, item.result.total]),
+    [
+      [report.id, "2026-07", 8],
+      [report.id, "2026-08", 8],
+    ],
+  );
+  assert.deepEqual(
+    buildReportReminders(state, 2026, now)
+      .filter((item) => item.month < "2026-09")
+      .map((item) => [item.reportId, item.month, item.total]),
+    [
+      [report.id, "2026-07", 8],
+      [report.id, "2026-08", 8],
+    ],
+  );
+  assert.equal(reportWorkItem(state, report, "2026-06").status, "Déjà traité");
+  state.operations = [];
+  assert.deepEqual(
+    buildReportWorklist(state, now)
+      .filter((item) => item.report.id === report.id)
+      .map((item) => item.month),
+    ["2026-07", "2026-08", "2026-09"],
+  );
+});
+
+test("un début de suivi propre conserve les déclarations historiques et copies confirmées", () => {
+  const state = workspace();
+  state.worklistStartMonth = "2026-09";
+  const report = state.reports[2];
+  report.worklistStartMonth = "2026-07";
+  state.progress[reportPeriodKey(report, "2026-07")] = {
+    snapshot: {
+      confirmedAt: now.toISOString(),
+      definition: structuredClone(report),
+      result: evaluateReport(report, "2026-07", {}, state.operations, state),
+    },
+  };
+  state.legacyDeclarations.push({
+    id: "legacy-august",
+    kind: "tourist",
+    period: "2026-08",
+    subject: "Logement",
+    value: 0,
+    confirmedAt: now.toISOString(),
+    propertyIds: ["g1"],
+  });
+  assert.deepEqual(
+    buildReportWorklist(state, now).map((item) => item.month),
+    ["2026-09", "2026-09", "2026-09"],
+  );
+  assert.equal(reportWorkItem(state, report, "2026-08").status, "Déjà déclaré");
+});
+
 test("prêt reste à traiter, une confirmation retire la ligne, un écart la fait réapparaître", () => {
   const state = workspace();
   const report = state.reports[0];

@@ -51,6 +51,7 @@ export function buildReportReminders(
   const reminders: ReportReminder[] = [];
   for (const report of state.reports) {
     if (report.kind !== "social" && report.kind !== "tourist") continue;
+    const startMonth = report.worklistStartMonth ?? state.worklistStartMonth;
     const scope = new Set(report.propertyIds);
     const operations = state.operations.filter(
       (row) =>
@@ -125,8 +126,7 @@ export function buildReportReminders(
       // A confirmation in the new system takes precedence, including subsequent discrepancies.
       if (
         !progress?.snapshot &&
-        ((state.worklistStartMonth &&
-          period.end <= `${state.worklistStartMonth}-01`) ||
+        ((startMonth && period.end <= `${startMonth}-01`) ||
           legacyReportPeriodConfirmed(state, report, month))
       )
         continue;

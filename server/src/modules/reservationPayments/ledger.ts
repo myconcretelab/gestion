@@ -2,8 +2,10 @@ import {
   computeTouristTax,
   getContractReceiptStatus,
   getBookingSource,
+  applyTouristTaxCollection,
   getReservationPaymentShortcutValue,
   legacyPaymentMethod,
+  RESERVATION_MANUAL_PAYMENT_METHODS,
   AUTOMATIC_PAYMENT_PLATFORMS,
   otaRate,
   otaStoredPriceBasis,
@@ -18,10 +20,11 @@ import {
   type ReservationPaymentTracking,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
-import { fromJsonString } from "../../utils/jsonFields.js";
+import { fromJsonString, encodeJsonField } from "../../utils/jsonFields.js";
 import { cents } from "../bookingPayments/money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
+import { readTouristTaxCollectionSettings } from "../../services/touristTaxCollection.js";
 import { automaticPlatformReceiptThrough } from "./automaticReceipt.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
@@ -173,16 +176,9 @@ export const loadReservationPaymentTracking = async (
     const isPlatform =
       (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(source) ||
       Boolean(settings.platforms?.some((channel) => channel.name === source));
-    // Platform stays can acquire local extras after an older contract or card payment.
-    const total = isPlatform
-      ? cents(rawTotal)
-      : contract
-        ? cents(
-            Number(contract.arrhes_montant) + Number(contract.solde_montant),
-          )
-        : stripe.length
-          ? stripe[stripe.length - 1].total_cents
-          : cents(rawTotal);
+    // The reservation can change after a contract or card payment was issued.
+    // Those documents retain their original amounts; the current balance includes all extras.
+    const total = cents(rawTotal);
     const deposit = contract
       ? cents(Number(contract.arrhes_montant))
       : quote.arrhes_theoriques !== undefined
@@ -864,6 +860,64 @@ export const voidReservationPayment = async (id: string, paymentId: string) =>
     return getReservationPaymentTracking(id, tx);
   });
 
+export const updateReservationPaymentMethod = async (
+  id: string,
+  paymentId: string,
+  input: {
+    method: (typeof RESERVATION_MANUAL_PAYMENT_METHODS)[number];
+    expected_method: string | null;
+  },
+  userId?: string,
+) =>
+  ledgerTransaction(async (tx) => {
+    if (!RESERVATION_MANUAL_PAYMENT_METHODS.includes(input.method))
+      throw ledgerError("Moyen de paiement invalide.", 400);
+    const stay = await lockedStay(id, tx);
+    const tracking = await getReservationPaymentTracking(id, tx);
+    const entry = tracking.entries.find((row) => row.id === paymentId);
+    if (!entry || entry.voided_at)
+      throw ledgerError("Règlement introuvable ou annulé.", 404);
+    if (
+      entry.origin === "stripe" ||
+      entry.origin === "platform" ||
+      entry.ota ||
+      entry.method === "Versement plateforme"
+    )
+      throw ledgerError(
+        "Le moyen de ce paiement est déterminé par sa plateforme.",
+      );
+    if (entry.method === input.method) return tracking;
+    if (entry.method !== input.expected_method)
+      throw ledgerError(
+        "Le moyen de paiement a changé. Actualisez les règlements avant de réessayer.",
+      );
+    if (tracking.requires_review)
+      throw ledgerError(
+        "Vérifiez le paiement ou son remboursement avant de modifier son moyen de paiement.",
+      );
+    await materializeHistory(stay, tracking, tx);
+    await tx.reservationRecordedPayment.update({
+      where: { id: entry.id },
+      data: { method: input.method },
+    });
+    await syncManagedContractPayments(id, tx);
+    await tx.auditLog.create({
+      data: {
+        organization_id: stay.rows[0].organization_id,
+        user_id: userId,
+        action: "reservation.payment-method.update",
+        resource_type: "reservation",
+        resource_id: stay.canonicalId,
+        metadata_json: JSON.stringify({
+          paymentId: entry.id,
+          previous_method: entry.method,
+          method: input.method,
+        }),
+      },
+    });
+    return getReservationPaymentTracking(id, tx);
+  });
+
 export const updateReservationPaymentDate = async (
   id: string,
   paymentId: string,
@@ -982,18 +1036,39 @@ export const getContractPaymentContext = (id: string, db: Db = prisma) =>
 export const setReservationBookingSource = async (
   id: string,
   bookingSource: string,
-) => {
-  const row = await prisma.reservation.findUnique({
-    where: { id },
-    select: { id: true, stay_group_id: true },
+) =>
+  prisma.$transaction(async (tx) => {
+    const row = await tx.reservation.findUnique({
+      where: { id },
+      select: { id: true, stay_group_id: true },
+    });
+    if (!row) throw ledgerError("Réservation introuvable.", 404);
+    const [rows, collection] = await Promise.all([
+      tx.reservation.findMany({
+        where: row.stay_group_id
+          ? { stay_group_id: row.stay_group_id }
+          : { id },
+      }),
+      readTouristTaxCollectionSettings(tx),
+    ]);
+    for (const stay of rows) {
+      const options = fromJsonString<OptionsInput>(stay.options, {});
+      if (options.tourist_tax)
+        options.tourist_tax = applyTouristTaxCollection(
+          options.tourist_tax,
+          bookingSource,
+          collection,
+        );
+      await tx.reservation.update({
+        where: { id: stay.id },
+        data: {
+          booking_source: bookingSource,
+          options: encodeJsonField(options),
+        },
+      });
+    }
+    return { id, booking_source: bookingSource };
   });
-  if (!row) throw ledgerError("Réservation introuvable.", 404);
-  await prisma.reservation.updateMany({
-    where: row.stay_group_id ? { stay_group_id: row.stay_group_id } : { id },
-    data: { booking_source: bookingSource },
-  });
-  return { id, booking_source: bookingSource };
-};
 export const hasRecordedPayments = async (id: string, db: Db = prisma) =>
   Boolean(
     await db.reservationRecordedPayment.count({

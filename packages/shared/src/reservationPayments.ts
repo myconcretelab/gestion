@@ -31,6 +31,10 @@ export type ReservationPaymentSettings = {
 };
 export type ReservationPaymentMethod =
   (typeof RESERVATION_PAYMENT_METHODS)[number];
+export const RESERVATION_MANUAL_PAYMENT_METHODS =
+  RESERVATION_PAYMENT_METHODS.filter(
+    (method) => method !== "Versement plateforme",
+  );
 export type ReservationPaymentShortcut = {
   id: string;
   label: string;

@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
-import { RESERVATION_PAYMENT_METHODS } from "@contrats/shared";
+import {
+  RESERVATION_PAYMENT_METHODS,
+  RESERVATION_MANUAL_PAYMENT_METHODS,
+} from "@contrats/shared";
 import {
   addReservationPayment,
   getReservationPaymentTracking,
   voidReservationPayment,
   updateReservationPaymentDate,
+  updateReservationPaymentMethod,
 } from "../modules/reservationPayments/ledger.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 
@@ -112,6 +116,30 @@ router.post<{ id: string; paymentId: string }>(
     try {
       res.json(
         await voidReservationPayment(req.params.id, req.params.paymentId),
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+router.patch<{ id: string; paymentId: string }>(
+  "/:paymentId/method",
+  async (req, res, next) => {
+    try {
+      const input = z
+        .object({
+          method: z.enum(RESERVATION_MANUAL_PAYMENT_METHODS),
+          expected_method: z.string().max(100).nullable(),
+        })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await updateReservationPaymentMethod(
+          req.params.id,
+          req.params.paymentId,
+          input,
+          (await getAuthenticatedAppUser(req))?.id,
+        ),
       );
     } catch (error) {
       next(error);

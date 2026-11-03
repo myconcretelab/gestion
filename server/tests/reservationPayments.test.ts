@@ -444,6 +444,30 @@ test("l'API valide les dates réelles, les centimes, les moyens et refuse un mon
       ((await corrected.json()) as any).entries[0].paid_on,
       "2026-09-15T12:00:00.000Z",
     );
+    const methodUrl = `${url}/${recorded.entries[0].id}/method`;
+    for (const invalid of [
+      { method: "Inconnu", expected_method: "Virement" },
+      { method: "Versement plateforme", expected_method: "Virement" },
+      { method: "Chèque" },
+      { method: "Chèque", expected_method: "Virement", amount: 999 },
+    ]) {
+      const response = await fetch(methodUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invalid),
+      });
+      assert.equal(response.status, 400);
+    }
+    const methodResponse = await fetch(methodUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method: "Chèque", expected_method: "Virement" }),
+    });
+    assert.equal(methodResponse.status, 200);
+    const methodTracking = (await methodResponse.json()) as any;
+    assert.equal(methodTracking.entries[0].method, "Chèque");
+    assert.equal(methodTracking.entries[0].paid_on, "2026-09-15T12:00:00.000Z");
+    assert.equal(methodTracking.remaining, 900);
     const firstFull = await stay();
     await contractFor(firstFull.id);
     const fullResponse = await fetch(
@@ -466,6 +490,255 @@ test("l'API valide les dates réelles, les centimes, les moyens et refuse un mon
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test("les prestations ajoutées après le contrat restent dues sans réécrire le contrat ni ses règlements", async () => {
+  const r = await stay({ prix_total: 1050 });
+  const c = await contractFor(r.id, {
+    arrhes_montant: 210,
+    solde_montant: 840,
+  });
+  await inOrg(async () => {
+    await ledger.addReservationPayment(
+      r.id,
+      payment(1050, { purpose: "full" }),
+    );
+    const contractBefore = await db.default.contrat.findUniqueOrThrow({
+      where: { id: c.id },
+    });
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: { frais_optionnels_montant: 370 },
+    });
+    const updated = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(updated.total, 1420);
+    assert.equal(updated.received, 1050);
+    assert.equal(updated.remaining, 370);
+    assert.equal(updated.deposit, 210);
+    assert.equal(updated.entries.length, 1);
+    assert.deepEqual(
+      await db.default.contrat.findUniqueOrThrow({ where: { id: c.id } }),
+      contractBefore,
+    );
+    const { loadReportFacts } =
+      await import("../src/modules/finance/reports/facts.js");
+    const facts = await loadReportFacts();
+    assert.ok(
+      facts.operations
+        .filter((op) => op.reservationId === r.id && op.basis === "payment")
+        .every((op) => !op.reviewReason),
+    );
+    const paid = await ledger.addReservationPayment(
+      r.id,
+      payment(370, { purpose: "extras" }),
+    );
+    assert.equal(paid.remaining, 0);
+    assert.equal(paid.received, 1420);
+    const contractAfter = await db.default.contrat.findUniqueOrThrow({
+      where: { id: c.id },
+    });
+    assert.equal(Number(contractAfter.arrhes_montant), 210);
+    assert.equal(Number(contractAfter.solde_montant), 840);
+    assert.equal(contractAfter.statut_paiement_solde, "regle");
+  });
+});
+
+test("un paiement carte existant ne fige pas le total des prestations ajoutées ensuite", async () => {
+  const r = await stay();
+  await inOrg(async () => {
+    await db.default.bookingPayment.create({
+      data: {
+        reservation_id: r.id,
+        stripe_mode: "live",
+        purpose: "full",
+        amount_cents: 100000,
+        total_cents: 100000,
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2040-01-01"),
+        paid_amount_cents: 100000,
+        paid_at: new Date("2026-09-01T12:00:00Z"),
+        status: "paid",
+      },
+    });
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: { frais_optionnels_montant: 60 },
+    });
+    const tracking = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(tracking.total, 1060);
+    assert.equal(tracking.received, 1000);
+    assert.equal(tracking.remaining, 60);
+  });
+});
+
+test("renseigner le moyen conserve le règlement et retire son alerte du rapport", async () => {
+  const r = await stay({ prix_total: 750, payments_managed: true });
+  await inOrg(async () => {
+    const receipt = await db.default.reservationRecordedPayment.create({
+      data: {
+        reservation_id: r.id,
+        amount_cents: 75000,
+        method: null,
+        purpose: "balance",
+        paid_on: new Date("2026-09-01T12:00:00Z"),
+        note: "Date historique reconstituée.",
+      },
+    });
+    const { loadReportFacts } =
+      await import("../src/modules/finance/reports/facts.js");
+    const report = {
+      ...createReport("owner", "method-test"),
+      propertyIds: ["ledger-gite"],
+    };
+    const before = await loadReportFacts();
+    const evaluate = (facts: typeof before) =>
+      evaluateReport(
+        report,
+        "2026-09",
+        {},
+        facts.operations.filter((op) => op.reservationId === r.id),
+      );
+    assert.equal(evaluate(before).reviewCount, 1);
+    const original = await ledger.getReservationPaymentTracking(r.id);
+    const revision = (await db.default.financeReportCache.findFirstOrThrow())
+      .source_revision;
+    const corrected = await ledger.updateReservationPaymentMethod(
+      r.id,
+      receipt.id,
+      { method: "Chèque", expected_method: null },
+    );
+    assert.equal(corrected.received, original.received);
+    assert.equal(corrected.remaining, original.remaining);
+    assert.equal(corrected.entries.length, 1);
+    const saved = await db.default.reservationRecordedPayment.findUniqueOrThrow(
+      { where: { id: receipt.id } },
+    );
+    assert.deepEqual(saved, { ...receipt, method: "Chèque" });
+    assert.equal(evaluate(await loadReportFacts()).reviewCount, 0);
+    assert.ok(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision >
+        revision,
+    );
+    const audit = await db.default.auditLog.findFirstOrThrow({
+      where: { action: "reservation.payment-method.update", resource_id: r.id },
+    });
+    assert.deepEqual(JSON.parse(audit.metadata_json!), {
+      paymentId: receipt.id,
+      previous_method: null,
+      method: "Chèque",
+    });
+    await ledger.updateReservationPaymentMethod(r.id, receipt.id, {
+      method: "Chèque",
+      expected_method: null,
+    });
+    assert.equal(
+      await db.default.auditLog.count({ where: { resource_id: r.id } }),
+      1,
+    );
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(r.id, receipt.id, {
+        method: "Espèces",
+        expected_method: null,
+      }),
+      /a changé/,
+    );
+  });
+});
+
+test("le moyen d’un ancien règlement est complété sans doubler les montants et synchronise le contrat", async () => {
+  const r = await stay();
+  const c = await contractFor(r.id, {
+    statut_paiement_arrhes: "recu",
+    mode_paiement_arrhes: null,
+    date_paiement_arrhes: new Date("2026-09-01"),
+    statut_paiement_solde: "non_regle",
+  });
+  await inOrg(async () => {
+    const before = await ledger.getReservationPaymentTracking(r.id);
+    const entry = before.entries.find((row) => row.purpose === "deposit")!;
+    const corrected = await ledger.updateReservationPaymentMethod(
+      r.id,
+      entry.id,
+      { method: "Virement", expected_method: null },
+    );
+    assert.equal(corrected.managed, true);
+    assert.equal(corrected.received, before.received);
+    assert.equal(corrected.entries.length, before.entries.length);
+    assert.deepEqual(
+      corrected.entries.find((row) => row.id === entry.id),
+      { ...entry, reservation_id: r.id, method: "Virement" },
+    );
+    const contract = await db.default.contrat.findUniqueOrThrow({
+      where: { id: c.id },
+    });
+    assert.equal(contract.mode_paiement_arrhes, "Virement");
+    assert.equal(contract.statut_paiement_solde, "non_regle");
+  });
+});
+
+test("la correction de moyen refuse les règlements étrangers, annulés et les moyens de plateforme", async () => {
+  const r = await stay();
+  const other = await stay();
+  await inOrg(async () => {
+    const input = payment(100);
+    await ledger.addReservationPayment(r.id, input);
+    const correction = {
+      method: "Chèque" as const,
+      expected_method: "Virement",
+    };
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(other.id, input.id, correction),
+      /introuvable/,
+    );
+    await inOrg(
+      () =>
+        assert.rejects(
+          ledger.updateReservationPaymentMethod(r.id, input.id, correction),
+          /introuvable/,
+        ),
+      "org_method_other",
+    );
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(r.id, input.id, {
+        ...correction,
+        method: "Versement plateforme" as never,
+      }),
+      /invalide/,
+    );
+    await ledger.voidReservationPayment(r.id, input.id);
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(r.id, input.id, correction),
+      /annulé/,
+    );
+    const stripe = await db.default.bookingPayment.create({
+      data: {
+        reservation_id: r.id,
+        stripe_mode: "live",
+        purpose: "deposit",
+        amount_cents: 20000,
+        total_cents: 100000,
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2040-01-01"),
+        paid_amount_cents: 20000,
+        paid_at: new Date("2026-09-01T12:00:00Z"),
+        status: "paid",
+      },
+    });
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(r.id, stripe.id, correction),
+      /déterminé par sa plateforme/,
+    );
+    const platform = await stay({ booking_source: "Airbnb" });
+    const tracking = await ledger.getReservationPaymentTracking(platform.id);
+    await assert.rejects(
+      ledger.updateReservationPaymentMethod(
+        platform.id,
+        tracking.entries[0].id,
+        correction,
+      ),
+      /déterminé par sa plateforme/,
+    );
+  });
 });
 
 test("corriger une date déplace les recettes dans le bon mois sans changer le règlement ni son contrat", async () => {

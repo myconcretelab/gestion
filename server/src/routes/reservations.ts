@@ -1,9 +1,10 @@
 import reportAllocationRouter from "../modules/finance/reports/allocationRoutes.js";
 import reservationPaymentsRouter from "./reservationPayments.js";
-import { BOOKING_SOURCES, getBookingSource } from "@contrats/shared";
+import { getBookingSource } from "@contrats/shared";
 import { loadReservationPaymentTracking, setReservationBookingSource, hasRecordedPayments, moveRecordedPayments, assertReservationPaymentsDeletable } from "../modules/reservationPayments/ledger.js";
 import { reservationPaymentsForIds } from "../modules/bookingPayments/contracts.js";
-import { createTouristTaxStay, parseTouristTaxSettings } from "@contrats/shared";
+import { createTouristTaxStayForSource, applyTouristTaxCollection, parseTouristTaxSettings } from "@contrats/shared";
+import { newReservationTouristTax, readTouristTaxCollectionSettings } from "../services/touristTaxCollection.js";
 import { Router } from "express";
 import crypto from "node:crypto";
 import { addDays, format } from "date-fns";
@@ -313,7 +314,7 @@ const reservationPayloadSchema = z.object({
   prix_par_nuit: optionalNumberField,
   prix_total: optionalNumberField,
   price_driver: z.enum(["nightly", "total"]).optional(),
-  booking_source: z.enum(BOOKING_SOURCES).optional(),
+  booking_source: z.string().trim().min(1).max(100).optional(),
   source_paiement: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   commentaire: z.preprocess(emptyStringToNull, z.string().trim().nullable()).optional(),
   frais_optionnels_montant: z.coerce.number().min(0).optional().default(0),
@@ -1157,6 +1158,10 @@ const syncIntegratedReservationRows = async (params: {
   association: ReservationAssociation;
   existingRows: any[];
 }) => {
+  if (!params.existingRows.length && params.association.gite_id && !params.payload.options?.tourist_tax) {
+    const tax = await newReservationTouristTax(params.association.gite_id, getBookingSource(params.payload));
+    if (tax) params.payload.options = { ...params.payload.options, tourist_tax: tax };
+  }
   const prepared = buildReservationSegmentRecords(
     params.payload,
     params.association,
@@ -2171,7 +2176,7 @@ router.use("/:id/payments", reservationPaymentsRouter);
 router.use("/:id/reporting-allocation", reportAllocationRouter);
 router.patch("/:id/booking-source", async (req, res, next) => {
   try {
-    const { booking_source } = z.object({ booking_source: z.enum(BOOKING_SOURCES) }).strict().parse(req.body);
+    const { booking_source } = z.object({ booking_source: z.string().trim().min(1).max(100) }).strict().parse(req.body);
     res.json(await setReservationBookingSource(req.params.id, booking_source));
   } catch (error) { next(error); }
 });
@@ -2323,7 +2328,13 @@ router.post("/", async (req, res, next) => {
     const payload = reservationPayloadSchema.parse(req.body);
     const association = normalizeAssociation(payload);
     const taxSettings = await ensureAssociationExists(association);
-    if (!payload.options.tourist_tax && taxSettings) payload.options.tourist_tax = createTouristTaxStay(taxSettings);
+    const collection = await readTouristTaxCollectionSettings();
+    const taxSource = getBookingSource(payload);
+    if (!payload.options.tourist_tax && taxSettings) payload.options.tourist_tax = createTouristTaxStayForSource(taxSettings, taxSource, collection);
+    else if (payload.options.tourist_tax) {
+      const tax = payload.options.tourist_tax;
+      payload.options.tourist_tax = applyTouristTaxCollection(tax.collector === "unknown" && !tax.collector_mode ? { ...tax, collector_mode: "automatic", price_mode: tax.price_mode ?? "automatic", gite_price_included: taxSettings?.included ?? tax.settings.included } : tax, taxSource, collection);
+    }
     const prepared = buildReservationSegmentRecords(
       payload,
       association,
@@ -2561,7 +2572,10 @@ router.put("/:id", async (req, res, next) => {
 
     const association = normalizeAssociation(payload);
     const targetTaxSettings = await ensureAssociationExists(association);
-    if (association.gite_id !== existing.gite_id) payload.options.tourist_tax = targetTaxSettings ? createTouristTaxStay(targetTaxSettings) : undefined;
+    const collection = await readTouristTaxCollectionSettings();
+    const taxSource = getBookingSource({ booking_source: payload.booking_source ?? existing.booking_source, source_paiement: payload.source_paiement ?? existing.source_paiement });
+    if (association.gite_id !== existing.gite_id) payload.options.tourist_tax = targetTaxSettings ? createTouristTaxStayForSource(targetTaxSettings, taxSource, collection) : undefined;
+    else if (payload.options.tourist_tax) payload.options.tourist_tax = applyTouristTaxCollection(payload.options.tourist_tax, taxSource, collection);
     const source_paiement = resolveReservationSource(payload.source_paiement === undefined ? existing.source_paiement : payload.source_paiement, { strict: true });
 
     const computed = computeReservationFields(payload);
@@ -3035,6 +3049,12 @@ router.post("/import", async (req, res, next) => {
       });
     }
 
+    for (const row of rowsToCreate) {
+      if (row.data.gite_id) {
+        const tax = await newReservationTouristTax(row.data.gite_id, getBookingSource(row.data));
+        if (tax) row.data.options = encodeJsonField({ tourist_tax: tax });
+      }
+    }
     const created = await prisma.$transaction(
       rowsToCreate.map((row) =>
         prisma.reservation.create({

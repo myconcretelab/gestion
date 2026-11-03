@@ -1,5 +1,6 @@
+import { useBookingSourceOptions } from "../../utils/bookingSourceOptions";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { BOOKING_SOURCES, createTouristTaxStay, isReservationPaymentTracking } from "@contrats/shared";
+import { createAutomaticTouristTaxStay as createTouristTaxStay, isReservationPaymentTracking } from "@contrats/shared";
 import { apiFetch, isApiError } from "../../utils/api";
 import { canCurrentUserAccessPage, canCurrentUserViewAmounts, canCurrentUserWritePage } from "../../utils/auth";
 import { formatDate, formatEuro } from "../../utils/format";
@@ -22,6 +23,7 @@ export default function TodayReservationDetailsDrawer({ reservations, initialRes
   onSaved: (reservation: Reservation) => void;
 }) {
   const formId = useId();
+  const bookingSources = useBookingSourceOptions();
   const errorRef = useRef<HTMLDivElement>(null);
   const savingRef = useRef(false);
   const [selectedId, setSelectedId] = useState(initialReservationId);
@@ -207,7 +209,7 @@ export default function TodayReservationDetailsDrawer({ reservations, initialRes
                   <label className="field">Adultes<input type="number" min={0} step={1} required value={draft.nb_adultes} onChange={(event) => update({ nb_adultes: Number(event.target.value) })} /></label>
                   <label className="field">Enfants de 2 à 17 ans<input type="number" min={0} step={1} required value={draft.nb_enfants_2_17} onChange={(event) => update({ nb_enfants_2_17: Number(event.target.value) })} /></label>
                   <label className="field">Origine de la réservation<select aria-label="Origine de la réservation" value={draft.booking_source} onChange={(event) => update({ booking_source: event.target.value })}>
-                    {BOOKING_SOURCES.map((source) => <option key={source}>{source}</option>)}
+                    {bookingSources.map((source) => <option key={source}>{source}</option>)}
                   </select></label>
                   <label className="field">Lien Airbnb<input type="url" value={draft.airbnb_url} onChange={(event) => update({ airbnb_url: event.target.value })} /></label>
                 </div>
@@ -231,7 +233,7 @@ export default function TodayReservationDetailsDrawer({ reservations, initialRes
                     <label className="field">Options complémentaires — libellé<input value={draft.additionalFeesLabel} onChange={(event) => update({ additionalFeesLabel: event.target.value, feesChanged: true })} /></label>
                     <label className="field">Options complémentaires — montant (€)<input type="number" min={0} step={0.01} value={draft.additionalFeesAmount} onChange={(event) => update({ additionalFeesAmount: Number(event.target.value), feesChanged: true })} /></label>
                   </div>
-                  <TouristTaxStayEditor value={draft.options.tourist_tax} settings={gite?.taxe_sejour_config}
+                  <TouristTaxStayEditor source={draft.booking_source} value={draft.options.tourist_tax} settings={gite?.taxe_sejour_config}
                     nights={nights} adults={draft.nb_adultes} children={draft.nb_enfants_2_17} accommodation={draft.prix_total} start={draft.date_entree}
                     onChange={(tourist_tax) => update({ options: { ...draft.options, tourist_tax } })} />
                 </section>

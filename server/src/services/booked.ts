@@ -1,5 +1,6 @@
 import type { BookingOptionUnitPrices } from "@contrats/shared";
-import { computeTouristTax, createTouristTaxStay, parseTouristTaxSettings, type TouristTaxStay, type TouristTaxResult } from "@contrats/shared";
+import { computeTouristTax, createTouristTaxStayForSource, parseTouristTaxSettings, type TouristTaxStay, type TouristTaxResult, type TouristTaxCollectionSettings } from "@contrats/shared";
+import { readTouristTaxCollectionSettings } from "./touristTaxCollection.js";
 import prisma from "../db/prisma.js";
 import { normalizeOptions, validateDocumentOccupancy } from "../routes/shared/rentalDocument.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
@@ -390,6 +391,7 @@ export const reviseBookingRequestOptions = (params: {
 };
 
 export const computeSeasonQuote = async (params: {
+  collectionSettings?: TouristTaxCollectionSettings;
   gite: BookedQuoteGite;
   dateEntree: Date;
   dateSortie: Date;
@@ -476,7 +478,7 @@ export const computeSeasonQuote = async (params: {
     nbAdultes: params.nbAdultes,
   });
   const taxSettings = parseTouristTaxSettings(params.gite.taxe_sejour_config);
-  const taxStay: TouristTaxStay | undefined = params.options?.tourist_tax ?? (taxSettings ? { ...createTouristTaxStay(taxSettings), collector: "host" } : undefined);
+  const taxStay: TouristTaxStay | undefined = params.options?.tourist_tax ?? (taxSettings ? createTouristTaxStayForSource(taxSettings, "Direct", params.collectionSettings ?? await readTouristTaxCollectionSettings()) : undefined);
   const tax = taxStay ? computeTouristTax({ stay: taxStay, nights: nbNuits, adults: params.nbAdultes,
     children: params.nbEnfants, accommodation: montant_hebergement, start: formatBookedDateInput(params.dateEntree) }) : null;
   if (tax?.issues.length) throw new BookedValidationError({ code: "tourist_tax", message: tax.issues.join(" "), statusCode: 400 });

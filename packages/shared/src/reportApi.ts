@@ -21,6 +21,7 @@ export const reportDefinitionSchema = z
     favorite: z.boolean(),
     operatorId: z.string().max(100).nullable().optional(),
     managerId: z.string().min(1).max(100).nullable().optional(),
+    worklistStartMonth: reportMonthSchema.optional(),
     bookingSources: z
       .array(z.string().trim().min(1).max(120))
       .min(1)

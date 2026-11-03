@@ -14,6 +14,8 @@ import {
   parseAirbnbCsv,
   findOtaRoundingAdjustment,
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
+  DEFAULT_TOURIST_TAX_COLLECTION,
+  BOOKING_SOURCES,
   nightRegisterCsv,
 } from "@contrats/shared";
 import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
@@ -393,6 +395,8 @@ try {
         body = fixture.paymentSettings;
       } else if (pathname === "/api/reports/ota/imports")
         body = fixture.otaHistory;
+      else if (pathname === "/api/settings/tourist-tax-collection/defaults")
+        body = { ...DEFAULT_TOURIST_TAX_COLLECTION, sources: BOOKING_SOURCES };
       else if (pathname === "/api/reports/ota/preview") {
         const rows = parseAirbnbCsv(request.postDataJSON().content);
         body = {

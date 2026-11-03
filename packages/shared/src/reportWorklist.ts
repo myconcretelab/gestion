@@ -67,8 +67,9 @@ export function reportWorkItem(
     operations,
     state,
   );
+  const startMonth = report.worklistStartMonth ?? state.worklistStartMonth;
   const beforeTracking = Boolean(
-    state.worklistStartMonth && period.end <= `${state.worklistStartMonth}-01`,
+    startMonth && period.end <= `${startMonth}-01`,
   );
   const historical =
     !progress?.snapshot &&
@@ -96,8 +97,13 @@ export function reportWorkItem(
 export type ReportWorkItem = ReturnType<typeof reportWorkItem>;
 
 function firstReportingDay(state: ReportWorkspaceData, today: string) {
-  if (state.worklistStartMonth) return `${state.worklistStartMonth}-01`;
+  const reportStarts = state.reports.flatMap((report) =>
+    report.worklistStartMonth ? [`${report.worklistStartMonth}-01`] : [],
+  );
+  if (state.worklistStartMonth)
+    return [`${state.worklistStartMonth}-01`, ...reportStarts].sort()[0];
   const dates = [
+    ...reportStarts,
     ...state.operations.flatMap((row) => [
       row.stayDate,
       state.operationEdits[row.id]?.paymentDate ?? row.paymentDate,

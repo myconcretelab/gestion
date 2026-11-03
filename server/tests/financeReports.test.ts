@@ -195,6 +195,73 @@ test("le début du suivi est conservé sans créer de fausses déclarations et r
     });
   }));
 
+test("le début du suivi propre à un rapport est enregistré, audité et permet sa confirmation", () =>
+  fixture(async ({ gite }) => {
+    for (const month of ["07", "08"])
+      await stay(gite, {
+        date_entree: new Date(`2026-${month}-10`),
+        date_sortie: new Date(`2026-${month}-14`),
+      });
+    let state = await mutate(await reports.getReportWorkspace(), {
+      type: "worklist-start",
+      startMonth: "2026-09",
+    });
+    const report = state.reports.find((row) => row.kind === "tourist")!;
+    const others = state.reports.filter((row) => row.id !== report.id);
+    state = await mutate(state, {
+      type: "save",
+      definition: { ...report, worklistStartMonth: "2026-07" },
+    });
+    state = await reports.getReportWorkspace();
+    assert.equal(state.worklistStartMonth, "2026-09");
+    assert.deepEqual(
+      state.reports.filter((row) => row.id !== report.id),
+      others,
+    );
+    const pending = buildReportWorklist(
+      state,
+      new Date("2026-10-31T12:00:00Z"),
+    );
+    assert.deepEqual(
+      pending
+        .filter((item) => item.month < "2026-09")
+        .map((item) => [item.report.id, item.month]),
+      [
+        [report.id, "2026-07"],
+        [report.id, "2026-08"],
+      ],
+    );
+    const audit = await db.default.auditLog.findFirst({
+      where: { action: "report.save", resource_id: report.id },
+    });
+    assert.equal(
+      JSON.parse(audit!.metadata_json).command.definition.worklistStartMonth,
+      "2026-07",
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "save",
+        definition: { ...report, worklistStartMonth: "2026-13" },
+      }),
+    );
+    state = await mutate(
+      state,
+      { type: "ready", reportId: report.id },
+      "2026-07",
+    );
+    state = await mutate(
+      state,
+      { type: "confirm", reportId: report.id },
+      "2026-07",
+    );
+    assert.deepEqual(
+      buildReportWorklist(state, new Date("2026-10-31T12:00:00Z"))
+        .filter((item) => item.month < "2026-09")
+        .map((item) => item.month),
+      ["2026-08"],
+    );
+  }));
+
 test("Réservations lit des résumés persistés, sans calcul initial ni recalcul après une modification", () =>
   fixture(async ({ gite }) => {
     const now = new Date("2026-11-05T12:00:00Z");
