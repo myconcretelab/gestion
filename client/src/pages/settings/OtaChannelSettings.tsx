@@ -60,7 +60,7 @@ export default function OtaChannelSettings({
                   update(index, { automatic: event.target.checked })
                 }
               />
-              Hébergement considéré réglé par ce canal
+              Hébergement considéré réglé à 18 h le jour de l’arrivée
             </label>
           </div>
           <label className="field">

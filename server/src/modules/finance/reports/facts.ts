@@ -57,7 +57,10 @@ type SavedOptionDetail = {
   total_options?: number;
 };
 
-export async function loadReportFacts(db: TenantTransactionClient = prisma) {
+export async function loadReportFacts(
+  db: TenantTransactionClient = prisma,
+  now = new Date(),
+) {
   const [
     gites,
     managerRows,
@@ -116,6 +119,7 @@ export async function loadReportFacts(db: TenantTransactionClient = prisma) {
   const tracking = await loadReservationPaymentTracking(
     reservations.map((row) => row.id),
     db,
+    now,
   );
   const groups = new Map<string, typeof reservations>();
   for (const row of reservations)

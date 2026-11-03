@@ -134,4 +134,10 @@ test("les plateformes distinguent les options à encaisser du versement attendu"
   assert.equal(summary({ prix_total: 1000, payment_tracking: tracking }).label, "Options à régler");
   assert.equal(summary({ prix_total: 1000, source_paiement: "Chèque", payment_tracking: { ...tracking, received: 0, remaining: 1040,
     platform: { ...tracking.platform, automatic: false, expected: 1000 } } }).label, "Versement attendu");
+  const awaiting = summary({ prix_total: 1000, payment_tracking: { ...tracking, received: 0, remaining: 1040,
+    platform: { ...tracking.platform, automatic: true, expected: 1000 } } });
+  assert.equal(awaiting.label, "Versement attendu");
+  assert.equal(awaiting.state, "unpaid");
+  assert.equal(awaiting.remaining, 1040);
+  assert.equal(awaiting.progress, 0);
 });

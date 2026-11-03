@@ -146,7 +146,9 @@ export default function ReservationPaymentSettings() {
               </span>
             </label>
             <p className="field-hint">
-              Activé par défaut. Seul l’hébergement est considéré reçu. Les
+              Activé par défaut. L’hébergement est considéré reçu le jour de
+              l’arrivée à partir de 18 h (heure de Paris). Avant cette heure,
+              le statut indique « Versement attendu ». Les
               draps, les options ajoutées dans l’application et la taxe
               collectée sur place restent à encaisser.
             </p>

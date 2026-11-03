@@ -32,8 +32,8 @@ const stay = (overrides: Record<string, unknown> = {}) =>
         id: randomUUID(),
         gite_id: "ledger-gite",
         hote_nom: "Client fictif",
-        date_entree: new Date("2040-01-01"),
-        date_sortie: new Date("2040-01-05"),
+        date_entree: new Date("2026-01-01"),
+        date_sortie: new Date("2026-01-05"),
         nb_nuits: 4,
         nb_adultes: 2,
         prix_par_nuit: 250,
@@ -64,8 +64,8 @@ const contractFor = (id: string, overrides: Record<string, unknown> = {}) =>
         locataire_tel: "",
         nb_adultes: 2,
         nb_enfants_2_17: 0,
-        date_debut: new Date("2040-01-01"),
-        date_fin: new Date("2040-01-05"),
+        date_debut: new Date("2026-01-01"),
+        date_fin: new Date("2026-01-05"),
         heure_arrivee: "17:00",
         heure_depart: "12:00",
         nb_nuits: 4,
@@ -282,7 +282,7 @@ test("les anciens segments d'un séjour partagent les règlements et le total co
     stay_group_id: group,
     prix_total: 400,
     nb_nuits: 2,
-    date_entree: new Date("2040-01-03"),
+    date_entree: new Date("2026-01-03"),
   });
   await inOrg(async () => {
     const first = await ledger.addReservationPayment(b.id, payment(300));
@@ -760,7 +760,145 @@ test("changer l'origine conserve le classement historique et les réservations a
   });
 });
 
-test("les plateformes existantes et futures sont reçues à J+1 avec une date estimée sans créer de saisie", async () => {
+test("les plateformes restent attendues jusqu’à 18 h le jour de l’arrivée à Paris", async () => {
+  for (const source of [
+    "Airbnb",
+    "Abritel",
+    "Gites de France",
+    "Booking.com",
+  ]) {
+    const r = await stay({
+      booking_source: source,
+      date_entree: new Date("2026-12-11"),
+      date_sortie: new Date("2026-12-13"),
+    });
+    await inOrg(async () => {
+      for (const now of [
+        "2026-11-03T08:00:00Z",
+        "2026-12-10T23:00:00Z",
+        "2026-12-11T16:59:59.999Z",
+      ]) {
+        const state = await ledger.getReservationPaymentTracking(
+          r.id,
+          db.default,
+          new Date(now),
+        );
+        assert.equal(state.received, 0, `${source} à ${now}`);
+        assert.equal(state.remaining, 1000);
+        assert.equal(state.platform?.automatic, true);
+        assert.equal(state.platform?.expected, 1000);
+        assert.equal(state.entries.length, 0);
+      }
+      for (const now of ["2026-12-11T17:00:00Z", "2026-12-12T08:00:00Z"]) {
+        const state = await ledger.getReservationPaymentTracking(
+          r.id,
+          db.default,
+          new Date(now),
+        );
+        assert.equal(state.received, 1000);
+        assert.equal(state.remaining, 0);
+        assert.equal(state.platform?.expected, 0);
+        assert.equal(state.entries.length, 1);
+        assert.equal(state.entries[0].origin, "platform");
+        assert.equal(state.entries[0].paid_on, "2026-12-12T12:00:00.000Z");
+        assert.equal(state.entries[0].paid_on_estimated, true);
+      }
+      assert.equal(
+        await db.default.reservationRecordedPayment.count({
+          where: { reservation_id: r.id },
+        }),
+        0,
+      );
+    });
+  }
+});
+
+test("le seuil de 18 h respecte l’heure d’été et la première arrivée d’un séjour segmenté", async () => {
+  const group = randomUUID();
+  const first = await stay({
+    booking_source: "Airbnb",
+    stay_group_id: group,
+    date_entree: new Date("2027-07-01"),
+    date_sortie: new Date("2027-07-03"),
+    prix_total: 600,
+    frais_optionnels_montant: 20,
+  });
+  const second = await stay({
+    booking_source: "Airbnb",
+    stay_group_id: group,
+    date_entree: new Date("2027-07-03"),
+    date_sortie: new Date("2027-07-05"),
+    prix_total: 400,
+    frais_optionnels_montant: 40,
+  });
+  await inOrg(async () => {
+    const before = await ledger.getReservationPaymentTracking(
+      second.id,
+      db.default,
+      new Date("2027-07-01T15:59:59.999Z"),
+    );
+    assert.equal(before.received, 0);
+    assert.equal(before.remaining, 1060);
+    assert.equal(before.platform?.expected, 1000);
+    const now = new Date("2027-07-01T16:00:00Z");
+    const after = await ledger.getReservationPaymentTracking(
+      second.id,
+      db.default,
+      now,
+    );
+    assert.equal(after.received, 1000);
+    assert.equal(after.remaining, 60);
+    assert.equal(after.platform?.extras_remaining, 60);
+    assert.deepEqual(
+      after,
+      await ledger.getReservationPaymentTracking(first.id, db.default, now),
+    );
+  });
+});
+
+test("les règlements réels avant l’arrivée restent reçus et seul le complément devient automatique", async () => {
+  const r = await stay({
+    booking_source: "Airbnb",
+    date_entree: new Date("2027-07-01"),
+    date_sortie: new Date("2027-07-05"),
+    frais_optionnels_montant: 60,
+  });
+  await inOrg(async () => {
+    await ledger.addReservationPayment(
+      r.id,
+      payment(400, { method: "Versement plateforme" }),
+    );
+    await ledger.addReservationPayment(
+      r.id,
+      payment(20, { purpose: "extras" }),
+    );
+    const before = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(before.received, 420);
+    assert.equal(before.remaining, 640);
+    assert.equal(before.platform?.expected, 600);
+    assert.equal(before.platform?.extras_remaining, 40);
+    const after = await ledger.getReservationPaymentTracking(
+      r.id,
+      db.default,
+      new Date("2027-07-01T16:00:00Z"),
+    );
+    assert.equal(after.received, 1020);
+    assert.equal(after.remaining, 40);
+    assert.equal(after.overpaid, 0);
+    assert.equal(
+      after.entries.find((entry) => entry.origin === "platform")?.amount,
+      600,
+    );
+    assert.equal(
+      await db.default.reservationRecordedPayment.count({
+        where: { reservation_id: r.id },
+      }),
+      2,
+    );
+  });
+});
+
+test("les plateformes arrivées sont reçues avec une date de versement estimée à J+1 sans créer de saisie", async () => {
   for (const source of [
     "Airbnb",
     "Abritel",
@@ -774,7 +912,7 @@ test("les plateformes existantes et futures sont reçues à J+1 avec une date es
       assert.equal(state.remaining, 0);
       assert.equal(state.platform?.automatic, true);
       assert.equal(state.entries[0].origin, "platform");
-      assert.equal(state.entries[0].paid_on, "2040-01-02T12:00:00.000Z");
+      assert.equal(state.entries[0].paid_on, "2026-01-02T12:00:00.000Z");
       assert.equal(state.entries[0].paid_on_estimated, true);
       assert.equal(
         await db.default.reservationRecordedPayment.count({
@@ -915,7 +1053,7 @@ test("les segments Airbnb couvrent l'hébergement une seule fois et cumulent leu
     stay_group_id: group,
     prix_total: 400,
     frais_optionnels_montant: 30,
-    date_entree: new Date("2040-01-03"),
+    date_entree: new Date("2026-01-03"),
   });
   await inOrg(async () => {
     const state = await ledger.addReservationPayment(b.id, payment(50));

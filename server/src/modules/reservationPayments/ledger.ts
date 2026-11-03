@@ -22,6 +22,7 @@ import { fromJsonString } from "../../utils/jsonFields.js";
 import { cents } from "../bookingPayments/money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
+import { automaticPlatformReceiptThrough } from "./automaticReceipt.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
   Object.assign(new Error(message), { statusCode });
@@ -73,6 +74,7 @@ const stayKey = (row: { id: string; stay_group_id: string | null }) =>
 export const loadReservationPaymentTracking = async (
   ids: string[],
   db: Db = prisma,
+  now = new Date(),
 ) => {
   const stays = ids.length ? await loadStays(ids, db) : [];
   if (!stays.length) return new Map<string, ReservationPaymentTracking>();
@@ -111,6 +113,7 @@ export const loadReservationPaymentTracking = async (
     groups.set(stayKey(row), [...(groups.get(stayKey(row)) || []), row]),
   );
   const result = new Map<string, ReservationPaymentTracking>();
+  const receivedThrough = automaticPlatformReceiptThrough(now);
   for (const rows of groups.values()) {
     rows.sort(
       (a, b) => +a.date_entree - +b.date_entree || a.id.localeCompare(b.id),
@@ -319,10 +322,13 @@ export const loadReservationPaymentTracking = async (
     const automatic =
       settings.platforms?.find((channel) => channel.name === source)
         ?.automatic ?? settings.platform_payments_received_automatically;
+    const automaticReceived =
+      automatic &&
+      first.date_entree.toISOString().slice(0, 10) <= receivedThrough;
     const estimatedPaymentDate = new Date(first.date_entree);
     estimatedPaymentDate.setUTCDate(estimatedPaymentDate.getUTCDate() + 1);
     estimatedPaymentDate.setUTCHours(12, 0, 0, 0);
-    if (isPlatform && automatic && platformExpected > 0) {
+    if (isPlatform && automaticReceived && platformExpected > 0) {
       const policy = settings.platforms?.find(
         (channel) => channel.name === source,
       );
@@ -390,7 +396,7 @@ export const loadReservationPaymentTracking = async (
         method: "Versement plateforme",
         purpose: "full",
         paid_on: null,
-        note: `Hébergement et options incluses considérés reçus automatiquement de ${source}. Date de versement estimée au lendemain de l’arrivée. Les options et la taxe à encaisser sur place restent dues.`,
+        note: `Hébergement et options incluses considérés reçus automatiquement de ${source} à partir de 18 h le jour de l’arrivée (heure de Paris). Date de versement estimée au lendemain de l’arrivée. Les options et la taxe à encaisser sur place restent dues.`,
         origin: "platform",
         voided_at: null,
         ...(estimatedGross !== null && estimatedFee !== null
@@ -507,7 +513,7 @@ export const loadReservationPaymentTracking = async (
               source,
               automatic,
               accommodation: platformAccommodation / 100,
-              expected: automatic ? 0 : platformExpected / 100,
+              expected: automaticReceived ? 0 : platformExpected / 100,
               extras_remaining:
                 Math.max(
                   0,
@@ -527,8 +533,11 @@ export const loadReservationPaymentTracking = async (
 export const getReservationPaymentTracking = async (
   id: string,
   db: Db = prisma,
+  now = new Date(),
 ) => {
-  const tracking = (await loadReservationPaymentTracking([id], db)).get(id);
+  const tracking = (await loadReservationPaymentTracking([id], db, now)).get(
+    id,
+  );
   if (!tracking) throw ledgerError("Réservation introuvable.", 404);
   return tracking;
 };

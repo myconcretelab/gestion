@@ -106,7 +106,7 @@ export function getReportWorkspace(
           cache?.workspace_json
         )
           return JSON.parse(cache.workspace_json) as ReportWorkspaceData;
-        const facts = await loadReportFacts(db);
+        const facts = await loadReportFacts(db, now);
         const { store, config } = await read(db, facts);
         return storeReportCalculation(
           db,

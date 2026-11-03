@@ -221,7 +221,7 @@ test("Réservations lit des résumés persistés, sans calcul initial ni recalcu
       true,
     );
     const cached = await reports.getReportWorkspace({
-      now: new Date("2026-11-06T12:00:00Z"),
+      now: new Date("2026-11-05T16:59:59Z"),
     });
     assert.equal(cached.calculatedAt, first.calculatedAt);
     await pay(reservation.id, 15);
@@ -252,6 +252,38 @@ test("Réservations lit des résumés persistés, sans calcul initial ni recalcu
       }),
     ]);
     assert.equal(simultaneousForce.calculatedAt, "2026-11-08T12:00:00.000Z");
+  }));
+
+test("les rapports recalculent les versements de plateforme au passage de 18 h sans modification des données", () =>
+  fixture(async ({ gite }) => {
+    await stay(gite, {
+      booking_source: "Airbnb",
+      date_entree: new Date("2026-12-11"),
+      date_sortie: new Date("2026-12-13"),
+    });
+    const beforeTime = new Date("2026-12-11T16:59:59.999Z");
+    const before = await reports.getReportWorkspace({ now: beforeTime });
+    assert.equal(result(before, "2026-12").total, 0);
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, beforeTime)).stale,
+      false,
+    );
+    const afterTime = new Date("2026-12-11T17:00:00Z");
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, afterTime)).stale,
+      true,
+    );
+    const after = await reports.getReportWorkspace({ now: afterTime });
+    assert.equal(result(after, "2026-12").total, 10000);
+    assert.equal(after.calculatedAt, afterTime.toISOString());
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, afterTime)).stale,
+      false,
+    );
+    const nextMorning = await reports.getReportWorkspace({
+      now: new Date("2026-12-12T08:00:00Z"),
+    });
+    assert.equal(nextMorning.calculatedAt, after.calculatedAt);
   }));
 
 test("un échec de calcul conserve le dernier résumé et la tentative suivante peut reprendre", () =>
@@ -718,7 +750,7 @@ test("une ventilation inconnue ne transforme pas les tarifs actuels en prix hist
       2000,
     );
   }));
-test("les versements OTA sont inclus à J+1, y compris les futurs séjours et les changements de mois ou d’année", () =>
+test("les versements OTA arrivés sont inclus à J+1, y compris les changements de mois ou d’année", () =>
   fixture(async ({ gite }) => {
     const cases = [
       ["Airbnb", "2026-10-30", "2026-10-31"],
@@ -738,7 +770,9 @@ test("les versements OTA sont inclus à J+1, y compris les futurs séjours et le
       });
       ids.push(reservation.id);
     }
-    const state = await reports.getReportWorkspace();
+    const state = await reports.getReportWorkspace({
+      now: new Date("2028-03-01T12:00:00Z"),
+    });
     for (const [index, [, , date]] of cases.entries()) {
       const period = result(state, date.slice(0, 7));
       const payment = period.rows.find(
@@ -756,7 +790,9 @@ test("les versements OTA sont inclus à J+1, y compris les futurs séjours et le
       where: { id: ids[0] },
       data: { date_entree: new Date("2026-10-31") },
     });
-    const changed = await reports.getReportWorkspace();
+    const changed = await reports.getReportWorkspace({
+      now: new Date("2028-03-01T12:00:00Z"),
+    });
     assert.equal(result(changed).total, 0);
     assert.equal(result(changed, "2026-11").total, 20000);
   }));
