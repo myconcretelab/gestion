@@ -7,6 +7,7 @@ import {
   DEFAULT_RESERVATION_PAYMENT_SHORTCUTS,
   legacyPaymentMethod,
   RESERVATION_PAYMENT_METHODS,
+  RESERVATION_MANUAL_PAYMENT_METHODS,
   type ReservationPaymentTracking,
   type ReservationPaymentShortcut,
 } from "@contrats/shared";
@@ -96,6 +97,11 @@ export default function ReservationPaymentsEditor({
     id: string;
     paidOn: string;
     expectedPaidOn: string | null;
+  } | null>(null);
+  const [methodEdit, setMethodEdit] = useState<{
+    id: string;
+    method: string;
+    expectedMethod: string | null;
   } | null>(null);
   const requestId = useRef(crypto.randomUUID());
   const saving = useRef(false);
@@ -285,6 +291,36 @@ export default function ReservationPaymentsEditor({
       setBusy(false);
     }
   };
+  const savePaymentMethod = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!methodEdit || busy || saving.current) return;
+    saving.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await apiFetch<ReservationPaymentTracking>(
+        `/reservations/${reservation.id}/payments/${encodeURIComponent(methodEdit.id)}/method`,
+        {
+          method: "PATCH",
+          json: {
+            method: methodEdit.method,
+            expected_method: methodEdit.expectedMethod,
+          },
+        },
+      );
+      publish(next);
+      setMethodEdit(null);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de modifier le moyen de paiement.",
+      );
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  };
   return (
     <section
       id={detailsId}
@@ -338,6 +374,9 @@ export default function ReservationPaymentsEditor({
         const platformPayment =
           entry.method === "Versement plateforme" ||
           entry.origin === "platform";
+        const canEditMethod = canEditDate && !platformPayment && !entry.ota;
+        const methodAction = `${entry.method ? "Modifier" : "Renseigner"} le moyen de paiement`;
+        const methodFormId = `${formId}-method-${entry.id}`;
         const dateText = entry.paid_on
           ? formatDate(entry.paid_on)
           : "Date non renseignée";
@@ -359,7 +398,52 @@ export default function ReservationPaymentsEditor({
                   ? "Hébergement"
                   : purposeLabel(entry.purpose)}
                 <small>
-                  {entry.method || "Moyen non renseigné"} ·{" "}
+                  {canEditMethod ? (
+                    <button
+                      type="button"
+                      className="reservation-ledger__payment-date"
+                      aria-label={methodAction}
+                      title={methodAction}
+                      aria-expanded={methodEdit?.id === entry.id}
+                      aria-controls={methodFormId}
+                      disabled={busy}
+                      onClick={() => {
+                        setConfirmVoid(null);
+                        setDateEdit(null);
+                        setExpanded(false);
+                        setError(null);
+                        setMethodEdit(
+                          methodEdit?.id === entry.id
+                            ? null
+                            : {
+                                id: entry.id,
+                                method: RESERVATION_MANUAL_PAYMENT_METHODS.some(
+                                  (method) => method === entry.method,
+                                )
+                                  ? entry.method!
+                                  : "",
+                                expectedMethod: entry.method,
+                              },
+                        );
+                      }}
+                    >
+                      <span>{entry.method || "Moyen non renseigné"}</span>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="m16 4 4 4M4 20l4-1L20 7a2.12 2.12 0 0 0-3-3L5 16l-1 4Z" />
+                      </svg>
+                    </button>
+                  ) : (
+                    entry.method || "Moyen non renseigné"
+                  )}{" "}
+                  ·{" "}
                   {canEditDate ? (
                     <button
                       type="button"
@@ -371,6 +455,8 @@ export default function ReservationPaymentsEditor({
                       disabled={busy}
                       onClick={() => {
                         setConfirmVoid(null);
+                        setMethodEdit(null);
+                        setExpanded(false);
                         setError(null);
                         setDateEdit(
                           dateEdit?.id === entry.id
@@ -426,6 +512,49 @@ export default function ReservationPaymentsEditor({
               </span>
               <strong>{formatEuro(entry.amount)}</strong>
             </div>
+            {canEditMethod && methodEdit?.id === entry.id ? (
+              <form
+                id={methodFormId}
+                className="reservation-ledger__date-form"
+                onSubmit={savePaymentMethod}
+                aria-label="Modifier le moyen de paiement"
+              >
+                <label>
+                  Moyen de paiement
+                  <select
+                    autoFocus
+                    required
+                    value={methodEdit.method}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setMethodEdit({
+                        ...methodEdit,
+                        method: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="" disabled>
+                      Choisir un moyen
+                    </option>
+                    {RESERVATION_MANUAL_PAYMENT_METHODS.map((method) => (
+                      <option key={method}>{method}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="reservation-ledger__form-actions">
+                  <button type="submit" disabled={busy}>
+                    Enregistrer le moyen
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setMethodEdit(null)}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            ) : null}
             {canEditDate && dateEdit?.id === entry.id ? (
               <form
                 id={dateFormId}
@@ -491,6 +620,7 @@ export default function ReservationPaymentsEditor({
                   disabled={busy}
                   onClick={() => {
                     setDateEdit(null);
+                    setMethodEdit(null);
                     setConfirmVoid(entry.id);
                   }}
                 >

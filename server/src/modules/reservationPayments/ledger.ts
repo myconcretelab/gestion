@@ -5,6 +5,7 @@ import {
   applyTouristTaxCollection,
   getReservationPaymentShortcutValue,
   legacyPaymentMethod,
+  RESERVATION_MANUAL_PAYMENT_METHODS,
   AUTOMATIC_PAYMENT_PLATFORMS,
   otaRate,
   otaStoredPriceBasis,
@@ -175,16 +176,9 @@ export const loadReservationPaymentTracking = async (
     const isPlatform =
       (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(source) ||
       Boolean(settings.platforms?.some((channel) => channel.name === source));
-    // Platform stays can acquire local extras after an older contract or card payment.
-    const total = isPlatform
-      ? cents(rawTotal)
-      : contract
-        ? cents(
-            Number(contract.arrhes_montant) + Number(contract.solde_montant),
-          )
-        : stripe.length
-          ? stripe[stripe.length - 1].total_cents
-          : cents(rawTotal);
+    // The reservation can change after a contract or card payment was issued.
+    // Those documents retain their original amounts; the current balance includes all extras.
+    const total = cents(rawTotal);
     const deposit = contract
       ? cents(Number(contract.arrhes_montant))
       : quote.arrhes_theoriques !== undefined
@@ -863,6 +857,64 @@ export const voidReservationPayment = async (id: string, paymentId: string) =>
         data: { voided_at: new Date() },
       });
     await syncManagedContractPayments(id, tx);
+    return getReservationPaymentTracking(id, tx);
+  });
+
+export const updateReservationPaymentMethod = async (
+  id: string,
+  paymentId: string,
+  input: {
+    method: (typeof RESERVATION_MANUAL_PAYMENT_METHODS)[number];
+    expected_method: string | null;
+  },
+  userId?: string,
+) =>
+  ledgerTransaction(async (tx) => {
+    if (!RESERVATION_MANUAL_PAYMENT_METHODS.includes(input.method))
+      throw ledgerError("Moyen de paiement invalide.", 400);
+    const stay = await lockedStay(id, tx);
+    const tracking = await getReservationPaymentTracking(id, tx);
+    const entry = tracking.entries.find((row) => row.id === paymentId);
+    if (!entry || entry.voided_at)
+      throw ledgerError("Règlement introuvable ou annulé.", 404);
+    if (
+      entry.origin === "stripe" ||
+      entry.origin === "platform" ||
+      entry.ota ||
+      entry.method === "Versement plateforme"
+    )
+      throw ledgerError(
+        "Le moyen de ce paiement est déterminé par sa plateforme.",
+      );
+    if (entry.method === input.method) return tracking;
+    if (entry.method !== input.expected_method)
+      throw ledgerError(
+        "Le moyen de paiement a changé. Actualisez les règlements avant de réessayer.",
+      );
+    if (tracking.requires_review)
+      throw ledgerError(
+        "Vérifiez le paiement ou son remboursement avant de modifier son moyen de paiement.",
+      );
+    await materializeHistory(stay, tracking, tx);
+    await tx.reservationRecordedPayment.update({
+      where: { id: entry.id },
+      data: { method: input.method },
+    });
+    await syncManagedContractPayments(id, tx);
+    await tx.auditLog.create({
+      data: {
+        organization_id: stay.rows[0].organization_id,
+        user_id: userId,
+        action: "reservation.payment-method.update",
+        resource_type: "reservation",
+        resource_id: stay.canonicalId,
+        metadata_json: JSON.stringify({
+          paymentId: entry.id,
+          previous_method: entry.method,
+          method: input.method,
+        }),
+      },
+    });
     return getReservationPaymentTracking(id, tx);
   });
 

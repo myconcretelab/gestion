@@ -31,7 +31,7 @@ let tracking = {
     {
       id: "manual",
       amount: 100,
-      method: "Espèces",
+      method: null,
       purpose: "full",
       origin: "manual",
       paid_on: "2026-11-02T12:00:00.000Z",
@@ -59,7 +59,9 @@ let tracking = {
   ],
 };
 let fail = true;
+let canWrite = true;
 const writes = [];
+const methodWrites = [];
 try {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
@@ -85,13 +87,31 @@ try {
     import Editor from '/src/pages/shared/ReservationPaymentsEditor.tsx';
     import {setCurrentAuthUser} from '/src/utils/auth.ts';
     import '/src/styles.css';
-    setCurrentAuthUser(${JSON.stringify({ permissions: { isOwner: true, canWrite: true, canViewAmounts: true }, pageAccess: [] })});
+    setCurrentAuthUser(${JSON.stringify({ permissions: { isOwner: canWrite, canWrite, canViewAmounts: true }, pageAccess: [] })});
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Editor,{reservation:{id:'test',booking_source:'Direct',options:{}},tracking:${JSON.stringify(tracking)}}));
     </script></body></html>`,
     }),
   );
   await page.route("**/api/**", async (route) => {
     assert.equal(route.request().method(), "PATCH");
+    if (route.request().url().endsWith("/payments/manual/method")) {
+      const input = route.request().postDataJSON();
+      methodWrites.push(input);
+      if (fail)
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: "Le moyen de paiement a changé. Actualisez les règlements.",
+          }),
+        });
+      assert.equal(input.expected_method, tracking.entries[0].method);
+      tracking.entries[0].method = input.method;
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(tracking),
+      });
+    }
     assert.ok(route.request().url().endsWith("/payments/manual/date"));
     const input = route.request().postDataJSON();
     writes.push(input);
@@ -165,6 +185,62 @@ try {
   );
   await page.reload();
   await page.getByText(/15\/09\/2026/).waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: /le moyen de paiement/ }).count(),
+    1,
+    "Stripe and platform methods remain fixed",
+  );
+  await page
+    .getByRole("button", { name: "Renseigner le moyen de paiement" })
+    .click();
+  const methodForm = page.getByRole("form", {
+    name: "Modifier le moyen de paiement",
+  });
+  assert.equal(
+    await methodForm.getByLabel("Moyen de paiement").inputValue(),
+    "",
+    "No method is assumed for an unknown payment",
+  );
+  assert.equal(
+    await methodForm
+      .getByRole("option", { name: "Versement plateforme", exact: true })
+      .count(),
+    0,
+  );
+  await methodForm.getByLabel("Moyen de paiement").selectOption("Chèque");
+  fail = true;
+  await methodForm
+    .getByRole("button", { name: "Enregistrer le moyen" })
+    .click();
+  await page
+    .getByRole("alert")
+    .getByText(/Le moyen de paiement a changé/)
+    .waitFor();
+  assert.equal(
+    await methodForm.getByLabel("Moyen de paiement").inputValue(),
+    "Chèque",
+  );
+  fail = false;
+  await methodForm
+    .getByRole("button", { name: "Enregistrer le moyen" })
+    .click();
+  await page
+    .getByRole("button", { name: "Modifier le moyen de paiement" })
+    .waitFor();
+  assert.deepEqual(
+    methodWrites,
+    Array(2).fill({ method: "Chèque", expected_method: null }),
+  );
+  assert.equal(tracking.received, 300);
+  assert.equal(tracking.entries.length, 3);
+  assert.equal(tracking.entries[0].paid_on, "2026-09-15T12:00:00.000Z");
+  await page.reload();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Modifier le moyen de paiement" })
+      .innerText(),
+    "Chèque",
+  );
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const inlineDate = page.getByRole("button", {
@@ -203,10 +279,37 @@ try {
       .getByRole("form", { name: "Modifier la date du règlement" })
       .getByRole("button", { name: "Annuler", exact: true })
       .click();
+    await page
+      .getByRole("button", { name: "Modifier le moyen de paiement" })
+      .click();
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+      "No overflow in payment method form",
+    );
+    await page.screenshot({
+      path: path.join(screenshots, `payment-method-${width}.png`),
+      fullPage: true,
+    });
+    await methodForm
+      .getByRole("button", { name: "Annuler", exact: true })
+      .click();
   }
+  canWrite = false;
+  await page.reload();
+  await page.getByText("Total du séjour", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: /le moyen de paiement/ }).count(),
+    0,
+  );
+  assert.equal(
+    await page.getByRole("button", { name: /^Modifier la date/ }).count(),
+    0,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    `Payment date editor verified: correction, conflict, retry, preserved amounts, reload, Stripe protection, desktop and mobile. Screenshots: ${screenshots}`,
+    `Payment date and method editors verified: corrections, conflicts, retry, preserved amounts, reload, provider protection, read-only access, desktop and mobile. Screenshots: ${screenshots}`,
   );
 } finally {
   await browser.close();
