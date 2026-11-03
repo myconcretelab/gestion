@@ -8,6 +8,7 @@ import {
   legacyReportPeriodConfirmed,
   reportPeriodKey,
   reportWorkItem,
+  reportChanges,
   type ReportWorkspaceData,
 } from "../src/index.js";
 
@@ -172,6 +173,104 @@ test("prêt reste à traiter, une confirmation retire la ligne, un écart la fai
   assert.equal(
     buildReportWorklist(state, now).find((item) => item.key === key)!.status,
     "Écart à examiner",
+  );
+});
+
+for (const outcome of ["corrected", "kept"] as const) {
+  test(`une résolution ${outcome} retire le rapport et ses rappels, une nouvelle modification le réouvre`, () => {
+    const state = workspace();
+    const report = state.reports[0];
+    const key = reportPeriodKey(report, "2026-07");
+    const original = evaluateReport(
+      report,
+      "2026-07",
+      {},
+      state.operations,
+      state,
+    );
+    const snapshot = {
+      confirmedAt: now.toISOString(),
+      definition: report,
+      result: original,
+    };
+    state.progress[key] = { snapshot };
+    state.operations[0].amountCents += 100;
+    assert.ok(buildReportWorklist(state, now).some((item) => item.key === key));
+    const examined = evaluateReport(
+      report,
+      "2026-07",
+      {},
+      state.operations,
+      state,
+    );
+    state.progress[key].resolutions = [
+      {
+        resolvedAt: now.toISOString(),
+        outcome,
+        note: "Vérification effectuée",
+        definition: report,
+        result: examined,
+      },
+    ];
+    assert.equal(
+      buildReportWorklist(state, now).some((item) => item.key === key),
+      false,
+    );
+    assert.equal(
+      buildReportReminders(state, 2026, now).some((item) => item.id === key),
+      false,
+    );
+    assert.equal(
+      reportWorkItem(state, report, "2026-07").status,
+      "Écart résolu",
+    );
+    assert.strictEqual(state.progress[key].snapshot, snapshot);
+    // Returning to the original figures is still a new change after a resolution.
+    state.operations[0].amountCents -= 100;
+    assert.equal(
+      buildReportWorklist(state, now).find((item) => item.key === key)?.status,
+      "Écart à examiner",
+    );
+    assert.equal(
+      buildReportReminders(state, 2026, now).find((item) => item.id === key)
+        ?.status,
+      "changed",
+    );
+    assert.equal(examined.total, original.total + 100);
+  });
+}
+
+test("la comparaison détaille les ajouts, retraits et changements à total identique", () => {
+  const state = workspace();
+  const report = state.reports[0];
+  const original = evaluateReport(
+    report,
+    "2026-07",
+    {},
+    state.operations,
+    state,
+  );
+  const before = original.rows[0];
+  const changed = {
+    ...original,
+    rows: [
+      { ...before, paymentMethod: "card" as const },
+      { ...before, id: "added", value: 0 },
+    ],
+  };
+  assert.deepEqual(
+    reportChanges({ result: original }, changed).map((row) => row.id),
+    [before.id, "added"],
+  );
+  const removed = reportChanges({ result: changed }, { ...changed, rows: [] });
+  assert.equal(removed.length, 2);
+  assert.ok(removed.every((row) => row.before && !row.after));
+  assert.equal(
+    reportChanges(
+      { result: changed },
+      { ...changed, rows: [...changed.rows].reverse() },
+    ).length,
+    0,
   );
 });
 

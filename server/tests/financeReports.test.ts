@@ -1181,6 +1181,138 @@ test("un rapport sans recettes peut être confirmé à zéro", () =>
     );
   }));
 
+for (const outcome of ["corrected", "kept"] as const) {
+  test(`résolution ${outcome} : copie d’origine conservée, retrait de la file et des rappels, historique cumulatif`, () =>
+    fixture(async ({ gite }) => {
+      const reservation = await stay(gite);
+      await pay(reservation.id, 25);
+      let state = await reports.getReportWorkspace();
+      const reportId = social(state).id;
+      const key = reportPeriodKey(social(state), "2026-10");
+      const resolve: ReportCommand = {
+        type: "resolve",
+        reportId,
+        outcome,
+        note: "Correction vérifiée auprès du destinataire",
+      };
+      await assert.rejects(mutate(state, resolve), /Aucun écart/);
+      state = await mutate(state, { type: "ready", reportId });
+      state = await mutate(state, { type: "confirm", reportId });
+      const original = structuredClone(state.progress[key].snapshot);
+      await assert.rejects(mutate(state, resolve), /Aucun écart/);
+      await pay(reservation.id, 15);
+      // Source concurrency is checked even when the client did not refresh.
+      await assert.rejects(mutate(state, resolve), /données ont changé/);
+      state = await reports.getReportWorkspace();
+      const now = new Date("2026-11-05T12:00:00Z");
+      assert.ok(
+        buildReportWorklist(state, now).some((item) => item.key === key),
+      );
+      state = await mutate(state, resolve);
+      assert.deepEqual(state.progress[key].snapshot, original);
+      const resolution = state.progress[key].resolutions![0];
+      assert.equal(resolution.outcome, outcome);
+      assert.equal(resolution.note, resolve.note);
+      assert.equal(resolution.resolvedBy, "test-user");
+      assert.equal(resolution.result.total, 4000);
+      assert.ok(resolution.resolvedAt);
+      assert.equal(
+        buildReportWorklist(state, now).some((item) => item.key === key),
+        false,
+      );
+      assert.equal(
+        buildReportReminders(state, 2026, now).some((item) => item.id === key),
+        false,
+      );
+      assert.equal(
+        (await reportCache.getStoredReportReminders(2026)).reminders.some(
+          (item) => item.id === key,
+        ),
+        false,
+      );
+      state = await reports.getReportWorkspace({ force: true });
+      assert.deepEqual(state.progress[key].resolutions![0], resolution);
+      await assert.rejects(mutate(state, resolve), /Aucun écart/);
+      await assert.rejects(
+        mutate(state, { type: "confirm", reportId }),
+        /copie confirmée existe/,
+      );
+      await pay(reservation.id, 5);
+      state = await reports.getReportWorkspace();
+      assert.equal(
+        buildReportWorklist(state, now).find((item) => item.key === key)
+          ?.status,
+        "Écart à examiner",
+      );
+      assert.equal(
+        (await reportCache.getStoredReportReminders(2026)).reminders.find(
+          (item) => item.id === key,
+        )?.status,
+        "changed",
+      );
+      state = await mutate(state, resolve);
+      assert.equal(state.progress[key].resolutions!.length, 2);
+      assert.deepEqual(state.progress[key].resolutions![0], resolution);
+      assert.equal(state.progress[key].resolutions![1].result.total, 4500);
+      assert.deepEqual(state.progress[key].snapshot, original);
+      assert.equal(
+        await db.default.auditLog.count({
+          where: { action: "report.resolve", resource_id: reportId },
+        }),
+        2,
+      );
+      await fixture(async () => {
+        const other = await reports.getReportWorkspace();
+        await assert.rejects(mutate(other, resolve), /introuvable/);
+        assert.equal(
+          await db.default.auditLog.count({
+            where: { action: "report.resolve" },
+          }),
+          0,
+        );
+      });
+    }));
+}
+
+test("la résolution refuse les motifs vides, les chiffres fournis par le navigateur et les opérations à vérifier", () =>
+  fixture(async ({ gite, entity }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    let state = await reports.getReportWorkspace();
+    const reportId = social(state).id;
+    state = await mutate(state, { type: "ready", reportId });
+    state = await mutate(state, { type: "confirm", reportId });
+    await pay(reservation.id, 15);
+    state = await reports.getReportWorkspace();
+    const command = {
+      type: "resolve",
+      reportId,
+      outcome: "kept",
+      note: "   ",
+    } as const;
+    await assert.rejects(mutate(state, command));
+    await assert.rejects(
+      mutate(state, {
+        ...command,
+        note: "Justification",
+        result: { total: 0 },
+      } as never),
+    );
+    await db.default.fiscalEntity.update({
+      where: { id: entity },
+      data: { vat_regime: "unknown" },
+    });
+    state = await reports.getReportWorkspace();
+    await assert.rejects(
+      mutate(state, { ...command, note: "Justification" }),
+      /Vérifiez les opérations/,
+    );
+    assert.equal(
+      state.progress[reportPeriodKey(social(state), "2026-10")].resolutions,
+      undefined,
+    );
+  }));
+
 test("les corrections internes gardent une identité stable et sont à revoir si les montants changent", () =>
   fixture(async ({ gite }) => {
     const allocation =

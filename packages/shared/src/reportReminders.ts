@@ -6,7 +6,7 @@ import {
   evaluateReport,
   getReportPeriod,
   reportPeriodKey,
-  snapshotDiffers,
+  reportHasPendingChanges,
   reportIncludesBookingSource,
 } from "./reports.js";
 import { legacyReportPeriodConfirmed } from "./reportWorklist.js";
@@ -119,7 +119,7 @@ export function buildReportReminders(
         !progress?.snapshot
       )
         continue;
-      if (progress?.snapshot && !snapshotDiffers(progress.snapshot, result))
+      if (progress?.snapshot && !reportHasPendingChanges(progress, result))
         continue;
       // Legacy confirmations stay valid only when every scoped property and month was covered.
       // A confirmation in the new system takes precedence, including subsequent discrepancies.

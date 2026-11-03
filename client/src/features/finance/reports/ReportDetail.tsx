@@ -7,10 +7,15 @@ import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import ReportProgressActions from "./ReportProgressActions";
 import ReportNightRegister from "./ReportNightRegister";
+import ReportDiscrepancy, { resolutionLabel } from "./ReportDiscrepancy";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
-import { nightGuestGroupsLabel } from "@contrats/shared";
+import {
+  nightGuestGroupsLabel,
+  reportHasPendingChanges,
+  reportReference,
+} from "@contrats/shared";
 import useReportPaymentReservations from "./useReportPaymentReservations";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
 import {
@@ -22,7 +27,6 @@ import {
   reportCsv,
   reportPeriodKey,
   reportStatus,
-  snapshotDiffers,
   reportAmountBasisLabel,
   operationAmountBasisLabel,
   reportTotalLabel,
@@ -81,6 +85,7 @@ export default function ReportDetail({
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshotKey, setSnapshotKey] = useState<string | null>(null);
+  const [resolutionIndex, setResolutionIndex] = useState<number | null>(null);
   const [lastCorrection, setLastCorrection] = useState<{
     key: string;
     id: string;
@@ -89,6 +94,7 @@ export default function ReportDetail({
   useEffect(() => {
     setLastCorrection(null);
     setSnapshotKey(null);
+    setResolutionIndex(null);
     setSelectedRow(null);
     setHistoryOpen(false);
   }, [reportId, month]);
@@ -126,9 +132,16 @@ export default function ReportDetail({
     .sort((a, b) =>
       b[1].snapshot!.confirmedAt.localeCompare(a[1].snapshot!.confirmedAt),
     );
-  const snapshot = snapshotKey
-    ? state.progress[snapshotKey]?.snapshot
+  const selectedProgress = snapshotKey
+    ? state.progress[snapshotKey]
     : undefined;
+  const resolution =
+    resolutionIndex !== null
+      ? selectedProgress?.resolutions?.[resolutionIndex]
+      : undefined;
+  const snapshot = resolution
+    ? { ...resolution, confirmedAt: resolution.resolvedAt }
+    : selectedProgress?.snapshot;
   const displayedReport = snapshot?.definition ?? report;
   const displayedResult = snapshot?.result ?? result;
   const displayedMonth =
@@ -136,9 +149,9 @@ export default function ReportDetail({
       ? snapshotKey.slice(report.id.length + 1, report.id.length + 8)
       : month;
   const currentStatus = reportStatus(progress, result);
-  const differs = Boolean(
-    progress?.snapshot && snapshotDiffers(progress.snapshot, result),
-  );
+  const differs = reportHasPendingChanges(progress, result);
+  const reference = reportReference(progress);
+  const lastResolution = progress?.resolutions?.at(-1);
   const draft = state.drafts[report.id];
   const unappliedBasis =
     !snapshot &&
@@ -237,7 +250,11 @@ export default function ReportDetail({
                       : "neutral"
             }
           >
-            {snapshot ? "Copie confirmée" : currentStatus}
+            {snapshot
+              ? resolution
+                ? "Résolution enregistrée"
+                : "Copie confirmée"
+              : currentStatus}
           </ReportBadge>
         }
         meta={
@@ -270,6 +287,7 @@ export default function ReportDetail({
                   type="button"
                   onClick={() => {
                     setSnapshotKey(key);
+                    setResolutionIndex(null);
                     setFilter("included");
                   }}
                 >
@@ -353,8 +371,15 @@ export default function ReportDetail({
         <div className="rp-notice rp-notice--primary">
           <ReportIcon name="check" />
           <p>
-            Copie figée le {dateLabel(snapshot.confirmedAt)}. Les corrections
+            {resolution ? `${resolutionLabel(resolution.outcome)} · ` : ""}Copie
+            figée le {dateLabel(snapshot.confirmedAt)}. Les corrections
             ultérieures ne modifient pas ce contenu.
+            {resolution && (
+              <>
+                <br />
+                Justification : {resolution.note}
+              </>
+            )}
           </p>
         </div>
       )}
@@ -362,13 +387,17 @@ export default function ReportDetail({
         <div className="rp-notice">
           <ReportIcon name="info" />
           <div>
-            <strong>Les données ont évolué depuis votre confirmation.</strong>
+            <strong>
+              Les données ont évolué depuis{" "}
+              {lastResolution ? "la dernière résolution" : "votre confirmation"}
+              .
+            </strong>
             <p>
               Écart du calcul courant :{" "}
-              {result.total - progress!.snapshot!.result.total > 0 ? "+" : ""}
+              {result.total - reference!.result.total > 0 ? "+" : ""}
               {formatReportValue(
                 report,
-                result.total - progress!.snapshot!.result.total,
+                result.total - reference!.result.total,
               )}
               .{" "}
               <button
@@ -376,11 +405,34 @@ export default function ReportDetail({
                 className="rp-text-button"
                 onClick={() => {
                   setSnapshotKey(key);
+                  setResolutionIndex(
+                    lastResolution ? progress!.resolutions!.length - 1 : null,
+                  );
                   setFilter("included");
                 }}
               >
-                Consulter la copie confirmée
+                {lastResolution
+                  ? "Consulter la dernière résolution"
+                  : "Consulter la copie confirmée"}
               </button>
+            </p>
+          </div>
+        </div>
+      )}
+      {!snapshot && !differs && lastResolution && (
+        <div className="rp-notice rp-notice--primary">
+          <ReportIcon name="check" />
+          <div>
+            <strong>
+              Écart résolu le {dateLabel(lastResolution.resolvedAt)}
+            </strong>
+            <p>
+              {resolutionLabel(lastResolution.outcome)}. {lastResolution.note}
+            </p>
+            <p>
+              Ce rapport est retiré des rapports à traiter. La confirmation
+              d’origine et les résolutions restent disponibles dans
+              l’historique.
             </p>
           </div>
         </div>
@@ -388,7 +440,11 @@ export default function ReportDetail({
       <section className="rp-report-summary" aria-label="Synthèse du rapport">
         <div className="rp-total-card">
           <span className="rp-overline">
-            {snapshot ? "Copie confirmée · " : ""}
+            {snapshot
+              ? resolution
+                ? "Résolution enregistrée · "
+                : "Copie confirmée · "
+              : ""}
             {reportTotalLabel(displayedReport, displayedResult)}
           </span>
           <strong className="rp-total-value">
@@ -440,24 +496,30 @@ export default function ReportDetail({
             {snapshot
               ? "Copie enregistrée"
               : differs
-                ? "Écart depuis la confirmation"
+                ? "Écart à résoudre"
                 : result.reviewCount
                   ? "Opérations à corriger"
                   : progress?.snapshot
-                    ? "Transmission confirmée"
+                    ? lastResolution
+                      ? "Écart résolu"
+                      : "Transmission confirmée"
                     : progress?.ready
                       ? "Rapport prêt"
                       : "Préparation du rapport"}
           </h2>
           <p>
             {snapshot
-              ? "Cette copie et son export reprennent les opérations au moment de votre confirmation."
+              ? resolution
+                ? "Cette copie et son export reprennent les opérations examinées au moment de cette résolution."
+                : "Cette copie et son export reprennent les opérations au moment de votre confirmation."
               : differs
-                ? "Consultez les opérations actuelles et comparez-les à la copie confirmée."
+                ? "Comparez les opérations modifiées, puis enregistrez la manière dont vous avez traité cet écart."
                 : result.reviewCount
                   ? `${result.reviewCount} opération${result.reviewCount > 1 ? "s demandent" : " demande"} une vérification avant de préparer votre copie.`
                   : progress?.snapshot
-                    ? "Votre confirmation et les chiffres correspondants sont disponibles dans l’historique."
+                    ? lastResolution
+                      ? "La résolution est enregistrée. Une nouvelle modification des données fera réapparaître ce rapport dans les rapports à traiter."
+                      : "Votre confirmation et les chiffres correspondants sont disponibles dans l’historique."
                     : progress?.ready
                       ? "Après votre démarche sur le service concerné, vous pourrez en confirmer la transmission ici."
                       : "Examinez les opérations incluses, puis marquez ce rapport comme prêt."}
@@ -487,6 +549,16 @@ export default function ReportDetail({
                 : `Examiner les ${result.reviewCount} opérations`}
               <ReportIcon name="arrow" />
             </button>
+          )}
+          {!snapshot && (
+            <ReportDiscrepancy
+              key={`discrepancy:${report.id}:${month}`}
+              workspace={workspace}
+              report={report}
+              result={result}
+              progress={progress}
+              month={month}
+            />
           )}
           {!snapshot && (
             <ReportProgressActions
@@ -737,30 +809,68 @@ export default function ReportDetail({
                   report.id.length + 8,
                 );
                 return (
-                  <button
-                    type="button"
-                    key={entryKey}
-                    onClick={() => {
-                      setSnapshotKey(entryKey);
-                      setHistoryOpen(false);
-                      setFilter("included");
-                    }}
-                  >
-                    <ReportIcon name="document" />
-                    <span>
-                      <strong>
-                        {
-                          getReportPeriod(itemMonth, item.definition.cadence)
-                            .label
-                        }
-                      </strong>
-                      <small>Confirmé le {dateLabel(item.confirmedAt)}</small>
-                    </span>
-                    <b>
-                      {formatReportValue(item.definition, item.result.total)}
-                    </b>
-                    <ReportIcon name="arrow" />
-                  </button>
+                  <div key={entryKey}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSnapshotKey(entryKey);
+                        setResolutionIndex(null);
+                        setHistoryOpen(false);
+                        setFilter("included");
+                      }}
+                    >
+                      <ReportIcon name="document" />
+                      <span>
+                        <strong>
+                          {
+                            getReportPeriod(itemMonth, item.definition.cadence)
+                              .label
+                          }
+                        </strong>
+                        <small>Confirmé le {dateLabel(item.confirmedAt)}</small>
+                      </span>
+                      <b>
+                        {formatReportValue(item.definition, item.result.total)}
+                      </b>
+                      <ReportIcon name="arrow" />
+                    </button>
+                    {(entry.resolutions ?? []).map((record, index) => (
+                      <button
+                        type="button"
+                        key={index}
+                        onClick={() => {
+                          setSnapshotKey(entryKey);
+                          setResolutionIndex(index);
+                          setHistoryOpen(false);
+                          setFilter("included");
+                        }}
+                      >
+                        <ReportIcon name="check" />
+                        <span>
+                          <strong>
+                            {
+                              getReportPeriod(
+                                itemMonth,
+                                record.definition.cadence,
+                              ).label
+                            }{" "}
+                            · {resolutionLabel(record.outcome)}
+                          </strong>
+                          <small>
+                            Résolu le {dateLabel(record.resolvedAt)}
+                          </small>
+                          <small>{record.note}</small>
+                        </span>
+                        <b>
+                          {formatReportValue(
+                            record.definition,
+                            record.result.total,
+                          )}
+                        </b>
+                        <ReportIcon name="arrow" />
+                      </button>
+                    ))}
+                  </div>
                 );
               })}
             </div>

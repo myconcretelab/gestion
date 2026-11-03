@@ -158,6 +158,14 @@ export const reportCommandSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("ready"), reportId: z.string() }).strict(),
   z.object({ type: z.literal("confirm"), reportId: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal("resolve"),
+      reportId: z.string(),
+      outcome: z.enum(["corrected", "kept"]),
+      note: z.string().trim().min(3).max(1000),
+    })
+    .strict(),
 ]);
 export type ReportCommand = z.infer<typeof reportCommandSchema>;
 export const reportMutationSchema = z

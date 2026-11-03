@@ -88,7 +88,7 @@ export default function ReportsToDo({
           </h2>
           <p>
             Retrouvez chaque gestionnaire dans son mois. Les rapports confirmés
-            quittent automatiquement la liste.
+            et les écarts résolus quittent automatiquement la liste.
           </p>
         </div>
         <label className="rp-search">

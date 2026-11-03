@@ -5,6 +5,7 @@ import {
   reportPeriodKey,
   reportMutationSchema,
   operationSourceSignature,
+  reportHasPendingChanges,
   type ReportDefinition,
   type ReportWorkspaceData,
   type ReportResult,
@@ -308,31 +309,54 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 400,
               );
             const current = config.progress[key];
-            if (current?.snapshot)
-              throw fail(
-                "Une copie confirmée existe déjà pour cette période. Elle est conservée.",
-              );
-            const readyFingerprint = fingerprint(report, result);
-            if (
-              command.type === "confirm" &&
-              (!current?.ready || current.readyFingerprint !== readyFingerprint)
-            )
-              throw fail(
-                "Le rapport doit être vérifié et marqué comme prêt après la dernière modification.",
-              );
-            config.progress[key] =
-              command.type === "ready"
-                ? { ready: true, readyFingerprint }
-                : {
-                    ready: true,
-                    readyFingerprint,
-                    snapshot: {
-                      confirmedAt: new Date().toISOString(),
-                      confirmedBy: userId ?? null,
-                      definition: structuredClone(report),
-                      result: structuredClone(result),
-                    },
-                  };
+            if (command.type === "resolve") {
+              if (
+                !current?.snapshot ||
+                !reportHasPendingChanges(current, result)
+              )
+                throw fail("Aucun écart à résoudre pour cette période.");
+              config.progress[key] = {
+                ...current,
+                resolutions: [
+                  ...(current.resolutions ?? []),
+                  {
+                    resolvedAt: new Date().toISOString(),
+                    resolvedBy: userId ?? null,
+                    outcome: command.outcome,
+                    note: command.note,
+                    definition: structuredClone(report),
+                    result: structuredClone(result),
+                  },
+                ],
+              };
+            } else {
+              if (current?.snapshot)
+                throw fail(
+                  "Une copie confirmée existe déjà pour cette période. Elle est conservée.",
+                );
+              const readyFingerprint = fingerprint(report, result);
+              if (
+                command.type === "confirm" &&
+                (!current?.ready ||
+                  current.readyFingerprint !== readyFingerprint)
+              )
+                throw fail(
+                  "Le rapport doit être vérifié et marqué comme prêt après la dernière modification.",
+                );
+              config.progress[key] =
+                command.type === "ready"
+                  ? { ready: true, readyFingerprint }
+                  : {
+                      ready: true,
+                      readyFingerprint,
+                      snapshot: {
+                        confirmedAt: new Date().toISOString(),
+                        confirmedBy: userId ?? null,
+                        definition: structuredClone(report),
+                        result: structuredClone(result),
+                      },
+                    };
+            }
           }
         }
         const revision = (store?.revision ?? 0) + 1;

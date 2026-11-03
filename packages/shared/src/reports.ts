@@ -106,10 +106,19 @@ export type ReportSnapshot = {
   definition: ReportDefinition;
   result: ReportResult;
 };
+export type ReportResolution = {
+  resolvedAt: string;
+  resolvedBy?: string | null;
+  outcome: "corrected" | "kept";
+  note: string;
+  definition: ReportDefinition;
+  result: ReportResult;
+};
 export type ReportProgress = {
   ready?: boolean;
   snapshot?: ReportSnapshot;
   readyFingerprint?: string;
+  resolutions?: ReportResolution[];
 };
 export type ReportState = ReportSources & {
   version: 3;
@@ -545,25 +554,51 @@ export const formatReportValue = (
     ? `${value.toLocaleString("fr-FR")} nuitée${Math.abs(value) === 1 ? "" : "s"}`
     : amountFormatter.format(value / 100);
 
-export function snapshotDiffers(
-  snapshot: ReportSnapshot,
+/** Compare the last examined data, while retaining the original confirmation. */
+export function reportReference(progress: ReportProgress | undefined) {
+  if (!progress?.snapshot) return undefined;
+  return progress.resolutions?.at(-1) ?? progress.snapshot;
+}
+
+export function reportChanges(
+  snapshot: Pick<ReportSnapshot, "result">,
   result: ReportResult,
 ) {
-  const recordedMethods = new Map(
-    snapshot.result.rows.map((row) => [row.id, row.paymentMethod]),
-  );
-  const signature = (value: ReportResult) =>
-    JSON.stringify(
-      value.rows.map((row) => [
-        row.id,
-        row.status,
-        row.value,
-        row.effectiveDate,
-        recordedMethods.get(row.id) === "unknown" ? null : row.paymentMethod,
-        ...(row.paymentDateEstimated ? ["estimated-payment-date"] : []),
-      ]),
-    );
-  return signature(snapshot.result) !== signature(result);
+  const before = new Map(snapshot.result.rows.map((row) => [row.id, row]));
+  const after = new Map(result.rows.map((row) => [row.id, row]));
+  const signature = (row: EvaluatedOperation, recorded?: EvaluatedOperation) =>
+    JSON.stringify([
+      row.id,
+      row.status,
+      row.value,
+      row.effectiveDate,
+      recorded?.paymentMethod === "unknown" ? null : row.paymentMethod,
+      ...(row.paymentDateEstimated ? ["estimated-payment-date"] : []),
+    ]);
+  return [...new Set([...before.keys(), ...after.keys()])].flatMap((id) => {
+    const oldRow = before.get(id);
+    const newRow = after.get(id);
+    return !oldRow ||
+      !newRow ||
+      signature(oldRow, oldRow) !== signature(newRow, oldRow)
+      ? [{ id, before: oldRow, after: newRow }]
+      : [];
+  });
+}
+
+export function snapshotDiffers<T extends Pick<ReportSnapshot, "result">>(
+  snapshot: T,
+  result: ReportResult,
+) {
+  return reportChanges(snapshot, result).length > 0;
+}
+
+export function reportHasPendingChanges(
+  progress: ReportProgress | undefined,
+  result: ReportResult,
+) {
+  const reference = reportReference(progress);
+  return Boolean(reference && snapshotDiffers(reference, result));
 }
 
 export function reportStatus(
@@ -571,9 +606,11 @@ export function reportStatus(
   result: ReportResult,
 ) {
   if (progress?.snapshot)
-    return snapshotDiffers(progress.snapshot, result)
+    return reportHasPendingChanges(progress, result)
       ? "Écart à examiner"
-      : "Transmission confirmée";
+      : progress.resolutions?.length
+        ? "Écart résolu"
+        : "Transmission confirmée";
   if (result.reviewCount) return `${result.reviewCount} à vérifier`;
   if (progress?.ready) return "Prêt";
   return "À préparer";

@@ -763,6 +763,23 @@ try {
                   ),
                 },
               };
+            else if (command.type === "resolve") {
+              state.progress[key].resolutions ??= [];
+              state.progress[key].resolutions.push({
+                resolvedAt: "2026-11-03T12:00:00Z",
+                resolvedBy: "browser-user",
+                outcome: command.outcome,
+                note: command.note,
+                definition: structuredClone(report),
+                result: evaluateReport(
+                  report,
+                  payload.month,
+                  state.overrides[key],
+                  state.operations,
+                  state,
+                ),
+              });
+            }
           }
           state.revision++;
           body = state;
@@ -863,6 +880,219 @@ try {
     );
     await save.click({ trial: true });
   };
+
+  for (const outcome of ["corrected", "kept"]) {
+    const { page: resolutionPage, fixture: resolutionFixture } =
+      await createPage();
+    await resolutionPage.clock.setFixedTime(new Date("2026-11-03T12:00:00Z"));
+    const state = resolutionFixture.state;
+    const report = { ...state.reports[0], propertyIds: ["g1"] };
+    state.reports = [report];
+    state.legacyDeclarations = [];
+    state.operations = [{ ...baseOperation, id: "resolution-payment" }];
+    const key = reportPeriodKey(report, "2026-10");
+    const original = {
+      confirmedAt: "2026-10-31T12:00:00Z",
+      definition: structuredClone(report),
+      result: evaluateReport(report, "2026-10", {}, state.operations, state),
+    };
+    state.progress[key] = { snapshot: structuredClone(original) };
+    state.operations[0].amountCents += 100;
+    state.factsRevision = "resolution-first-change";
+    await open(resolutionPage, "/social");
+    await resolutionPage
+      .getByText("Écart à examiner", { exact: true })
+      .waitFor();
+    await resolutionPage
+      .getByRole("button", {
+        name: "Examiner et résoudre l’écart",
+        exact: true,
+      })
+      .click();
+    let dialog = resolutionPage.getByRole("dialog", {
+      name: "Examiner l’écart",
+      exact: true,
+    });
+    await dialog
+      .getByRole("heading", { name: "Opérations modifiées (1)", exact: true })
+      .waitFor();
+    assert.match(
+      await dialog.locator(".rp-discrepancy-totals").innerText(),
+      /500,00[\s\S]*501,00[\s\S]*\+1,00/,
+    );
+    const save = () =>
+      dialog.getByRole("button", {
+        name: "Enregistrer la résolution",
+        exact: true,
+      });
+    assert.equal(await save().isDisabled(), true);
+    const label =
+      outcome === "corrected"
+        ? "Déclaration rectifiée"
+        : "Écart examiné, déclaration conservée";
+    await dialog.getByRole("radio", { name: new RegExp(label) }).check();
+    assert.equal(await save().isDisabled(), true);
+    const note = "Examen effectué, référence de suivi 2026-42.";
+    await dialog.getByLabel("Justification de la résolution").fill(note);
+    for (const width of [1440, 390]) {
+      await resolutionPage.setViewportSize({ width, height: 1050 });
+      await noOverflow(resolutionPage);
+      assert.equal(
+        await dialog.evaluate(
+          (element) => element.scrollWidth > element.clientWidth,
+        ),
+        false,
+      );
+      await capture(
+        resolutionPage,
+        `reports-resolution-${outcome}-${width}.png`,
+      );
+    }
+    if (outcome === "corrected") {
+      resolutionFixture.failMutation = 1;
+      await save().click();
+      await dialog
+        .getByText(
+          "La résolution n’a pas été enregistrée. Vérifiez les données et réessayez.",
+          { exact: true },
+        )
+        .waitFor();
+      assert.equal(
+        await dialog.getByLabel("Justification de la résolution").inputValue(),
+        note,
+      );
+      assert.equal(state.progress[key].resolutions, undefined);
+    } else {
+      resolutionFixture.conflict = true;
+      await save().click();
+      await dialog
+        .getByText(/Les données ont changé pendant l’examen/)
+        .waitFor();
+      assert.equal(await save().isDisabled(), true);
+      await dialog
+        .getByRole("button", { name: "Revenir au rapport", exact: true })
+        .click();
+      await resolutionPage
+        .getByRole("button", {
+          name: "Examiner et résoudre l’écart",
+          exact: true,
+        })
+        .click();
+      dialog = resolutionPage.getByRole("dialog", {
+        name: "Examiner l’écart",
+        exact: true,
+      });
+      await dialog.getByRole("radio", { name: new RegExp(label) }).check();
+      await dialog.getByLabel("Justification de la résolution").fill(note);
+    }
+    await save().click();
+    await resolutionPage
+      .getByText("Écart résolu", { exact: true })
+      .first()
+      .waitFor();
+    assert.deepEqual(state.progress[key].snapshot, original);
+    assert.equal(state.progress[key].resolutions.length, 1);
+    assert.equal(
+      buildReportReminders(state, 2026, new Date("2026-11-03T12:00:00Z")).some(
+        (item) => item.id === key,
+      ),
+      false,
+    );
+    await resolutionPage.getByRole("button", { name: /^Historique/ }).click();
+    await resolutionPage
+      .getByRole("dialog")
+      .getByRole("button")
+      .filter({ hasText: note })
+      .click();
+    await resolutionPage
+      .getByText("Résolution enregistrée", { exact: true })
+      .waitFor();
+    assert.match(await total(resolutionPage), /501,00/);
+    await resolutionPage
+      .getByRole("button", { name: "Revenir au calcul courant", exact: true })
+      .click();
+    await resolutionPage
+      .getByRole("button", { name: "Voir la copie confirmée", exact: true })
+      .click();
+    assert.match(await total(resolutionPage), /500,00/);
+    await resolutionPage
+      .getByRole("button", { name: "Revenir au calcul courant", exact: true })
+      .click();
+    await resolutionPage
+      .getByRole("link", { name: "Tous les rapports", exact: true })
+      .click();
+    await resolutionPage
+      .getByRole("heading", { name: /Rapports à traiter/ })
+      .waitFor();
+    assert.equal(await resolutionPage.locator(".rp-report-row").count(), 0);
+    await resolutionPage.reload();
+    await resolutionPage
+      .getByRole("heading", { name: /Rapports à traiter/ })
+      .waitFor();
+    assert.equal(await resolutionPage.locator(".rp-report-row").count(), 0);
+    // A new change with an unchanged total must also reopen the work item.
+    state.operations[0].paymentMethod = "card";
+    state.factsRevision = "resolution-second-change";
+    await resolutionPage
+      .getByRole("button", { name: "Actualiser les données", exact: true })
+      .click();
+    await resolutionPage
+      .getByText("Écart à examiner", { exact: true })
+      .waitFor();
+    assert.equal(await resolutionPage.locator(".rp-report-row").count(), 1);
+    await resolutionPage
+      .getByRole("link", { name: "Cotisations sociales", exact: true })
+      .click();
+    await resolutionPage
+      .getByRole("button", {
+        name: "Consulter la dernière résolution",
+        exact: true,
+      })
+      .click();
+    await resolutionPage
+      .getByText("Résolution enregistrée", { exact: true })
+      .waitFor();
+    assert.match(await total(resolutionPage), /501,00/);
+    await resolutionPage
+      .getByRole("button", { name: "Revenir au calcul courant", exact: true })
+      .click();
+    await resolutionPage
+      .getByRole("button", {
+        name: "Examiner et résoudre l’écart",
+        exact: true,
+      })
+      .click();
+    dialog = resolutionPage.getByRole("dialog", {
+      name: "Examiner l’écart",
+      exact: true,
+    });
+    await dialog.getByText("Dernière résolution", { exact: true }).waitFor();
+    await dialog
+      .getByRole("heading", { name: "Opérations modifiées (1)", exact: true })
+      .waitFor();
+    assert.match(
+      await dialog.locator(".rp-discrepancy-totals").innerText(),
+      /501,00[\s\S]*501,00[\s\S]*0,00/,
+    );
+    await resolutionPage.context().close();
+
+    const { page: reader, fixture: readerFixture } = await createPage({
+      canWrite: false,
+    });
+    readerFixture.state = structuredClone(state);
+    await open(reader, "/social");
+    await reader
+      .getByRole("button", { name: "Examiner l’écart", exact: true })
+      .click();
+    assert.equal(
+      await reader
+        .getByRole("button", { name: "Enregistrer la résolution", exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(await reader.getByRole("radio").count(), 0);
+    await reader.context().close();
+  }
 
   for (const kind of ["social", "tourist", "owner", "custom"]) {
     const { page: filters, fixture: filterFixture } = await createPage();

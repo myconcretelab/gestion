@@ -4,7 +4,7 @@ import {
   getReportPeriod,
   reportPeriodKey,
   reportStatus,
-  snapshotDiffers,
+  reportHasPendingChanges,
   type ReportDefinition,
 } from "./reports.js";
 
@@ -75,7 +75,7 @@ export function reportWorkItem(
     (beforeTracking || legacyReportPeriodConfirmed(state, report, month));
   const confirmed =
     historical ||
-    Boolean(progress?.snapshot && !snapshotDiffers(progress.snapshot, result));
+    Boolean(progress?.snapshot && !reportHasPendingChanges(progress, result));
   const status = historical
     ? beforeTracking
       ? "Déjà traité"
