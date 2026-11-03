@@ -59,6 +59,10 @@ Le détail d’une demande et la fiche de réservation affichent les montants en
 
 Les emails de confirmation au client et au propriétaire contiennent le détail des options, le paiement reçu, le solde et la référence. Aucun email d’attente d’approbation n’est envoyé pour le parcours carte.
 
+Après l’envoi des emails, une réservation confirmée par paiement en ligne des arrhes ou de la totalité reçoit aussi un SMS si le client a renseigné son téléphone. Le texte est celui du champ **SMS de confirmation**, dans **Paramètres → Emails → Confirmation de réservation · approbation ou paiement Stripe**, également utilisé après une approbation manuelle. L’envoi utilise la configuration SMS OVH existante.
+
+Un envoi est enregistré dans la file de tâches par paiement, puis traité par le worker des paiements, généralement sous une minute. Les notifications Stripe répétées ne créent pas de nouvel envoi. Les échecs SMS sont réessayés indépendamment des emails déjà expédiés. Aucun SMS de confirmation n’est envoyé pour un paiement en attente, à vérifier, remboursé, ou un règlement par lien sur une réservation existante. L’état est revérifié avant l’envoi pour ignorer une confirmation devenue obsolète. Aucune nouvelle migration n’est nécessaire.
+
 ## Textes et présentation des emails
 
 Dans **Paramètres → Emails**, les messages de réservation reprennent les textes enregistrés et leurs variables. Le même modèle client **Confirmation de réservation** sert après une approbation manuelle et après un paiement Stripe. `{{stayPaymentInstruction}}` adapte la consigne au paiement reçu ; `{{paymentSummary}}` affiche les arrhes ou le paiement reçu et le solde. Une ancienne confirmation qui omet ce dernier bloc reçoit automatiquement les informations de règlement. `{{optionsSummary}}` détaille tarifs, quantités, nuits et montants des options sélectionnées.

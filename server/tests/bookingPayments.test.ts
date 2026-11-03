@@ -4,8 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { before, after, test } from "node:test";
+import { before, after, test, type TestContext } from "node:test";
 import express from "express";
+import nodemailer from "nodemailer";
 import Stripe from "stripe";
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "booking-payments-"));
@@ -154,6 +155,238 @@ before(async () => {
       },
     }),
   );
+});
+
+const mockPaymentMessaging = async (t: TestContext) => {
+  const { env } = await import("../src/config/env.js");
+  const mailer = await import("../src/services/mailer.js");
+  const { smsMessageChannel } =
+    await import("../src/services/messageChannels/sms.js");
+  const jobs = await import("../src/modules/bookingPayments/sms.js");
+  const previous = { host: env.SMTP_HOST, from: env.SMTP_FROM };
+  const sent = {
+    emails: [] as any[],
+    sms: [] as { message: string; recipients?: string[] }[],
+    smsError: null as Error | null,
+  };
+  env.SMTP_HOST = "smtp.example.test";
+  env.SMTP_FROM = "owner@example.test";
+  mailer.resetSmtpTransportForTests();
+  t.after(() => {
+    env.SMTP_HOST = previous.host;
+    env.SMTP_FROM = previous.from;
+    mailer.resetSmtpTransportForTests();
+  });
+  t.mock.method(
+    nodemailer,
+    "createTransport",
+    () =>
+      ({
+        verify: async () => true,
+        sendMail: async (message: any) => {
+          sent.emails.push(message);
+          return { accepted: [message.to], rejected: [], pending: [] };
+        },
+      }) as any,
+  );
+  t.mock.method(smsMessageChannel, "send", async (input) => {
+    if (sent.smsError) throw sent.smsError;
+    sent.sms.push(input);
+    return {
+      channel: "sms",
+      sent_count: 1,
+      skipped_reason: null,
+      deliveries: [],
+    };
+  });
+  return { sent, jobs };
+};
+
+test("SMS après paiement des arrhes ou de la totalité : texte configuré et un seul envoi", async (t) => {
+  const { sent, jobs } = await mockPaymentMessaging(t);
+  const templates =
+    await import("../src/services/documentEmailTemplateSettings.js");
+  await inOrg(async () => {
+    const previous = templates.readDocumentEmailTemplateSettings();
+    const settings = templates.buildDefaultDocumentEmailTemplateSettings();
+    settings.bookingRequestApproved.smsBody =
+      "Merci {{clientName}}, séjour confirmé : {{giteName}}, du {{dateEntree}} au {{dateSortie}}.";
+    templates.writeDocumentEmailTemplateSettings(settings);
+    t.after(() =>
+      inOrg(() => templates.writeDocumentEmailTemplateSettings(previous)),
+    );
+
+    for (const purpose of ["deposit", "full"] as const) {
+      const f = await fixture(purpose);
+      await db.default.bookingRequest.update({
+        where: { id: f.request.id },
+        data: { telephone: "06 00 00 00 00", email: "client@example.test" },
+      });
+      assert.equal(await service.applyVerifiedSession(f.session), "confirmed");
+      await Promise.all([
+        service.deliverPaymentNotification(f.request.payment!.id),
+        service.deliverPaymentNotification(f.request.payment!.id),
+      ]);
+      assert.equal(await service.applyVerifiedSession(f.session), "duplicate");
+      await service.deliverPaymentNotification(f.request.payment!.id);
+      assert.equal(
+        await db.default.organizationJob.count({
+          where: {
+            type: "booking.sms.confirmation",
+            idempotency_key: { contains: f.request.payment!.id },
+          },
+        }),
+        1,
+      );
+      assert.equal(sent.sms.length, purpose === "deposit" ? 0 : 1);
+      await Promise.all([
+        jobs.runBookingSmsJobBatch(),
+        jobs.runBookingSmsJobBatch(),
+      ]);
+      await jobs.runBookingSmsJobBatch();
+      const message = sent.sms.at(-1)!;
+      assert.deepEqual(message.recipients, ["06 00 00 00 00"]);
+      assert.match(
+        message.message,
+        /^Merci Client fictif, séjour confirmé : Gîte fictif, du /,
+      );
+      assert.ok(
+        message.message.includes(
+          f.request.date_entree.toISOString().slice(0, 10),
+        ),
+      );
+      assert.doesNotMatch(message.message, /{{/);
+    }
+    assert.equal(sent.sms.length, 2);
+    assert.equal(sent.emails.length, 2);
+  });
+});
+
+test("un échec OVH est réessayé sans renvoyer l’email de confirmation", async (t) => {
+  const { sent, jobs } = await mockPaymentMessaging(t);
+  await inOrg(async () => {
+    const f = await fixture();
+    await db.default.bookingRequest.update({
+      where: { id: f.request.id },
+      data: { telephone: "0600000000", email: "client@example.test" },
+    });
+    await service.applyVerifiedSession(f.session);
+    await service.deliverPaymentNotification(f.request.payment!.id);
+    sent.smsError = new Error("OVH indisponible pendant le test");
+    const [failed] = await jobs.runBookingSmsJobBatch();
+    assert.equal(failed.status, "retrying");
+    assert.equal(sent.emails.length, 1);
+    assert.equal(sent.sms.length, 0);
+    const payment = await db.default.bookingPayment.findUniqueOrThrow({
+      where: { id: f.request.payment!.id },
+    });
+    assert.ok(payment.notification_sent_at);
+    assert.equal(payment.status, "paid");
+
+    sent.smsError = null;
+    await db.default.organizationJob.update({
+      where: { id: failed.jobId },
+      data: { run_at: new Date(0) },
+    });
+    await service.deliverPaymentNotification(payment.id);
+    const [retried] = await jobs.runBookingSmsJobBatch();
+    assert.equal(retried.status, "succeeded");
+    assert.equal(sent.sms.length, 1);
+    assert.equal(sent.emails.length, 1);
+    assert.equal(
+      await db.default.organizationJobAttempt.count({
+        where: { job_id: failed.jobId },
+      }),
+      2,
+    );
+  });
+});
+
+test("aucun SMS sans téléphone, pour un paiement non confirmé ou après remboursement", async (t) => {
+  const { sent, jobs } = await mockPaymentMessaging(t);
+  await inOrg(async () => {
+    for (const scenario of [
+      "missing_phone",
+      "unpaid",
+      "requires_review",
+      "refunded",
+      "partially_refunded",
+    ] as const) {
+      const f = await fixture();
+      await db.default.bookingRequest.update({
+        where: { id: f.request.id },
+        data: { telephone: scenario === "missing_phone" ? "  " : "0600000000" },
+      });
+      await service.applyVerifiedSession({
+        ...f.session,
+        ...(scenario === "unpaid" ? { payment_status: "unpaid" } : {}),
+        ...(scenario === "requires_review" ? { amount_total: 100 } : {}),
+      });
+      if (scenario === "refunded" || scenario === "partially_refunded") {
+        await db.default.bookingPayment.update({
+          where: { id: f.request.payment!.id },
+          data: {
+            status: scenario,
+            refunded_amount_cents: scenario === "refunded" ? 9000 : 100,
+          },
+        });
+      }
+      await service.deliverPaymentNotification(f.request.payment!.id);
+      assert.equal(
+        await db.default.organizationJob.count({
+          where: {
+            type: "booking.sms.confirmation",
+            idempotency_key: { contains: f.request.payment!.id },
+          },
+        }),
+        0,
+        scenario,
+      );
+    }
+    await jobs.runBookingSmsJobBatch();
+    assert.equal(sent.sms.length, 0);
+  });
+});
+
+test("une confirmation SMS en attente est ignorée si le paiement ou la demande devient obsolète", async (t) => {
+  const { sent, jobs } = await mockPaymentMessaging(t);
+  await inOrg(async () => {
+    for (const scenario of [
+      "refunded",
+      "request_rejected",
+      "phone_removed",
+      "other_mode",
+    ] as const) {
+      const f = await fixture();
+      await db.default.bookingRequest.update({
+        where: { id: f.request.id },
+        data: { telephone: "0600000000" },
+      });
+      await service.applyVerifiedSession(f.session);
+      await service.deliverPaymentNotification(f.request.payment!.id);
+      if (scenario === "refunded" || scenario === "other_mode") {
+        await db.default.bookingPayment.update({
+          where: { id: f.request.payment!.id },
+          data:
+            scenario === "refunded"
+              ? { status: "refunded", refunded_amount_cents: 9000 }
+              : { stripe_mode: "live" },
+        });
+      } else {
+        await db.default.bookingRequest.update({
+          where: { id: f.request.id },
+          data:
+            scenario === "request_rejected"
+              ? { status: "rejected" }
+              : { telephone: null },
+        });
+      }
+      const [result] = await jobs.runBookingSmsJobBatch();
+      assert.equal(result.status, "succeeded");
+      assert.deepEqual(result.result, { skipped: "not_confirmed" });
+    }
+    assert.equal(sent.sms.length, 0);
+  });
 });
 
 test("Telegram après paiement : reprise par destinataire sans renvoi des emails, puis remboursement", async () => {

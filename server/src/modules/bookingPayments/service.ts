@@ -5,6 +5,7 @@ import {
   queueBookingPaymentTelegram,
   runBookingTelegramJobBatch,
 } from "./telegram.js";
+import { queueBookingPaymentSms, runBookingSmsJobBatch } from "./sms.js";
 import {
   applyReservationLinkSession,
   sendReservationLinkReceipt,
@@ -279,6 +280,7 @@ export const deliverPaymentNotification = async (id: string) => {
       throw new Error("Demande de paiement introuvable.");
     const request = hydrateBookingRequest(payment.booking_request);
     await sendBookingPaymentEmails(request, payment);
+    await queueBookingPaymentSms(payment);
     await prisma.bookingPayment.update({
       where: { id },
       data: { notification_sent_at: new Date(), notification_lease_at: null },
@@ -466,8 +468,10 @@ export const startBookingPaymentsWorker = () => {
     running = true;
     try {
       await reconcileBookingPayments();
-      if (env.ORGANIZATION_JOB_WORKER_ENABLED)
+      if (env.ORGANIZATION_JOB_WORKER_ENABLED) {
+        await runBookingSmsJobBatch();
         await runBookingTelegramJobBatch();
+      }
     } finally {
       running = false;
     }

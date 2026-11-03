@@ -5905,7 +5905,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                           />
                         </label>
                         <label className="field">
-                          SMS d’approbation
+                          SMS de confirmation
                           <textarea
                             rows={4}
                             maxLength={1000}
@@ -5923,7 +5923,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
                             }}
                             disabled={savingDocumentEmailTexts}
                           />
-                          <small>Envoyé après l’email si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{giteNameWithPreposition}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
+                          <small>Envoyé après l’email lors d’une approbation manuelle ou d’un paiement en ligne des arrhes ou de la totalité, si un numéro est renseigné. Variables : <code>{"{{clientName}}"}</code>, <code>{"{{giteName}}"}</code>, <code>{"{{giteNameWithPreposition}}"}</code>, <code>{"{{dateEntree}}"}</code>, <code>{"{{dateSortie}}"}</code>.</small>
                         </label>
                         <label className="field">
                           Activités suggérées
