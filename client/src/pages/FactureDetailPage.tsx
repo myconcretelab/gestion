@@ -252,7 +252,13 @@ const FactureDetailPage = () => {
                 Email
               </button>
             ) : (
-              <button type="button" disabled title="Email client non renseigné">
+              <button
+                type="button"
+                disabled
+                title={facture.lifecycle_status === "draft"
+                  ? "Validez définitivement la facture avant de l’envoyer par e-mail."
+                  : "Email client non renseigné"}
+              >
                 Envoyer facture
               </button>
             )}
