@@ -4,7 +4,10 @@ import { emptyInvoiceFiscalInput } from "@contrats/shared";
 import {
   invoiceFormCompletion,
   invoiceIssueTarget,
+  invoiceCompletionProgress,
+  getInvoiceValidationFieldErrors,
 } from "../src/pages/shared/invoiceFormCompletion.ts";
+import { ApiError } from "../src/utils/api.ts";
 
 const context = {
   name: "Client exemple",
@@ -106,4 +109,75 @@ test("les liens ciblent chaque ligne et les valeurs invalides ne cassent pas l�
   assert.ok(items.some((item) => item.target === "invoice-buyer-name"));
   assert.ok(items.some((item) => item.target === "invoice-buyer-email"));
   assert.ok(items.some((item) => item.label.includes("Ligne 1")));
+});
+
+test("l’assistant signale le conflit d’effectif avant enregistrement sans effacer les enfants", () => {
+  const occupancy = {
+    gite: { capacite_max: 4, nb_adultes_max: 4, nb_enfants_max: 0 },
+    nbAdultes: 2,
+    nbEnfants: 2,
+  };
+  const items = invoiceFormCompletion(
+    completeInput(),
+    210,
+    { vatRegime: "franchise_en_base" },
+    { ...context, occupancy },
+  );
+  assert.deepEqual(items, [
+    {
+      label: "Aucun enfant n'est configuré pour ce gîte.",
+      target: "invoice-children",
+    },
+  ]);
+  assert.equal(invoiceCompletionProgress(items), 80);
+  assert.equal(occupancy.nbEnfants, 2);
+  assert.deepEqual(
+    invoiceFormCompletion(
+      completeInput(),
+      210,
+      { vatRegime: "franchise_en_base" },
+      {
+        ...context,
+        occupancy: {
+          ...occupancy,
+          gite: { ...occupancy.gite, nb_enfants_max: 2 },
+        },
+      },
+    ),
+    [],
+  );
+});
+
+test("les erreurs serveur sur les voyageurs sont conservées et ajoutées à l’assistant", () => {
+  const fieldErrors = getInvoiceValidationFieldErrors(
+    new ApiError(400, {
+      error: "Validation",
+      details: {
+        fieldErrors: {
+          nb_enfants_2_17: ["Aucun enfant n'est configuré pour ce gîte."],
+          nb_adultes: [
+            "Le nombre d'adultes ne peut pas dépasser 4 pour ce gîte.",
+          ],
+        },
+      },
+    }),
+  );
+  assert.equal(Object.keys(fieldErrors).length, 2);
+  const items = invoiceFormCompletion(
+    completeInput(),
+    210,
+    { vatRegime: "franchise_en_base" },
+    {
+      ...context,
+      fieldErrors,
+      occupancy: {
+        gite: { capacite_max: 4, nb_adultes_max: 4, nb_enfants_max: 0 },
+        nbAdultes: 5,
+        nbEnfants: 2,
+      },
+    },
+  );
+  assert.equal(items.length, 2);
+  assert.ok(items.some((item) => item.target === "invoice-adults"));
+  assert.ok(items.some((item) => item.target === "invoice-children"));
 });

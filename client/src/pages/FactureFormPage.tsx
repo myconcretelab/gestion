@@ -5,7 +5,7 @@ import { reservationAmountToCollect } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import { applyIndividualVatPreset, changedVatLineIds, individualVatPresetHint, type AppliedInvoiceVatPresets } from "./shared/invoiceVatPreset";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { defaultInvoiceTheme, resolveInvoiceTheme, type InvoiceThemeId, type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
+import { documentOccupancyIssues, getDocumentOccupancyLimits, defaultInvoiceTheme, resolveInvoiceTheme, type DocumentOccupancyGite, type InvoiceThemeId, type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
 import InvoiceThemePicker from "./shared/InvoiceThemePicker";
 import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
 import { createInvoiceFormInput } from "./shared/invoiceFormDefaults";
@@ -13,7 +13,7 @@ import { invoiceReservationPrefill } from "./shared/invoiceReservationPrefill";
 import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
 import InvoiceCompletionAssistant from "./shared/InvoiceCompletionAssistant";
 import InvoiceFormHeader from "./shared/InvoiceFormHeader";
-import { focusInvoiceField, invoiceFormCompletion, type InvoiceValidationOptions } from "./shared/invoiceFormCompletion";
+import { focusInvoiceField, getInvoiceValidationFieldErrors, invoiceFormCompletion, type InvoiceFieldErrors, type InvoiceFieldKey, type InvoiceValidationOptions } from "./shared/invoiceFormCompletion";
 import InvoiceFiscalEditor from "./shared/InvoiceFiscalEditor";
 import InvoiceOptionsDialog from "./shared/InvoiceOptionsDialog";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
@@ -23,7 +23,6 @@ import { formatDate, formatEuro } from "../utils/format";
 import {
   addDays,
   defaultOptions,
-  extractValidationFieldErrors,
   formatDateInput,
   mergeOptions,
   nextDayFromInput,
@@ -66,46 +65,6 @@ const normalizeInvoiceExtraFees = (rows: InvoiceExtraFeeRow[]) =>
       ...(row.source_reservation_id ? { source_reservation_id: row.source_reservation_id } : {}),
     }))
     .filter((fee) => Number.isFinite(fee.montant) && fee.montant > 0);
-
-type ContractFieldKey =
-  | "gite_id"
-  | "locataire_nom"
-  | "locataire_adresse"
-  | "locataire_tel"
-  | "locataire_email"
-  | "date_debut"
-  | "heure_arrivee"
-  | "date_fin"
-  | "heure_depart"
-  | "prix_par_nuit"
-  | "remise_montant"
-  | "arrhes_montant"
-  | "arrhes_date_limite"
-  | "statut_paiement";
-
-type FieldErrors = Partial<Record<ContractFieldKey, string>>;
-
-const contractFieldKeys: ContractFieldKey[] = [
-  "gite_id",
-  "locataire_nom",
-  "locataire_adresse",
-  "locataire_tel",
-  "locataire_email",
-  "date_debut",
-  "heure_arrivee",
-  "date_fin",
-  "heure_depart",
-  "prix_par_nuit",
-  "remise_montant",
-  "arrhes_montant",
-  "arrhes_date_limite",
-  "statut_paiement",
-];
-
-const contractFieldKeySet = new Set<ContractFieldKey>(contractFieldKeys);
-
-const getValidationFieldErrors = (error: unknown): FieldErrors =>
-  extractValidationFieldErrors(error, contractFieldKeySet, "date_fin");
 
 const FactureFormPage = () => {
   const [fiscalInput, setFiscalInput] = useState<InvoiceFiscalInput>(createInvoiceFormInput);
@@ -155,7 +114,9 @@ const FactureFormPage = () => {
   const [arrhesDateLimite, setArrhesDateLimite] = useState("");
   const [clausesText, setClausesText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [fieldErrors, setFieldErrors] = useState<InvoiceFieldErrors>({});
+  const [refreshedOccupancyGite, setRefreshedOccupancyGite] = useState<(DocumentOccupancyGite & { id: string }) | null>(null);
+  const [refreshingOccupancy, setRefreshingOccupancy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [createdContract, setCreatedContract] = useState<Facture | null>(null);
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
@@ -595,8 +556,38 @@ const FactureFormPage = () => {
     return next;
   }, [clausesText, remiseReason, invoiceTheme]);
 
+  const occupancyGite = refreshedOccupancyGite?.id === selectedGite?.id ? refreshedOccupancyGite : selectedGite;
+  const occupancy = !isMultiReservation && occupancyGite ? { gite: occupancyGite, nbAdultes, nbEnfants } : undefined;
+  const occupancyIssues = occupancy ? documentOccupancyIssues(occupancy) : [];
+  const occupancyLimits = occupancyGite ? getDocumentOccupancyLimits(occupancyGite, nbAdultes) : null;
+  const occupancyFieldErrors: InvoiceFieldErrors = { ...Object.fromEntries(occupancyIssues.map(({ field, message }) => [field, message])), ...fieldErrors };
+  useEffect(() => {
+    setFieldErrors(previous => {
+      if (!previous.nb_adultes && !previous.nb_enfants_2_17) return previous;
+      const { nb_adultes, nb_enfants_2_17, ...remaining } = previous;
+      return remaining;
+    });
+  }, [giteId, nbAdultes, nbEnfants, isMultiReservation]);
+
+  const refreshOccupancy = async () => {
+    setRefreshingOccupancy(true);
+    setError(null);
+    try {
+      const gite = await apiFetch<DocumentOccupancyGite & { id: string }>(`/gites/${encodeURIComponent(giteId)}`);
+      setRefreshedOccupancyGite(gite);
+      setFieldErrors(previous => {
+        const { nb_adultes, nb_enfants_2_17, ...remaining } = previous;
+        return remaining;
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Impossible d’actualiser les capacités du gîte.");
+    } finally {
+      setRefreshingOccupancy(false);
+    }
+  };
+
   const expectedTotal = (isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal;
-  const draftReady = Boolean(giteId && locataireNom.trim() && dateDebut && dateFin && dateFin > dateDebut);
+  const draftReady = Boolean(giteId && locataireNom.trim() && dateDebut && dateFin && dateFin > dateDebut && !occupancyIssues.length);
   const previewPayload = useMemo(() => {
     const payload: any = {
       fiscal_input: fiscalInput,
@@ -710,7 +701,7 @@ const FactureFormPage = () => {
   }, [fiscalInput, vatPresetContextKey]);
 
   const completionItems = [...(linesError ? [{ label: "Actualiser les lignes et les vérifications du séjour", target: "invoice-lines" }] : []), ...invoiceFormCompletion(fiscalInput, expectedTotal, validationOptions, {
-    name: locataireNom, giteId, start: dateDebut, end: dateFin, email: locataireEmail,
+    name: locataireNom, giteId, start: dateDebut, end: dateFin, email: locataireEmail, occupancy, fieldErrors,
   })];
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
@@ -773,14 +764,14 @@ const FactureFormPage = () => {
     return () => window.cancelAnimationFrame(frame);
   }, [fiscalInput, id, location.hash]);
 
-  const submit = useDocumentSubmit<Facture, ContractFieldKey>({
+  const submit = useDocumentSubmit<Facture, InvoiceFieldKey>({
     endpointBase: "/invoices",
     id: id ?? savedDraft?.id,
     isEdit: isEdit || Boolean(savedDraft),
     canSubmit: draftReady && !preparingLines,
     payload: { ...previewPayload, ...((isEdit || savedDraft) ? { revision: editingContract?.revision ?? savedDraft?.revision } : {}) },
     payloadKey,
-    getValidationFieldErrors,
+    getValidationFieldErrors: getInvoiceValidationFieldErrors,
     setSaving,
     setError,
     setFieldErrors,
@@ -846,6 +837,7 @@ const FactureFormPage = () => {
         <label className={getFieldClassName("date_fin")}>
           Fin
           <input
+            id="invoice-end"
             type="date"
             disabled={isMultiReservation}
             value={dateFin}
@@ -1256,6 +1248,7 @@ const FactureFormPage = () => {
           Remise
           <div className="field-row field-row--compact">
             <input
+              id="invoice-discount"
               type="number"
               step={1}
               value={remiseValue}
@@ -1291,7 +1284,7 @@ const FactureFormPage = () => {
       {!isMultiReservation && <TouristTaxStayEditor
         value={options.tourist_tax} settings={selectedGite?.taxe_sejour_config}
         onChange={tourist_tax => setOptions(previous => ({ ...previous, tourist_tax }))}
-        nights={totals.nbNuits} adults={nbAdultes} children={nbEnfants} onAdultsChange={setNbAdultes} onChildrenChange={setNbEnfants}
+        nights={totals.nbNuits} adults={nbAdultes} children={nbEnfants}
         accommodation={totals.totalSansOptions} start={dateDebut}
         initialize={!isEdit && !fromContractId && !fromReservationId && !selectedReservationIds.length}
       />}
@@ -1416,6 +1409,7 @@ const FactureFormPage = () => {
           <label className={getFieldClassName("locataire_tel")}>
             Téléphone client (optionnel)
             <input
+              id="invoice-buyer-phone"
               value={locataireTel}
               onChange={(e) => {
                 clearFieldError("locataire_tel");
@@ -1528,6 +1522,46 @@ const FactureFormPage = () => {
             </details>
           </>
         ) : stayDatesEditor}
+        {!isMultiReservation && (
+          <div>
+            <div className="section-title">Voyageurs hébergés</div>
+            <div className="grid-2">
+              <label className={`field${occupancyFieldErrors.nb_adultes ? " field--error" : ""}`}>
+                Adultes hébergés
+                <input
+                  id="invoice-adults"
+                  type="number"
+                  min={0}
+                  step={1}
+                  max={occupancyLimits?.maxAdults}
+                  value={nbAdultes}
+                  aria-invalid={Boolean(occupancyFieldErrors.nb_adultes)}
+                  aria-describedby={occupancyFieldErrors.nb_adultes ? "invoice-adults-error" : undefined}
+                  onChange={event => setNbAdultes(Math.max(0, Math.trunc(Number(event.target.value))))}
+                />
+                {occupancyLimits && <small>Maximum configuré dans la fiche du gîte : {occupancyLimits.maxAdults} adulte(s).</small>}
+                {occupancyFieldErrors.nb_adultes && <div id="invoice-adults-error" className="field-error" role="alert">{occupancyFieldErrors.nb_adultes}</div>}
+              </label>
+              <label className={`field${occupancyFieldErrors.nb_enfants_2_17 ? " field--error" : ""}`}>
+                Enfants de 2 à 17 ans
+                <input
+                  id="invoice-children"
+                  type="number"
+                  min={0}
+                  step={1}
+                  max={occupancyLimits?.maxChildren}
+                  value={nbEnfants}
+                  aria-invalid={Boolean(occupancyFieldErrors.nb_enfants_2_17)}
+                  aria-describedby={occupancyFieldErrors.nb_enfants_2_17 ? "invoice-children-error" : undefined}
+                  onChange={event => setNbEnfants(Math.max(0, Math.trunc(Number(event.target.value))))}
+                />
+                {occupancyLimits && <small>Maximum configuré dans la fiche du gîte : {occupancyLimits.configuredMaxChildren} enfant(s). Avec {nbAdultes} adulte(s), maximum {occupancyLimits.maxChildren} enfant(s) pour ce séjour.</small>}
+                {occupancyFieldErrors.nb_enfants_2_17 && <div id="invoice-children-error" className="field-error" role="alert">{occupancyFieldErrors.nb_enfants_2_17}</div>}
+              </label>
+            </div>
+            {Boolean(occupancyIssues.length) && <div className="field-hint"><p>L’effectif saisi dépasse les limites de la fiche du gîte. Vérifiez l’effectif du séjour ou les <Link to={`/gites?gite=${encodeURIComponent(giteId)}&section=base-fiche`} target="_blank" rel="noreferrer">capacités configurées du gîte (nouvel onglet)</Link>.</p><button type="button" className="secondary" disabled={refreshingOccupancy} onClick={refreshOccupancy}>{refreshingOccupancy ? "Actualisation…" : "Actualiser les capacités après modification"}</button></div>}
+          </div>
+        )}
       </div>
 
       <details className="card invoice-form__optional">
@@ -1567,7 +1601,7 @@ const FactureFormPage = () => {
             {savedDraft && lastSavedKey === payloadKey && <Link className="invoice-save__next" to={`/factures/${savedDraft.id}`}>Ouvrir la fiche pour vérifier et valider →</Link>}
             {createdContract && <button type="button" className="secondary" onClick={downloadPdf}>Télécharger le brouillon PDF</button>}
           </div>
-          {!!completionItems.length && <p className="field-hint">{draftReady ? "Le brouillon peut être enregistré maintenant. L’assistant vous guide pour compléter les informations avant validation." : "Choisissez un gîte, renseignez le nom du client et les dates pour enregistrer un premier brouillon."}</p>}
+          {!!completionItems.length && <p className="field-hint">{occupancyIssues.length ? "Vérifiez le nombre de voyageurs et les capacités du gîte avant d’enregistrer le brouillon." : draftReady ? "Le brouillon peut être enregistré maintenant. L’assistant vous guide pour compléter les informations avant validation." : "Choisissez un gîte, renseignez le nom du client et les dates pour enregistrer un premier brouillon."}</p>}
         </footer>
       </InvoiceFiscalEditor>
 

@@ -1,4 +1,5 @@
-import { otaPriceSnapshotSchema, touristTaxStaySchema, parseTouristTaxSettings } from "@contrats/shared";
+import { documentOccupancyIssues, type DocumentOccupancyGite, otaPriceSnapshotSchema, touristTaxStaySchema, parseTouristTaxSettings } from "@contrats/shared";
+export { getDocumentOccupancyLimits } from "@contrats/shared";
 import fs from "fs/promises";
 import { z, ZodError } from "zod";
 import type { OptionsInput } from "../../services/contractCalculator.js";
@@ -140,62 +141,13 @@ export const buildDocumentListWhere = (params: {
   return where;
 };
 
-const toSafeInt = (value: unknown, fallback: number) => {
-  const normalized = Math.trunc(Number(value));
-  return Number.isFinite(normalized) ? normalized : fallback;
-};
-
-const getConfiguredChildrenMax = (gite: {
-  capacite_max: number;
-  nb_adultes_max: number;
-  nb_enfants_max?: number | null;
-}) => {
-  const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
-  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
-  const fallbackChildren = Math.max(0, capaciteMax - maxAdults);
-  return Math.max(0, toSafeInt(gite.nb_enfants_max ?? fallbackChildren, fallbackChildren));
-};
-
-export const getDocumentOccupancyLimits = (
-  gite: { capacite_max: number; nb_adultes_max: number; nb_enfants_max?: number | null },
-  nbAdultes = 0
-) => {
-  const capaciteMax = Math.max(1, toSafeInt(gite.capacite_max, 1));
-  const maxAdults = Math.min(capaciteMax, Math.max(1, toSafeInt(gite.nb_adultes_max, capaciteMax)));
-  const configuredMaxChildren = getConfiguredChildrenMax(gite);
-  const remainingCapacity = Math.max(0, capaciteMax - Math.max(0, toSafeInt(nbAdultes, 0)));
-  const maxChildren = Math.min(configuredMaxChildren, remainingCapacity);
-  return { capaciteMax, maxAdults, configuredMaxChildren, maxChildren };
-};
-
 export const validateDocumentOccupancy = (params: {
-  gite: { capacite_max: number; nb_adultes_max: number; nb_enfants_max?: number | null };
+  gite: DocumentOccupancyGite;
   nbAdultes: number;
   nbEnfants: number;
 }) => {
-  const limits = getDocumentOccupancyLimits(params.gite, params.nbAdultes);
-  const issues: ConstructorParameters<typeof ZodError>[0] = [];
-
-  if (params.nbAdultes > limits.maxAdults) {
-    issues.push({
-      code: "custom",
-      path: ["nb_adultes"],
-      message: `Le nombre d'adultes ne peut pas dépasser ${limits.maxAdults} pour ce gîte.`,
-    });
-  }
-
-  if (params.nbEnfants > limits.maxChildren) {
-    issues.push({
-      code: "custom",
-      path: ["nb_enfants_2_17"],
-      message:
-        limits.configuredMaxChildren === 0
-          ? "Aucun enfant n'est configuré pour ce gîte."
-          : limits.maxChildren < limits.configuredMaxChildren
-            ? `Avec ${params.nbAdultes} adulte(s), le nombre d'enfants ne peut pas dépasser ${limits.maxChildren} pour ce gîte.`
-            : `Le nombre d'enfants ne peut pas dépasser ${limits.configuredMaxChildren} pour ce gîte.`,
-    });
-  }
-
+  const issues = documentOccupancyIssues(params).map(({ field, message }) => ({
+    code: "custom" as const, path: [field], message,
+  }));
   return issues.length > 0 ? new ZodError(issues) : null;
 };

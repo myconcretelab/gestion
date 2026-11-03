@@ -1,8 +1,11 @@
 import {
   invoiceFiscalInputSchema,
   invoiceFiscalIssues,
+  documentOccupancyIssues,
+  type DocumentOccupancyGite,
   type InvoiceFiscalInput,
 } from "@contrats/shared";
+import { extractValidationFieldErrors } from "./rentalForm";
 
 import {
   formCompletionProgress,
@@ -13,6 +16,34 @@ export type InvoiceCompletionItem = FormCompletionItem;
 export type InvoiceValidationOptions = Parameters<
   typeof invoiceFiscalIssues
 >[2] & { sellerCountryCode?: string };
+
+const invoiceFieldTargets = {
+  gite_id: "invoice-gite",
+  locataire_nom: "invoice-buyer-name",
+  locataire_adresse: "buyer-address",
+  locataire_tel: "invoice-buyer-phone",
+  locataire_email: "invoice-buyer-email",
+  nb_adultes: "invoice-adults",
+  nb_enfants_2_17: "invoice-children",
+  date_debut: "invoice-start",
+  heure_arrivee: "invoice-start",
+  date_fin: "invoice-end",
+  heure_depart: "invoice-end",
+  prix_par_nuit: "invoice-nightly-price",
+  remise_montant: "invoice-discount",
+  arrhes_montant: "payment-details",
+  arrhes_date_limite: "payment-details",
+  statut_paiement: "payment-details",
+} as const;
+export type InvoiceFieldKey = keyof typeof invoiceFieldTargets;
+export type InvoiceFieldErrors = Partial<Record<InvoiceFieldKey, string>>;
+const invoiceFieldKeySet = new Set<InvoiceFieldKey>(
+  Object.keys(invoiceFieldTargets) as InvoiceFieldKey[],
+);
+export const getInvoiceValidationFieldErrors = (
+  error: unknown,
+): InvoiceFieldErrors =>
+  extractValidationFieldErrors(error, invoiceFieldKeySet, "date_fin");
 
 export const invoiceIssueTarget = (issue: string) => {
   if (issue.includes("Confirmez la vérification")) return "invoice-reviewed";
@@ -52,6 +83,12 @@ export function invoiceFormCompletion(
     start: string;
     end: string;
     email: string;
+    occupancy?: {
+      gite: DocumentOccupancyGite;
+      nbAdultes: number;
+      nbEnfants: number;
+    };
+    fieldErrors?: InvoiceFieldErrors;
   },
 ): InvoiceCompletionItem[] {
   const items: InvoiceCompletionItem[] = [];
@@ -72,6 +109,23 @@ export function invoiceFormCompletion(
       label: "Compléter les dates du séjour",
       target: "invoice-start",
     });
+  const fieldErrors: InvoiceFieldErrors = {
+    ...Object.fromEntries(
+      context.occupancy
+        ? documentOccupancyIssues(context.occupancy).map(
+            ({ field, message }) => [field, message],
+          )
+        : [],
+    ),
+    ...context.fieldErrors,
+  };
+  for (const [field, message] of Object.entries(fieldErrors)) {
+    if (message)
+      items.push({
+        label: message,
+        target: invoiceFieldTargets[field as InvoiceFieldKey],
+      });
+  }
   const parsed = invoiceFiscalInputSchema.safeParse(input);
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
@@ -116,7 +170,15 @@ export function invoiceCompletionProgress(
   const grouped = items.map((item) => {
     const target = item.target;
     const group = (() => {
-      if (target === "invoice-gite" || target === "invoice-start")
+      if (
+        [
+          "invoice-gite",
+          "invoice-start",
+          "invoice-end",
+          "invoice-adults",
+          "invoice-children",
+        ].includes(target)
+      )
         return "stay";
       if (target.startsWith("buyer-") || target.startsWith("invoice-buyer-"))
         return "buyer";

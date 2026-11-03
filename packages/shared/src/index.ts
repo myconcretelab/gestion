@@ -2,6 +2,7 @@ import { z } from "zod";
 export * from "./fiscal.js";
 export * from "./planning.js";
 export * from "./cleaningBilling.js";
+export * from "./documentOccupancy.js";
 export * from "./nightRegister.js";
 
 export const organizationIdSchema = z
