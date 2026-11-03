@@ -1,4 +1,6 @@
 import { bookingEmailTemplateKeys } from "@contrats/shared";
+import { touristTaxCollectionResponse, saveTouristTaxCollectionSettings } from "../services/touristTaxCollection.js";
+import { previewTouristTaxReapply, applyTouristTaxReapply } from "../modules/touristTax/collectionReapply.js";
 import {
   readReservationPaymentSettings,
   saveReservationPaymentSettings,
@@ -1363,6 +1365,22 @@ router.post(
 
 router.get("/import-log", (req, res) => {
   res.json(buildImportLogResponse(req.query.limit));
+});
+
+router.get("/tourist-tax-collection", async (_req, res, next) => {
+  try { res.json(await touristTaxCollectionResponse()); } catch (error) { next(error); }
+});
+router.get("/tourist-tax-collection/defaults", async (_req, res, next) => {
+  try { res.json(await touristTaxCollectionResponse()); } catch (error) { next(error); }
+});
+router.put("/tourist-tax-collection", async (req, res, next) => {
+  try { res.json(await saveTouristTaxCollectionSettings(req.body)); } catch (error) { next(error); }
+});
+router.post("/tourist-tax-collection/preview", async (req, res, next) => {
+  try { res.json(await previewTouristTaxReapply(req.body)); } catch (error) { next(error); }
+});
+router.post("/tourist-tax-collection/apply", async (req, res, next) => {
+  try { const user = await getAuthenticatedAppUser(req); res.json(await applyTouristTaxReapply(req.body, user?.id)); } catch (error) { next(error); }
 });
 
 router.get("/reservation-payments", async (_req, res, next) => {

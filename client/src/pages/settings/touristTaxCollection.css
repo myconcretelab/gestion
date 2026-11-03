@@ -1,0 +1,84 @@
+.tax-collection-table-wrap {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.tax-collection-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.tax-collection-table th,
+.tax-collection-table td {
+  padding: 0.85rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  vertical-align: middle;
+}
+.tax-collection-table thead {
+  background: var(--primary-soft);
+}
+.tax-collection-table select {
+  width: 100%;
+  min-width: 190px;
+  padding: 0.65rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.6rem;
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+}
+.tax-collection-scope {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.tourist-tax-collection .settings-card {
+  display: block;
+  min-width: 0;
+}
+.tourist-tax-collection .actions {
+  margin-top: 1rem;
+}
+@media (max-width: 650px) {
+  .tax-collection-scope {
+    grid-template-columns: 1fr;
+  }
+  .tax-collection-rules,
+  .tax-collection-rules tbody,
+  .tax-collection-rules tr,
+  .tax-collection-rules th,
+  .tax-collection-rules td {
+    display: block;
+  }
+  .tax-collection-rules thead {
+    display: none;
+  }
+  .tax-collection-rules tr {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tax-collection-rules th,
+  .tax-collection-rules td {
+    padding: 0.5rem 0;
+    border: 0;
+  }
+  .tax-collection-rules td::before {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+  }
+  .tax-collection-rules td:nth-child(2)::before {
+    content: "Qui collecte ?";
+  }
+  .tax-collection-rules td:nth-child(3)::before {
+    content: "Taxe dans le prix saisi ou importé";
+  }
+  .tax-collection-rules select {
+    min-width: 0;
+  }
+}
+.tourist-tax-collection {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}

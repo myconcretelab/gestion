@@ -2,6 +2,7 @@ import {
   computeTouristTax,
   getContractReceiptStatus,
   getBookingSource,
+  applyTouristTaxCollection,
   getReservationPaymentShortcutValue,
   legacyPaymentMethod,
   AUTOMATIC_PAYMENT_PLATFORMS,
@@ -22,6 +23,7 @@ import { fromJsonString } from "../../utils/jsonFields.js";
 import { cents } from "../bookingPayments/money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
+import { readTouristTaxCollectionSettings } from "../../services/touristTaxCollection.js";
 import { automaticPlatformReceiptThrough } from "./automaticReceipt.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
@@ -982,18 +984,39 @@ export const getContractPaymentContext = (id: string, db: Db = prisma) =>
 export const setReservationBookingSource = async (
   id: string,
   bookingSource: string,
-) => {
-  const row = await prisma.reservation.findUnique({
-    where: { id },
-    select: { id: true, stay_group_id: true },
+) =>
+  prisma.$transaction(async (tx) => {
+    const row = await tx.reservation.findUnique({
+      where: { id },
+      select: { id: true, stay_group_id: true },
+    });
+    if (!row) throw ledgerError("Réservation introuvable.", 404);
+    const [rows, collection] = await Promise.all([
+      tx.reservation.findMany({
+        where: row.stay_group_id
+          ? { stay_group_id: row.stay_group_id }
+          : { id },
+      }),
+      readTouristTaxCollectionSettings(tx),
+    ]);
+    for (const stay of rows) {
+      const options = fromJsonString<OptionsInput>(stay.options, {});
+      if (options.tourist_tax)
+        options.tourist_tax = applyTouristTaxCollection(
+          options.tourist_tax,
+          bookingSource,
+          collection,
+        );
+      await tx.reservation.update({
+        where: { id: stay.id },
+        data: {
+          booking_source: bookingSource,
+          options: JSON.stringify(options),
+        },
+      });
+    }
+    return { id, booking_source: bookingSource };
   });
-  if (!row) throw ledgerError("Réservation introuvable.", 404);
-  await prisma.reservation.updateMany({
-    where: row.stay_group_id ? { stay_group_id: row.stay_group_id } : { id },
-    data: { booking_source: bookingSource },
-  });
-  return { id, booking_source: bookingSource };
-};
 export const hasRecordedPayments = async (id: string, db: Db = prisma) =>
   Boolean(
     await db.reservationRecordedPayment.count({

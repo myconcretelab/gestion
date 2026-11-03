@@ -57,6 +57,7 @@ const familyPermission = (family: string, method: string): BusinessPermission =>
 
 /** Establishment edits may also change gîtes, and must not bypass their write permission. */
 export const getAdditionalBusinessPermissions = (method: string, path: string, body: unknown): BusinessPermission[] => {
+  if (isWriteMethod(method) && /^\/settings\/tourist-tax-collection\/(?:apply|preview)$/.test(path)) return ["reservations:write"];
   if (isWriteMethod(method) && /^\/reports\/ota(?:\/|$)/i.test(path)) return ["reservations:write"];
   if (!isWriteMethod(method) || !/^\/fiscal-entities\/[^/]+\/establishments(?:\/[^/]+)?\/?$/i.test(path)) return [];
   const links = body && typeof body === "object" ? (body as Record<string, unknown>).gite_links : null;
@@ -65,6 +66,8 @@ export const getAdditionalBusinessPermissions = (method: string, path: string, b
 
 export const getRequiredBusinessPermission = (method: string, requestPath: string): BusinessPermission | null => {
   const path = requestPath.toLowerCase();
+  // Non-secret defaults used in reservation, contract and invoice forms after authentication.
+  if (method.toUpperCase() === "GET" && path === "/settings/tourist-tax-collection/defaults") return null;
   if (/^\/purchase-invoices(?:\/|$)/.test(path)) return "integrations:manage";
   if (/^\/superpdp-workshop(?:\/|$)/.test(path)) return "integrations:manage";
   if (/^\/invoices\/[^/]+\/electronic(?:\/|$)/.test(path)) return "integrations:manage";

@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   computeTouristTax,
-  createTouristTaxStay,
+  createTouristTaxStayForSource,
+  applyTouristTaxCollection,
+  type TouristTaxCollectionSettings,
   type TouristTaxSettings,
   type TouristTaxStay,
   type TouristTaxResult,
 } from "@contrats/shared";
 import { formatEuro } from "../../utils/format";
+import { apiFetch } from "../../utils/api";
 import "./touristTax.css";
 
 export function TouristTaxSummary({ taxes }: { taxes: TouristTaxResult[] }) {
@@ -59,6 +62,7 @@ export default function TouristTaxStayEditor({
   accommodation,
   start,
   initialize = false,
+  source = value?.collection_source ?? "Direct",
   onChildrenChange,
   onAdultsChange,
 }: {
@@ -71,13 +75,53 @@ export default function TouristTaxStayEditor({
   accommodation: number;
   start: string;
   initialize?: boolean;
+  source?: string;
   onChildrenChange?: (children: number) => void;
   onAdultsChange?: (adults: number) => void;
 }) {
+  const [collection, setCollection] =
+    useState<TouristTaxCollectionSettings | null>(null);
   useEffect(() => {
+    const controller = new AbortController();
+    apiFetch<TouristTaxCollectionSettings>(
+      "/settings/tourist-tax-collection/defaults",
+      { signal: controller.signal },
+    )
+      .then(setCollection)
+      .catch(() => {
+        /* Manual collection remains available if loading fails. */
+      });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    if (!collection) return;
     if (initialize && !value && settings)
-      onChange(createTouristTaxStay(settings));
-  }, [initialize, value, settings, onChange]);
+      onChange(createTouristTaxStayForSource(settings, source, collection));
+    else if (
+      value &&
+      ((initialize && value.collector === "unknown" && !value.collector_mode) ||
+        (value.collection_source !== source &&
+          (value.collector_mode === "automatic" ||
+            value.price_mode === "automatic")))
+    ) {
+      const initial =
+        initialize && value.collector === "unknown" && !value.collector_mode;
+      const next = applyTouristTaxCollection(
+        initial
+          ? {
+              ...value,
+              collector_mode: "automatic",
+              price_mode: value.price_mode ?? "automatic",
+              gite_price_included:
+                settings?.included ?? value.settings.included,
+            }
+          : value,
+        source,
+        collection,
+      );
+      if (JSON.stringify(next) !== JSON.stringify(value)) onChange(next);
+    }
+  }, [initialize, value, settings, source, collection, onChange]);
   if (!value && !settings) return null;
   const patch = (change: Partial<TouristTaxStay>) =>
     value && onChange({ ...value, ...change });
@@ -103,7 +147,14 @@ export default function TouristTaxStayEditor({
           <button
             type="button"
             className="secondary"
-            onClick={() => settings && onChange(createTouristTaxStay(settings))}
+            disabled={!collection}
+            onClick={() =>
+              settings &&
+              collection &&
+              onChange(
+                createTouristTaxStayForSource(settings, source, collection),
+              )
+            }
           >
             Appliquer le barème du gîte à ce séjour
           </button>
@@ -123,8 +174,8 @@ export default function TouristTaxStayEditor({
             <span>
               <strong>Taxe comprise dans le prix de ce séjour</strong>
               <small>
-                Reprend le réglage du gîte. Ajustez si le prix importé d’une
-                plateforme suit une autre présentation.
+                Prérempli selon l’origine de la réservation. Ajustez si le
+                montant saisi suit une autre présentation.
               </small>
             </span>
             <input
@@ -134,6 +185,7 @@ export default function TouristTaxStayEditor({
               onChange={(e) =>
                 patch({
                   settings: { ...value.settings, included: e.target.checked },
+                  price_mode: "manual",
                 })
               }
             />
@@ -162,11 +214,18 @@ export default function TouristTaxStayEditor({
                 onChange={(e) =>
                   patch({
                     collector: e.target.value as TouristTaxStay["collector"],
+                    collector_mode: "manual",
+                    platform:
+                      e.target.value === "platform"
+                        ? source === "Direct"
+                          ? value.platform
+                          : source
+                        : "",
                   })
                 }
               >
                 <option value="unknown">À préciser</option>
-                <option value="host">Je collecte la taxe</option>
+                <option value="host">Le gestionnaire collecte la taxe</option>
                 <option value="platform">
                   Une plateforme collecte la taxe
                 </option>
@@ -182,10 +241,42 @@ export default function TouristTaxStayEditor({
                   value={value.platform}
                   maxLength={100}
                   placeholder="Airbnb, Booking…"
-                  onChange={(e) => patch({ platform: e.target.value })}
+                  onChange={(e) =>
+                    patch({
+                      platform: e.target.value,
+                      collector_mode: "manual",
+                    })
+                  }
                 />
               </label>
             )}
+            <div className="field-hint">
+              {value.collector_mode === "automatic"
+                ? `Collecteur prérempli pour l’origine « ${source} ».`
+                : "Choix propre à ce séjour."}
+              {collection && (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() =>
+                    onChange(
+                      applyTouristTaxCollection(
+                        {
+                          ...value,
+                          collector_mode: "automatic",
+                          price_mode: "automatic",
+                        },
+                        source,
+                        collection,
+                        true,
+                      ),
+                    )
+                  }
+                >
+                  Utiliser les règles de cette origine
+                </button>
+              )}
+            </div>
             {onChildrenChange && (
               <label className="field">
                 Enfants de 2 à 17 ans

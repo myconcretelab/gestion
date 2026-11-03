@@ -1,4 +1,5 @@
 import prisma from "../db/prisma.js";
+import { newReservationTouristTax } from "./touristTaxCollection.js";
 import { appendImportLog, buildImportLogEntry } from "./importLog.js";
 import { listIcalSources, type IcalSourceRow } from "./icalSync.js";
 import {
@@ -544,6 +545,7 @@ export const importPreviewReservations = async (
       const nights = Math.max(1, Math.round((dateSortie.getTime() - dateEntree.getTime()) / DAY_MS));
       const prixTotal = item.prix_total && item.prix_total > 0 ? round2(item.prix_total) : 0;
       const prixParNuit = prixTotal > 0 ? round2(prixTotal / nights) : 0;
+      const touristTax = await newReservationTouristTax(item.gite_id, item.source_type);
 
       await prisma.reservation.create({
         data: {
@@ -567,7 +569,7 @@ export const importPreviewReservations = async (
           frais_optionnels_montant: 0,
           frais_optionnels_libelle: null,
           frais_optionnels_declares: false,
-          options: "{}",
+          options: JSON.stringify(touristTax ? { tourist_tax: touristTax } : {}),
         },
       });
       createdCount += 1;

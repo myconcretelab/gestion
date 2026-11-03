@@ -1,3 +1,4 @@
+import { DEFAULT_TOURIST_TAX_COLLECTION } from "@contrats/shared";
 import assert from "node:assert/strict";
 import test from "node:test";
 import prisma from "../src/db/prisma.ts";
@@ -723,7 +724,7 @@ test("POST /booking-requests/:id/refresh refuse une période devenue indisponibl
 test("la réservation directe applique la taxe du gîte et conserve son barème dans le devis", async () => {
   const settings = { version: 1, classified: true, stars: 3, included: false, fixed_rate: 1.5, percentage: 4, cap: 4, additional_percentage: 0, accommodation_vat_rate: 0, authority: "Collectivité fictive", effective_from: "2026-01-01" };
   const gite = { id: "tax-gite", capacite_max: 6, nb_adultes_max: 4, nb_enfants_max: 2, taxe_sejour_par_personne_par_nuit: 1.5, taxe_sejour_config: JSON.stringify(settings), options_draps_par_lit: 0, options_linge_toilette_par_personne: 0, options_menage_forfait: 0, options_depart_tardif_forfait: 0, options_chiens_forfait: 0, arrhes_taux_defaut: 0.2, regle_animaux_acceptes: false, regle_bois_premiere_flambee: false, regle_tiers_personnes_info: false };
-  const params = { gite, dateEntree: new Date("2026-07-10"), dateSortie: new Date("2026-07-12"), nbAdultes: 2, nbEnfants: 0, seasonRates: [{ id: "rate-tax", gite_id: gite.id, date_debut: new Date("2026-01-01"), date_fin: new Date("2027-01-01"), prix_par_nuit: 175, min_nuits: 1, ordre: 0 }] };
+  const params = { collectionSettings: DEFAULT_TOURIST_TAX_COLLECTION, gite, dateEntree: new Date("2026-07-10"), dateSortie: new Date("2026-07-12"), nbAdultes: 2, nbEnfants: 0, seasonRates: [{ id: "rate-tax", gite_id: gite.id, date_debut: new Date("2026-01-01"), date_fin: new Date("2027-01-01"), prix_par_nuit: 175, min_nuits: 1, ordre: 0 }] };
   const quote = await computeSeasonQuote(params);
   assert.equal(quote.total_global, 356);
   assert.equal(quote.taxe_sejour, 6);

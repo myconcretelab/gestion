@@ -48,6 +48,10 @@ export const touristTaxStaySchema = z.object({
   infants: z.number().int().min(0).max(1000).default(0),
   exempt_adults: z.number().int().min(0).max(1000).default(0),
   exemption_reason: z.string().trim().max(500).default(""),
+  collector_mode: z.enum(["automatic", "manual"]).optional(),
+  price_mode: z.enum(["automatic", "manual"]).optional(),
+  collection_source: z.string().max(100).optional(),
+  gite_price_included: z.boolean().optional(),
 });
 export type TouristTaxStay = z.infer<typeof touristTaxStaySchema>;
 export const touristTaxResultSchema = z.object({

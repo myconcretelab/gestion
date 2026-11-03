@@ -243,7 +243,8 @@ export default function ReservationPaymentsEditor({
         json: { booking_source },
       });
       setSource(booking_source);
-      publish(tracking, booking_source);
+      const next = await apiFetch<ReservationPaymentTracking>(`/reservations/${reservation.id}/payments`);
+      publish(next, booking_source);
     } catch (error) {
       setError(
         error instanceof Error
@@ -299,7 +300,7 @@ export default function ReservationPaymentsEditor({
             disabled={busy || !canWrite}
             onChange={(event) => void changeSource(event.target.value)}
           >
-            {BOOKING_SOURCES.map((item) => (
+            {[...new Set([...BOOKING_SOURCES, ...(tracking.payment_channels ?? []), source])].map((item) => (
               <option key={item}>{item}</option>
             ))}
           </select>

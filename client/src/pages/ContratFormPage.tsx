@@ -1,6 +1,6 @@
 import { cleaningBillingPatch, getCleaningBillingMode } from "@contrats/shared";
 import CleaningBillingControl from "./shared/CleaningBillingControl";
-import { createTouristTaxStay } from "@contrats/shared";
+import { createAutomaticTouristTaxStay as createTouristTaxStay } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";

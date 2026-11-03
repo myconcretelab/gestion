@@ -39,6 +39,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     path: "reglements",
     tabs: [
       { label: "Règlements", path: "reglements", navId: "nav-settings-payments" },
+      { label: "Taxe de séjour", path: "taxe-sejour", navId: "nav-settings-tourist-tax" },
       { label: "Couleurs des sources", path: "couleurs-sources", navId: "nav-settings-source-colors" },
     ],
   },

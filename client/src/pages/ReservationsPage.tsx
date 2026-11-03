@@ -1,5 +1,6 @@
+import { useBookingSourceOptions } from "../utils/bookingSourceOptions";
 import { cleaningBillingSuffix } from "@contrats/shared";
-import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
+import { getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
 import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
@@ -1037,6 +1038,7 @@ const ReservationTableDate = ({ value }: { value: string }) => {
 };
 
 const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean }) => {
+  const bookingSources = useBookingSourceOptions();
   const currentYear = new Date().getUTCFullYear();
   const location = useLocation();
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -4037,7 +4039,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
               })
             }
           >
-            {BOOKING_SOURCES.map((source) => (
+            {bookingSources.map((source) => (
               <option key={source} value={source}>
                 {source}
               </option>
@@ -4831,7 +4833,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                             </div>
                             {optionGite ? (
                               <>
-                                <TouristTaxStayEditor value={optionDraft.tourist_tax} settings={optionGite.taxe_sejour_config}
+                                <TouristTaxStayEditor source={getBookingSource(draft)} value={optionDraft.tourist_tax} settings={optionGite.taxe_sejour_config}
                                   onChange={tourist_tax => updateReservationOptionsSelection(reservation, draft, previous => ({ ...previous, tourist_tax }))}
                                   nights={draft.nb_nuits} adults={draft.nb_adultes} children={draft.nb_enfants_2_17 ?? 0}
                                   onChildrenChange={nb_enfants_2_17 => updateExistingField(reservation, previous => ({ ...previous, nb_enfants_2_17 }), { autosave: false })}
@@ -5587,7 +5589,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                                     });
                                   }}
                                 >
-                                  {BOOKING_SOURCES.map((source) => (
+                                  {bookingSources.map((source) => (
                                     <option key={source} value={source}>
                                       {source}
                                     </option>

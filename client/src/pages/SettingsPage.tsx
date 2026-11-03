@@ -37,6 +37,7 @@ import AppearanceSettings from "./AppearanceSettings";
 import TodayWidgetsSettings from "./settings/TodayWidgetsSettings";
 import TaskReminderSettings from "./settings/TaskReminderSettings";
 import ReservationPaymentSettings from "./settings/ReservationPaymentSettings";
+import TouristTaxCollectionSettings from "./settings/TouristTaxCollectionSettings";
 import UserSettings from "./UserSettings";
 import SettingsShell from "./settings/SettingsShell";
 import NotificationDeliveryStatus from "./settings/NotificationDeliveryStatus";
@@ -323,6 +324,7 @@ const SETTINGS_SECTIONS = [
   { id: "settings-widgets", label: "Widgets" },
   { id: "settings-tasks", label: "Tâches" },
   { id: "settings-payments", label: "Règlements" },
+  { id: "settings-tourist-tax", label: "Taxe de séjour" },
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
@@ -348,6 +350,7 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-widgets": "widgets",
   "settings-tasks": "taches",
   "settings-payments": "reglements",
+  "settings-tourist-tax": "taxe-sejour",
   "settings-import-log": "journal-imports",
   "settings-sms": "sms",
   "settings-email-texts": "emails",
@@ -5127,6 +5130,7 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
           {activeSettingsSection === "settings-widgets" ? <TodayWidgetsSettings currentUser={currentUser} /> : null}
           {activeSettingsSection === "settings-tasks" ? <TaskReminderSettings /> : null}
           {activeSettingsSection === "settings-payments" ? <ReservationPaymentSettings /> : null}
+          {activeSettingsSection === "settings-tourist-tax" ? <TouristTaxCollectionSettings /> : null}
           {activeSettingsSection === "settings-users" ? (
             currentUser?.permissions.isOwner
               ? <UserSettings currentUserId={currentUser.id} onAuthSessionUpdated={onAuthSessionUpdated} />
