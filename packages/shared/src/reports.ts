@@ -33,6 +33,8 @@ export type ReportDefinition = {
   favorite: boolean;
   operatorId?: string | null;
   managerId?: string | null;
+  /** Override the organization's tracking start for this report only. */
+  worklistStartMonth?: string;
   /** Undefined keeps all sources, including sources added later. */
   bookingSources?: string[];
   otaAmountBasis?: "gross" | "net";

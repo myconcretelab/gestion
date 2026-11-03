@@ -70,6 +70,8 @@ La base brute ou nette du rapport est un choix de calcul explicite, sans déduct
 
 ## Historique et conservation
 
+Un rapport peut conserver un `worklistStartMonth` propre, prioritaire sur le début de suivi de l’organisation. Cela permet de remettre des périodes antérieures dans « À traiter » pour ce seul rapport. Les déclarations historiques et les copies confirmées restent respectées ; les listes et rappels utilisent le même début de suivi.
+
 Les anciennes déclarations sociales et de nuitées apparaissent dans un historique distinct avec leurs montants d’origine. Les anciennes règles et lignes justificatives ne sont pas reconstruites. L’indicateur historique `frais_optionnels_declares` n’entre pas dans les nouveaux calculs ; les statistiques historiques existantes restent disponibles sous « Ancien calcul fiscal ». Les anciens boutons de confirmation dans Réservations sont remplacés par des accès aux rapports de la période. Les options et les exports de réservations affichent un seul montant, sans commutateur déclaré/non déclaré.
 
 La préparation est invalidée si les règles ou les sources changent. La confirmation conserve une copie des règles et opérations de la période. Une seule confirmation par rapport et période est autorisée ; elle ne peut pas être écrasée. Une modification ultérieure montre l’écart avec le calcul courant. Une période sans recette peut être confirmée à zéro.
