@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { newReservationTouristTax } from "./touristTaxCollection.js";
+import { encodeJsonField } from "../utils/jsonFields.js";
 import { appendImportLog, buildImportLogEntry } from "./importLog.js";
 import { listIcalSources, type IcalSourceRow } from "./icalSync.js";
 import {
@@ -569,7 +570,7 @@ export const importPreviewReservations = async (
           frais_optionnels_montant: 0,
           frais_optionnels_libelle: null,
           frais_optionnels_declares: false,
-          options: JSON.stringify(touristTax ? { tourist_tax: touristTax } : {}),
+          options: encodeJsonField(touristTax ? { tourist_tax: touristTax } : {}),
         },
       });
       createdCount += 1;

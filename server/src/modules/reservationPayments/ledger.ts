@@ -20,7 +20,7 @@ import {
   type ReservationPaymentTracking,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
-import { fromJsonString } from "../../utils/jsonFields.js";
+import { fromJsonString, encodeJsonField } from "../../utils/jsonFields.js";
 import { cents } from "../bookingPayments/money.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
@@ -1063,7 +1063,7 @@ export const setReservationBookingSource = async (
         where: { id: stay.id },
         data: {
           booking_source: bookingSource,
-          options: JSON.stringify(options),
+          options: encodeJsonField(options),
         },
       });
     }

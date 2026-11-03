@@ -11,13 +11,20 @@ import {
   type TouristTaxReapplyPreview,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../db/prisma.js";
-import { fromJsonString } from "../../utils/jsonFields.js";
+import { fromJsonString, encodeJsonField } from "../../utils/jsonFields.js";
 import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readTouristTaxCollectionSettings } from "../../services/touristTaxCollection.js";
 import { getOrganizationId } from "../organizations/context.js";
 
 const fail = (message: string) =>
   Object.assign(new Error(message), { statusCode: 409 });
+export const invoiceReferencesReservations = (
+  items: unknown,
+  ids: string[],
+) => {
+  const encoded = JSON.stringify(fromJsonString(items, []));
+  return ids.some((id) => encoded.includes(JSON.stringify(id)));
+};
 async function prepare(
   input: TouristTaxReapplyInput,
   db: TenantTransactionClient,
@@ -66,7 +73,7 @@ async function prepare(
       where: {
         OR: [
           { reservation_id: { in: ids } },
-          { reservation_items: { not: "[]" } },
+          { reservation_items: { not: encodeJsonField([]) } },
         ],
       },
       select: { id: true, reservation_id: true, reservation_items: true },
@@ -203,9 +210,7 @@ async function prepare(
       invoices.some(
         (row) =>
           (row.reservation_id && groupRowIds.includes(row.reservation_id)) ||
-          groupRowIds.some((id) =>
-            row.reservation_items.includes(JSON.stringify(id)),
-          ),
+          invoiceReferencesReservations(row.reservation_items, groupRowIds),
       )
     )
       reason = "Contrat ou facture déjà enregistré";
@@ -279,7 +284,9 @@ export async function applyTouristTaxReapply(value: unknown, userId?: string) {
       for (const change of changes)
         await db.reservation.updateMany({
           where: { id: { in: change.ids } },
-          data: { options: change.options },
+          data: {
+            options: encodeJsonField(fromJsonString(change.options, {})),
+          },
         });
       if (changes.length)
         await db.auditLog.create({

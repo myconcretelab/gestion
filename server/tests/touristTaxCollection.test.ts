@@ -97,6 +97,18 @@ const stay = (giteId: string, data: Record<string, unknown> = {}) =>
     },
   });
 const scope = { from: "2026-09-01", to: "2026-09-30", override_manual: false };
+test("les références de factures regroupées sont reconnues dans les formats SQLite et PostgreSQL", async () => {
+  const { invoiceReferencesReservations } =
+    await import("../src/modules/touristTax/collectionReapply.js");
+  for (const items of [
+    [{ reservation_id: "r1" }],
+    JSON.stringify([{ reservation_id: "r1" }]),
+  ]) {
+    assert.equal(invoiceReferencesReservations(items, ["r1"]), true);
+    assert.equal(invoiceReferencesReservations(items, ["other"]), false);
+  }
+  assert.equal(invoiceReferencesReservations(null, ["r1"]), false);
+});
 test("les écritures de reprise exigent aussi le droit de modifier les réservations", async () => {
   const { getRequiredBusinessPermission, getAdditionalBusinessPermissions } =
     await import("../src/services/accessControl.js");
