@@ -19,6 +19,12 @@ import {
 } from "./configuration.js";
 import { loadReportFacts } from "./facts.js";
 import { reportCacheIsCurrent, storeReportCalculation } from "./cache.js";
+import {
+  applyRemittanceCommand,
+  removeUncommittedReceipt,
+  type RemittanceCommand,
+} from "./remittances.js";
+import type { TaxRemittanceReceipt } from "@contrats/shared";
 import { buildNightRegister } from "./nightRegister.js";
 
 type Facts = Awaited<ReturnType<typeof loadReportFacts>>;
@@ -43,6 +49,7 @@ const evaluate = (
     config.overrides[reportPeriodKey(report, month)],
     facts.operations,
     {
+      propertyNightDeclarations: facts.propertyNightDeclarations,
       propertyOperators: facts.propertyOperators,
       propertyManagers: facts.propertyManagers,
       operatorIssues: facts.operatorIssues,
@@ -151,6 +158,7 @@ export function getReportWorkspace(
 }
 export async function mutateReportWorkspace(input: unknown, userId?: string) {
   const payload = reportMutationSchema.parse(input);
+  let uploadedReceipt: TaxRemittanceReceipt | undefined;
   try {
     const result = await prisma.$transaction(
       async (db) => {
@@ -164,7 +172,15 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             "Les données ont changé. Actualisez les rapports avant de réessayer. Votre brouillon est conservé.",
           );
         const { command, month } = payload;
-        if (command.type === "worklist-start") {
+        if (command.type.startsWith("remittance-")) {
+          uploadedReceipt = await applyRemittanceCommand(
+            config,
+            facts.properties,
+            facts.managers,
+            command as RemittanceCommand,
+            userId,
+          );
+        } else if (command.type === "worklist-start") {
           config.worklistStartMonth = command.startMonth;
         } else if (command.type === "save") {
           const definition = command.definition;
@@ -239,6 +255,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             if (key.startsWith(`${definition.id}:`))
               config.progress[key] = { ...progress, ready: false };
         } else {
+          if (!("reportId" in command))
+            throw fail("Commande de rapport invalide.", 400);
           const report = config.reports.find(
             (row) => row.id === command.reportId,
           );
@@ -531,12 +549,23 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
             action: `report.${command.type}`,
             resource_type: "finance_report",
             resource_id:
-              command.type === "worklist-start"
-                ? "worklist"
-                : command.type === "save"
-                  ? command.definition.id
-                  : command.reportId,
-            metadata_json: JSON.stringify({ month, revision, command }),
+              "remittanceId" in command
+                ? command.remittanceId
+                : command.type === "remittance-save"
+                  ? command.remittance.id
+                  : command.type === "worklist-start"
+                    ? "worklist"
+                    : command.type === "save"
+                      ? command.definition.id
+                      : command.reportId,
+            metadata_json: JSON.stringify({
+              month,
+              revision,
+              command:
+                command.type === "remittance-receipt"
+                  ? { ...command, file: uploadedReceipt }
+                  : command,
+            }),
           },
         });
         return storeReportCalculation(
@@ -550,6 +579,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
     workspaceReads.delete(getOrganizationId());
     return result;
   } catch (error) {
+    if (uploadedReceipt)
+      await removeUncommittedReceipt(uploadedReceipt).catch(() => {});
     if (
       ["P2002", "P2034", "P1008", "P2028"].includes(
         (error as { code?: string })?.code ?? "",

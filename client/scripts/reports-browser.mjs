@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import {
+  taxRemittanceAccounts,
+  taxRemittanceSources,
   createReport,
   evaluateReport,
   reportPeriodKey,
@@ -732,7 +734,10 @@ try {
           status = 503;
           body = { error: "Rapports indisponibles" };
         } else body = fixture.state;
-      } else if (pathname === "/api/reports/commands" && method === "POST") {
+      } else if (
+        ["/api/reports/commands", "/api/reports/receipts"].includes(pathname) &&
+        method === "POST"
+      ) {
         const payload = reportMutationSchema.parse(request.postDataJSON());
         fixture.commands.push(payload.command);
         fixture.commandMonths.push(payload.month);
@@ -751,7 +756,66 @@ try {
         } else {
           const state = fixture.state;
           const command = payload.command;
-          if (command.type === "worklist-start") {
+          if (command.type === "remittance-save") {
+            const previous = state.taxRemittances?.find(
+              (r) => r.id === command.remittance.id,
+            );
+            const { sourceKeys, ...input } = command.remittance;
+            const account = taxRemittanceAccounts(state).find(
+              (a) => a.id === input.accountId,
+            );
+            const saved = {
+              ...input,
+              accountName: account.name,
+              sources:
+                previous?.sources ??
+                taxRemittanceSources(state, account).filter((source) =>
+                  sourceKeys.includes(source.key),
+                ),
+              createdAt: "2026-11-04",
+              updatedAt: "2026-11-04",
+              payments: previous?.payments ?? [],
+            };
+            state.taxRemittances = previous
+              ? state.taxRemittances.map((r) => (r.id === saved.id ? saved : r))
+              : [...(state.taxRemittances ?? []), saved];
+          } else if (command.type.startsWith("remittance-")) {
+            const remittance = state.taxRemittances.find(
+              (r) => r.id === command.remittanceId,
+            );
+            if (command.type === "remittance-payment")
+              remittance.payments.push({
+                ...command.payment,
+                recordedAt: "2026-11-04",
+                recordedBy: "browser-user",
+              });
+            else if (command.type === "remittance-void-payment")
+              Object.assign(
+                remittance.payments.find((p) => p.id === command.paymentId),
+                { voidedAt: "2026-11-04", voidReason: command.reason },
+              );
+            else if (command.type === "remittance-cancel")
+              Object.assign(remittance, {
+                cancelledAt: "2026-11-04",
+                cancelReason: command.reason,
+              });
+            else if (command.type === "remittance-receipt") {
+              const payment = remittance.payments.find(
+                (p) => p.id === command.paymentId,
+              );
+              payment.receipts = [
+                ...(payment.receipts ?? []),
+                {
+                  id: "receipt-browser",
+                  name: command.file.name,
+                  contentType: "application/pdf",
+                  sizeBytes: 30,
+                  checksumSha256: "b".repeat(64),
+                  uploadedAt: "2026-11-04",
+                },
+              ];
+            }
+          } else if (command.type === "worklist-start") {
             state.worklistStartMonth = command.startMonth;
           } else if (command.type === "save") {
             const index = state.reports.findIndex(
@@ -918,6 +982,233 @@ try {
     );
     await save.click({ trial: true });
   };
+
+  const { page: taxPage, fixture: taxFixture } = await createPage();
+  taxFixture.state.managers[0].name = "Sébastien";
+  taxFixture.state.managers[1].name = "Soazig";
+  taxFixture.state.properties[1].name = "Le Liberté";
+  const taxReport = {
+    ...createReport("tourist", "tax-confirmed"),
+    name: "Déclaration mensuelle",
+    nightDeclaration: true,
+    propertyIds: ["g1", "g2"],
+  };
+  taxFixture.state.reports.push(taxReport);
+  const confirmedTaxRegister = {
+    ...registerData(),
+    reportId: taxReport.id,
+    reportName: taxReport.name,
+    incompleteCount: 0,
+    period: { label: "Octobre 2026", start: "2026-10-01", end: "2026-11-01" },
+    summary: [
+      {
+        propertyId: "g1",
+        propertyName: "La Maison du verger",
+        hostCollectedCents: 500,
+        platformCollectedCents: 200,
+      },
+      {
+        propertyId: "g2",
+        propertyName: "Le Liberté",
+        hostCollectedCents: 210,
+        platformCollectedCents: 400,
+      },
+    ],
+  };
+  taxFixture.state.progress[reportPeriodKey(taxReport, "2026-10")] = {
+    snapshot: {
+      confirmedAt: "2026-11-03",
+      definition: taxReport,
+      result: { total: 0, rows: [] },
+      nightRegister: confirmedTaxRegister,
+    },
+  };
+  await open(taxPage, "/reversements");
+  await taxPage
+    .getByRole("heading", { name: "Reversements de taxe de séjour" })
+    .waitFor();
+  await taxPage
+    .getByLabel("Propriétaire", { exact: true })
+    .selectOption("manager-b");
+  assert.match(
+    await taxPage.locator(".rp-panel").first().innerText(),
+    /Le Liberté/,
+  );
+  await taxPage
+    .getByRole("button", { name: "Préparer un reversement", exact: true })
+    .click();
+  let taxDialog = taxPage.getByRole("dialog", {
+    name: "Préparer un reversement",
+    exact: true,
+  });
+  await taxDialog
+    .getByLabel("Libellé du reversement", { exact: true })
+    .fill("Trimestre Soazig");
+  await taxDialog.getByRole("checkbox").check();
+  assert.equal(
+    await taxDialog
+      .getByLabel("Montant à reverser déclaré sur le portail (€)", {
+        exact: true,
+      })
+      .inputValue(),
+    "2.10",
+  );
+  await taxDialog
+    .getByLabel("Montant à reverser déclaré sur le portail (€)", {
+      exact: true,
+    })
+    .fill("2,11");
+  assert.equal(
+    await taxDialog
+      .getByRole("button", { name: "Enregistrer le reversement", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await taxDialog
+    .getByLabel(/Note.*justification/)
+    .fill("Arrondi confirmé sur le portail");
+  for (const width of [1440, 390]) {
+    await taxPage.setViewportSize({ width, height: 1050 });
+    await noOverflow(taxPage);
+    await capture(taxPage, `remittance-create-${width}.png`);
+  }
+  taxFixture.failMutation = 1;
+  await taxDialog
+    .getByRole("button", { name: "Enregistrer le reversement", exact: true })
+    .click();
+  await taxDialog
+    .getByRole("alert")
+    .filter({ hasText: "Enregistrement indisponible" })
+    .waitFor({ state: "attached" });
+  assert.equal(
+    await taxDialog
+      .getByLabel("Libellé du reversement", { exact: true })
+      .inputValue(),
+    "Trimestre Soazig",
+  );
+  await taxDialog
+    .getByRole("button", { name: "Enregistrer le reversement", exact: true })
+    .click();
+  await taxDialog.waitFor({ state: "detached" });
+  const taxCard = taxPage.getByRole("region", {
+    name: "Reversement · Trimestre Soazig",
+    exact: true,
+  });
+  assert.match(await taxCard.innerText(), /À reverser/);
+  await taxCard
+    .getByRole("button", {
+      name: "Enregistrer un paiement à la collectivité",
+      exact: true,
+    })
+    .click();
+  taxDialog = taxPage.getByRole("dialog", {
+    name: "Enregistrer un paiement à la collectivité",
+    exact: true,
+  });
+  await taxDialog.getByLabel("Montant versé (€)", { exact: true }).fill("1,00");
+  await taxDialog
+    .getByLabel("Date réelle du paiement", { exact: true })
+    .fill("2026-11-03");
+  await taxDialog
+    .getByLabel("Référence du paiement", { exact: true })
+    .fill("PAYFIP-123");
+  taxFixture.failMutation = 1;
+  await taxDialog
+    .getByRole("button", { name: "Enregistrer le paiement", exact: true })
+    .click();
+  await taxDialog
+    .getByRole("alert")
+    .filter({ hasText: "Enregistrement indisponible" })
+    .waitFor();
+  const firstPaymentAttempt = taxFixture.commands
+    .filter((c) => c.type === "remittance-payment")
+    .at(-1);
+  await taxDialog
+    .getByRole("button", { name: "Enregistrer le paiement", exact: true })
+    .click();
+  await taxDialog.waitFor({ state: "detached" });
+  assert.equal(
+    taxFixture.commands.filter((c) => c.type === "remittance-payment").at(-1)
+      .payment.id,
+    firstPaymentAttempt.payment.id,
+  );
+  assert.match(await taxCard.innerText(), /Partiellement réglé/);
+  await taxCard
+    .getByLabel("Ajouter un justificatif à ce paiement", { exact: true })
+    .setInputFiles({
+      name: "Recu-Payfip.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4 receipt"),
+    });
+  await taxCard
+    .getByRole("link", { name: "Recu-Payfip.pdf", exact: true })
+    .waitFor();
+  for (const width of [1440, 390]) {
+    await taxPage.setViewportSize({ width, height: 1050 });
+    await noOverflow(taxPage);
+    await taxPage.evaluate(() => window.scrollTo(0, 0));
+    await capture(taxPage, `remittance-partial-${width}.png`);
+  }
+  await taxPage.reload();
+  await taxPage
+    .getByLabel("Propriétaire", { exact: true })
+    .selectOption("manager-b");
+  await taxCard
+    .getByRole("link", { name: "Recu-Payfip.pdf", exact: true })
+    .waitFor();
+  await taxCard
+    .getByRole("button", {
+      name: "Annuler ce paiement saisi par erreur",
+      exact: true,
+    })
+    .click();
+  taxDialog = taxPage.getByRole("dialog", {
+    name: "Annuler un paiement saisi par erreur",
+    exact: true,
+  });
+  await taxDialog
+    .getByLabel("Motif de l’annulation", { exact: true })
+    .fill("Double saisie vérifiée");
+  await taxDialog
+    .getByRole("button", {
+      name: "Confirmer l’annulation du paiement",
+      exact: true,
+    })
+    .click();
+  await taxDialog.waitFor({ state: "detached" });
+  assert.match(await taxCard.innerText(), /À reverser/);
+  assert.match(await taxCard.innerText(), /Double saisie vérifiée/);
+  await taxPage
+    .getByLabel("Propriétaire", { exact: true })
+    .selectOption("manager-a");
+  assert.equal(
+    await taxPage
+      .getByRole("region", {
+        name: "Reversement · Trimestre Soazig",
+        exact: true,
+      })
+      .count(),
+    0,
+  );
+  const { page: taxReader, fixture: readerFixture } = await createPage({
+    canWrite: false,
+  });
+  readerFixture.state = structuredClone(taxFixture.state);
+  await open(taxReader, "/reversements");
+  await taxReader
+    .getByLabel("Propriétaire", { exact: true })
+    .selectOption("manager-b");
+  await taxReader
+    .getByRole("link", { name: "Recu-Payfip.pdf", exact: true })
+    .waitFor();
+  assert.equal(
+    await taxReader
+      .getByRole("button", {
+        name: /Enregistrer un paiement|Préparer un reversement|Modifier le montant/,
+      })
+      .count(),
+    0,
+  );
 
   for (const outcome of ["corrected", "kept"]) {
     const { page: resolutionPage, fixture: resolutionFixture } =

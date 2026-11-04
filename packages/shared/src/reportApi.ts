@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  taxRemittanceInputSchema,
+  taxRemittancePaymentSchema,
+} from "./touristTaxRemittance.js";
 import type { ReportOperation, ReportState } from "./reports.js";
 import { nightRegisterCompletionSchema } from "./nightRegister.js";
 import {
@@ -158,6 +162,47 @@ export type ReportAllocation = {
   amounts: { cleaning: number; linen: number; extras: number } | null;
 };
 export const reportCommandSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("remittance-save"),
+      remittance: taxRemittanceInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("remittance-payment"),
+      remittanceId: z.string().min(1).max(100),
+      payment: taxRemittancePaymentSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("remittance-void-payment"),
+      remittanceId: z.string().min(1).max(100),
+      paymentId: z.string().min(1).max(100),
+      reason: z.string().trim().min(3).max(1000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("remittance-cancel"),
+      remittanceId: z.string().min(1).max(100),
+      reason: z.string().trim().min(3).max(1000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("remittance-receipt"),
+      remittanceId: z.string().min(1).max(100),
+      paymentId: z.string().min(1).max(100),
+      file: z
+        .object({
+          name: z.string().trim().min(1).max(200),
+          data: z.string().min(1).max(7_000_000),
+        })
+        .strict(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal("night-register-completion"),

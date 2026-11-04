@@ -42,6 +42,12 @@ export default function ReportsOverview({
         title="Rapports et déclarations"
         actions={
           <div className="rp-header-actions">
+            <Link
+              to={href("/reversements")}
+              className="rp-button rp-button--secondary"
+            >
+              Reversements de taxe de séjour
+            </Link>
             {canEdit && (
               <Link
                 to={href("/import-airbnb")}

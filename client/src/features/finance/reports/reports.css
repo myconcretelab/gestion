@@ -3133,3 +3133,82 @@
 /* Allocation proposals remain visibly separate from confirmed register amounts. */
 .rp-allocation-proposal { margin: 12px 0; padding: 12px; border: 1px solid var(--primary-strong); border-radius: 10px; background: var(--primary-soft); color: var(--ink); }
 .rp-allocation-proposal p { margin: 0 0 10px; line-height: 1.5; }
+
+.rp-remittance-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+.rp-remittance-totals dt {
+  color: var(--muted);
+  font-size: .85rem;
+}
+.rp-remittance-totals dd {
+  margin: 6px 0 0;
+  font-weight: 700;
+}
+.rp-remittance,
+.rp-remittance-payment {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.rp-remittance,
+.rp-remittance-owner {
+  padding: 24px;
+}
+.rp-remittance .rp-panel-heading {
+  padding: 0;
+  margin-bottom: 20px;
+}
+.rp-remittance .rp-field-help {
+  display: block;
+}
+.rp-remittance-payments {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.rp-remittance-payment {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.rp-remittance-payment input[type="file"] {
+  width: 100%;
+  min-width: 0;
+}
+.rp-remittance-choices {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.rp-remittance-choices .rp-reference-choice {
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+.rp-remittance-choices small {
+  display: block;
+  font-weight: 400;
+}
+.rp-remittance .rp-text-button {
+  white-space: normal;
+  text-align: left;
+}
+.rp-remittance-payment .rp-text-button {
+  display: block;
+  margin-top: 10px;
+}
+.rp-remittance a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  text-underline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .rp-remittance,
+  .rp-remittance-owner {
+    padding: 18px;
+  }
+}

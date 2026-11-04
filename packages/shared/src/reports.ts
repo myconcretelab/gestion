@@ -146,17 +146,18 @@ export type ReportProgress = {
   readyFactsRevision?: string;
   resolutions?: ReportResolution[];
 };
-export type ReportState = ReportSources & {
-  version: 3;
-  reports: ReportDefinition[];
-  drafts: Record<string, ReportDefinition>;
-  overrides: Record<string, Record<string, OperationOverride>>;
-  progress: Record<string, ReportProgress>;
-  /** Earlier periods were already treated before the worklist was adopted. */
-  worklistStartMonth?: string;
-  nightSettingsVersion?: number;
-  nightSettingsWarnings?: string[];
-};
+export type ReportState = ReportSources &
+  import("./touristTaxRemittance.js").TaxRemittanceState & {
+    version: 3;
+    reports: ReportDefinition[];
+    drafts: Record<string, ReportDefinition>;
+    overrides: Record<string, Record<string, OperationOverride>>;
+    progress: Record<string, ReportProgress>;
+    /** Earlier periods were already treated before the worklist was adopted. */
+    worklistStartMonth?: string;
+    nightSettingsVersion?: number;
+    nightSettingsWarnings?: string[];
+  };
 
 const revenueCategories: ReportCategory[] = [
   "accommodation",

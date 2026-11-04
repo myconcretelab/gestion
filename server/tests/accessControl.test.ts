@@ -207,3 +207,13 @@ test("l’import OTA nécessite la modification des réservations en plus des d�
   assert.deepEqual(getAdditionalBusinessPermissions("GET", "/reports/ota/imports", {}), []);
   assert.deepEqual(getAdditionalBusinessPermissions("POST", "/reports/commands", {}), []);
 });
+
+
+test("les reversements et justificatifs requièrent les droits Statistiques et montants", () => {
+  for (const path of ["/reports/commands", "/reports/receipts", "/reports/remittances/r/payments/p/receipts/file"]) {
+    assert.equal(isAmountsOnlyApiPath(path), true);
+    assert.equal(getRequiredPageForApiPath(path), "statistics");
+    assert.equal(getRequiredBusinessPermission("GET", path), "declarations:read");
+    assert.equal(getRequiredBusinessPermission("POST", path), "declarations:write");
+  }
+});

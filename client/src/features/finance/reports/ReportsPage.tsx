@@ -20,6 +20,7 @@ import { apiFetch, isApiError } from "../../../utils/api";
 import { ReportIcon } from "./ReportUi";
 import OtaImportPage from "./OtaImportPage";
 import UndatedPaymentsPage from "./UndatedPaymentsPage";
+import TaxRemittancesPage from "./TaxRemittancesPage";
 import ReportsOverview from "./ReportsOverview";
 import ReportAllocationEditor from "./ReportAllocationEditor";
 import ReportDetail from "./ReportDetail";
@@ -28,6 +29,7 @@ import "./reports.css";
 
 export type ReportWorkspace = {
   state: ReportWorkspaceData;
+  error?: string;
   refresh: () => Promise<void>;
   loading: boolean;
   setDraft: (key: string, definition: ReportDefinition | null) => void;
@@ -143,15 +145,20 @@ export default function ReportsPage() {
     setSaving(true);
     setError("");
     try {
-      const data = await apiFetch<ReportWorkspaceData>("/reports/commands", {
-        method: "POST",
-        json: {
-          command,
-          month: period,
-          revision: before.revision,
-          factsRevision: before.factsRevision,
+      const data = await apiFetch<ReportWorkspaceData>(
+        command.type === "remittance-receipt"
+          ? "/reports/receipts"
+          : "/reports/commands",
+        {
+          method: "POST",
+          json: {
+            command,
+            month: period,
+            revision: before.revision,
+            factsRevision: before.factsRevision,
+          },
         },
-      });
+      );
       setState((previous) => ({ ...data, drafts: previous?.drafts ?? {} }));
       return true;
     } catch (failure) {
@@ -172,6 +179,7 @@ export default function ReportsPage() {
   const workspace: ReportWorkspace | null = state
     ? {
         state,
+        error,
         month,
         mutate,
         saving,
@@ -236,6 +244,10 @@ export default function ReportsPage() {
           )}
           <Routes>
             <Route index element={<ReportsOverview workspace={workspace} />} />
+            <Route
+              path="reversements"
+              element={<TaxRemittancesPage workspace={workspace} />}
+            />
             <Route
               path="import-airbnb"
               element={<OtaImportPage workspace={workspace} />}

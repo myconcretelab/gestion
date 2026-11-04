@@ -120,12 +120,17 @@ test("une sauvegarde standard est validée puis restaurée sans secrets", () => 
   ].join(" ");
   assert.equal(spawnSync("sqlite3", [database, schema]).status, 0);
   fs.writeFileSync(path.join(dataDir, "pdfs", "sample.pdf"), "pdf"); fs.writeFileSync(path.join(dataDir, "server-auth-settings.json"), "secret");
+  const receipt = path.join(dataDir, "organizations", "owner-test-org", "uploads", "tourist-tax-remittances", "receipt-id");
+  fs.mkdirSync(path.dirname(receipt), { recursive: true });
+  fs.writeFileSync(receipt, "%PDF-1.4 preserved receipt");
   const env = { ...process.env, DATABASE_URL: `file:${database}`, DATA_DIR: dataDir };
   try {
     const backup = spawnSync(process.execPath, ["scripts/installation-data.mjs", "backup", archive], { cwd: serverRoot, env, encoding: "utf8" }); assert.equal(backup.status, 0, backup.stderr || backup.stdout);
     const preview = spawnSync(process.execPath, ["scripts/installation-data.mjs", "preview", archive], { cwd: serverRoot, env, encoding: "utf8" }); assert.equal(preview.status, 0, preview.stderr || preview.stdout); assert.match(preview.stdout, /"secretsIncluded": false/); assert.doesNotMatch(preview.stdout, /server-auth-settings/);
     assert.equal(spawnSync("sqlite3", [database, "UPDATE business_data SET value='changed';"]).status, 0);
+    fs.unlinkSync(receipt);
     const restore = spawnSync(process.execPath, ["scripts/installation-data.mjs", "restore", archive, "--apply", "--confirm-replace"], { cwd: serverRoot, env, encoding: "utf8" }); assert.equal(restore.status, 0, restore.stderr || restore.stdout);
+    assert.equal(fs.readFileSync(receipt, "utf8"), "%PDF-1.4 preserved receipt");
     assert.equal(spawnSync("sqlite3", [database, "SELECT value FROM business_data;"], { encoding: "utf8" }).stdout.trim(), "database-original");
     assert.equal(spawnSync("sqlite3", [database, "SELECT url FROM ical_sources;"], { encoding: "utf8" }).stdout.trim(), "redacted://not-exported/1");
     assert.equal(spawnSync("sqlite3", [database, "SELECT key FROM organization_runtime_settings;"], { encoding: "utf8" }).stdout.trim(), "task-urgency-reminders");

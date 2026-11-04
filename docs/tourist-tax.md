@@ -34,7 +34,7 @@ Le calcul est commun au navigateur et au serveur. Les factures regroupées repre
 
 ## Limites de cette étape
 
-- Les rapports de nuitées proposent la synthèse, les perceptions rattachées aux règlements, les compléments justifiés et les registres PDF/CSV figés à la confirmation. Ils ne transmettent pas la déclaration au portail et n’effectuent pas son reversement ; voir [les rapports](reports.md).
+- Les rapports de nuitées proposent la synthèse, les perceptions rattachées aux règlements, les compléments justifiés et les registres PDF/CSV figés à la confirmation. Le suivi des reversements reprend les propriétaires existants et permet de rapprocher les déclarations confirmées avec les paiements et justificatifs de la collectivité. L’application ne transmet pas la déclaration au portail et n’effectue pas son reversement ; voir [les rapports](reports.md).
 - Les PDF locaux incluent la taxe. L’export EN16931/SuperPDP des factures avec taxe collectée par le loueur n’est pas implémenté : aucun instantané électronique candidat n’est produit pour ces factures et leur préparation distante reste bloquée. Les taxes collectées ailleurs n’augmentent pas le montant électronique des prestations.
 - Les modifications futures doivent maintenir l’égalité entre le calcul archivé, la taxe séparée, le total à payer et les paiements, sans reclasser une taxe en ligne de prestation pour contourner l’export.
 

@@ -7,6 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
+  taxRemittanceTotals,
+  taxRemittanceSources,
+  taxRemittanceSourcesChanged,
   evaluateReport,
   reportPeriodKey,
   snapshotDiffers,
@@ -4014,3 +4017,489 @@ test("registre HTTP : aperçu, pièces jointes réelles et refus d’une révisi
     }
   });
 });
+
+async function remittanceFixture(
+  work: (data: {
+    state: ReportWorkspaceData;
+    gite: string;
+    ownerId: string;
+    reportId: string;
+    org: string;
+  }) => Promise<void>,
+) {
+  await fixture(async ({ gite, org }) => {
+    const owner = await db.default.gestionnaire.create({
+      data: { prenom: "Soazig", nom: "Test" },
+    });
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { gestionnaire_id: owner.id },
+    });
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-10-10"),
+      date_sortie: new Date("2026-10-12"),
+      nb_nuits: 2,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await pay(reservation.id, 4, {
+      purpose: "tourist_tax",
+      paid_on: "2026-10-12",
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "remittance-declaration"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition });
+    state = await mutate(state, { type: "ready", reportId: definition.id });
+    state = await mutate(state, { type: "confirm", reportId: definition.id });
+    await work({
+      state,
+      gite,
+      ownerId: owner.id,
+      reportId: definition.id,
+      org,
+    });
+  });
+}
+const remittanceInput = (
+  state: ReportWorkspaceData,
+  ownerId: string,
+  id = randomUUID(),
+) => ({
+  id,
+  accountId: ownerId,
+  label: "4e trimestre 2026",
+  sourceKeys: Object.keys(state.progress).filter(
+    (key) => state.progress[key].snapshot?.definition.nightDeclaration,
+  ),
+  declaredAmountCents: 400,
+  declarationReference: "Avis-2026-4",
+  note: "",
+});
+
+test("reversements : copies confirmées, paiements partiels, corrections et isolation des propriétaires", () =>
+  remittanceFixture(async ({ state: initial, gite, ownerId, reportId }) => {
+    const input = remittanceInput(initial, ownerId);
+    const archive = JSON.parse(JSON.stringify(initial.progress));
+    let state = await mutate(initial, {
+      type: "remittance-save",
+      remittance: input,
+    });
+    assert.equal(state.taxRemittances!.length, 1);
+    assert.equal(
+      taxRemittanceTotals(state.taxRemittances![0]).balanceCents,
+      400,
+    );
+    await assert.rejects(
+      mutate(initial, { type: "remittance-save", remittance: input }),
+      /ont changé/,
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-save",
+        remittance: { ...input, id: randomUUID() },
+      }),
+      /même période/,
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-save",
+        remittance: { ...input, declaredAmountCents: 401 },
+      }),
+      /Expliquez/,
+    );
+    const payment = {
+      id: randomUUID(),
+      paidOn: "2026-11-02",
+      amountCents: 150,
+      reference: "PAYFIP-1",
+      note: "Premier versement",
+    };
+    state = await mutate(state, {
+      type: "remittance-payment",
+      remittanceId: input.id,
+      payment,
+    });
+    assert.equal(
+      taxRemittanceTotals(state.taxRemittances![0]).status,
+      "Partiellement réglé",
+    );
+    assert.equal(
+      taxRemittanceTotals(state.taxRemittances![0]).balanceCents,
+      250,
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-payment",
+        remittanceId: input.id,
+        payment,
+      }),
+      /déjà enregistré/,
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-cancel",
+        remittanceId: input.id,
+        reason: "Saisie erronée",
+      }),
+      /Annulez d’abord/,
+    );
+    state = await mutate(state, {
+      type: "remittance-payment",
+      remittanceId: input.id,
+      payment: { ...payment, id: randomUUID(), amountCents: 250 },
+    });
+    assert.equal(taxRemittanceTotals(state.taxRemittances![0]).status, "Réglé");
+    state = await mutate(state, {
+      type: "remittance-save",
+      remittance: {
+        ...input,
+        declaredAmountCents: 399,
+        note: "Correction selon avis rectifié",
+      },
+    });
+    assert.equal(
+      taxRemittanceTotals(state.taxRemittances![0]).status,
+      "Trop versé",
+    );
+    state = await mutate(state, {
+      type: "remittance-void-payment",
+      remittanceId: input.id,
+      paymentId: payment.id,
+      reason: "Versement saisi deux fois",
+    });
+    assert.equal(
+      state.taxRemittances![0].payments[0].voidReason,
+      "Versement saisi deux fois",
+    );
+    assert.deepEqual(state.progress, archive);
+    const reloaded = await reports.getReportWorkspace();
+    assert.deepEqual(reloaded.taxRemittances, state.taxRemittances);
+    assert.equal(await db.default.reservationRecordedPayment.count(), 1);
+    const other = await db.default.gestionnaire.create({
+      data: {
+        prenom: "Autre",
+        nom: "Propriétaire",
+      },
+    });
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { gestionnaire_id: other.id },
+    });
+    state = await reports.getReportWorkspace({ force: true });
+    assert.deepEqual(
+      taxRemittanceSources(state, {
+        id: "owner-other",
+        name: "Autre",
+        propertyIds: ["absent"],
+      }),
+      [],
+    );
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-save",
+        remittance: { ...input, id: randomUUID(), accountId: other.id },
+      }),
+      /même période/,
+    );
+    assert.equal(state.taxRemittances![0].accountName, "Soazig Test");
+    const storedBasis = structuredClone(state.taxRemittances![0].sources);
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { nom: "Gîte renommé" },
+    });
+    state = await reports.getReportWorkspace({ force: true });
+    assert.equal(
+      taxRemittanceSourcesChanged(state, state.taxRemittances![0]),
+      false,
+    );
+    state = await mutate(state, {
+      type: "resolve",
+      reportId,
+      outcome: "corrected",
+      note: "Déclaration corrigée après renommage",
+    });
+    assert.equal(
+      taxRemittanceSourcesChanged(state, state.taxRemittances![0]),
+      true,
+    );
+    assert.deepEqual(state.taxRemittances![0].sources, storedBasis);
+    await fixture(async () => {
+      const foreign = await reports.getReportWorkspace();
+      assert.equal(foreign.taxRemittances, undefined);
+      await assert.rejects(
+        mutate(foreign, {
+          type: "remittance-payment",
+          remittanceId: input.id,
+          payment,
+        }),
+        /introuvable/,
+      );
+    });
+  }));
+
+test("reversements : les saisies non confirmées, les inconnues et les périodes redondantes sont refusées", () =>
+  remittanceFixture(async ({ state: initial, ownerId, gite, reportId }) => {
+    const input = remittanceInput(initial, ownerId);
+    await assert.rejects(
+      mutate(initial, {
+        type: "remittance-save",
+        remittance: { ...input, sourceKeys: ["unknown"] },
+      }),
+      /pas confirmée/,
+    );
+    await assert.rejects(
+      mutate(initial, {
+        type: "remittance-save",
+        remittance: { ...input, accountId: "foreign" },
+      }),
+      /introuvable/,
+    );
+    const duplicate = {
+      ...initial.reports.find((r) => r.id === reportId)!,
+      id: "duplicate-declaration",
+    };
+    let state = await mutate(initial, { type: "save", definition: duplicate });
+    state = await mutate(state, { type: "ready", reportId: duplicate.id });
+    state = await mutate(state, { type: "confirm", reportId: duplicate.id });
+    await assert.rejects(
+      mutate(state, {
+        type: "remittance-save",
+        remittance: {
+          ...input,
+          sourceKeys: [
+            ...input.sourceKeys,
+            reportPeriodKey(duplicate, "2026-10"),
+          ],
+          declaredAmountCents: 800,
+        },
+      }),
+      /même période/,
+    );
+    state = await mutate(state, { type: "remittance-save", remittance: input });
+    state = await mutate(state, {
+      type: "remittance-cancel",
+      remittanceId: input.id,
+      reason: "Dossier de test annulé",
+    });
+    state = await mutate(state, {
+      type: "remittance-save",
+      remittance: { ...input, id: randomUUID() },
+    });
+    assert.equal(state.taxRemittances!.length, 2);
+    assert.equal(
+      state.taxRemittances![0].cancelReason,
+      "Dossier de test annulé",
+    );
+    assert.deepEqual(
+      state.taxRemittances![1].sources[0].properties.map((p) => p.id),
+      [gite],
+    );
+  }));
+
+test("reversements : justificatifs privés, audit sans contenu de fichier et nettoyage sur échec transactionnel", () =>
+  remittanceFixture(async ({ state: initial, ownerId, org }) => {
+    const input = remittanceInput(initial, ownerId);
+    let state = await mutate(initial, {
+      type: "remittance-save",
+      remittance: input,
+    });
+    const payment = {
+      id: randomUUID(),
+      paidOn: "2026-11-03",
+      amountCents: 400,
+      reference: "PAYFIP-2",
+      note: "",
+    };
+    state = await mutate(state, {
+      type: "remittance-payment",
+      remittanceId: input.id,
+      payment,
+    });
+    const upload: ReportCommand = {
+      type: "remittance-receipt",
+      remittanceId: input.id,
+      paymentId: payment.id,
+      file: {
+        name: "../reçu.pdf",
+        data: Buffer.from("%PDF-1.4\nTest de justificatif privé").toString(
+          "base64",
+        ),
+      },
+    };
+    await assert.rejects(
+      mutate(state, {
+        ...upload,
+        file: {
+          name: "bad.pdf",
+          data: Buffer.from("<html>not a PDF</html>").toString("base64"),
+        },
+      }),
+      /Format/,
+    );
+    state = await mutate(state, upload);
+    const receipt = state.taxRemittances![0].payments[0].receipts![0];
+    assert.equal(receipt.name, "reçu.pdf");
+    const receipts =
+      await import("../src/modules/finance/reports/remittances.js");
+    assert.match(
+      (await receipts.readRemittanceReceipt(receipt)).toString(),
+      /privé/,
+    );
+    const audit = await db.default.auditLog.findFirstOrThrow({
+      where: { action: "report.remittance-receipt" },
+    });
+    assert.equal(audit.metadata_json!.includes(upload.file.data), false);
+    assert.equal(
+      JSON.parse(audit.metadata_json!).command.file.checksumSha256,
+      receipt.checksumSha256,
+    );
+    const dir = path.join(
+      temp,
+      "organizations",
+      org,
+      "uploads",
+      "tourist-tax-remittances",
+    );
+    assert.equal(fs.readdirSync(dir).length, 1);
+    await assert.rejects(mutate(initial, upload), /ont changé/);
+    assert.equal(fs.readdirSync(dir).length, 1);
+    await db.systemPrisma.$executeRawUnsafe(
+      `CREATE TRIGGER abort_remittance_receipt BEFORE INSERT ON audit_logs WHEN NEW.action = 'report.remittance-receipt' BEGIN SELECT RAISE(ABORT, 'receipt-test-failure'); END`,
+    );
+    try {
+      await assert.rejects(mutate(state, upload));
+    } finally {
+      await db.systemPrisma.$executeRawUnsafe(
+        "DROP TRIGGER abort_remittance_receipt",
+      );
+    }
+    assert.equal(fs.readdirSync(dir).length, 1);
+    const { default: express } = await import("express");
+    const { default: router } =
+      await import("../src/modules/finance/reports/routes.js");
+    const app = express();
+    let activeOrg = org;
+    app.use((_req, _res, next) => inOrg(activeOrg, next));
+    app.use("/reports", router);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      const url = `http://127.0.0.1:${address.port}/reports/remittances/${input.id}/payments/${payment.id}/receipts/${receipt.id}`;
+      const response = await fetch(url);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(response.headers.get("content-type"), "application/pdf");
+      assert.match(await response.text(), /privé/);
+      await fixture(async ({ org: otherOrg }) => {
+        activeOrg = otherOrg;
+        assert.equal((await fetch(url)).status, 404);
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }));
+
+test("reversements : un rapport commun et plusieurs mois restent séparés par propriétaire", () =>
+  remittanceFixture(async ({ state: initial, ownerId, gite }) => {
+    const owner2 = await db.default.gestionnaire.create({
+      data: { prenom: "Sébastien", nom: "Test" },
+    });
+    const second = await db.default.gite.create({
+      data: {
+        nom: "Autre gîte",
+        prefixe_contrat: "S",
+        adresse_ligne1: "Test",
+        capacite_max: 10,
+        proprietaires_noms: "Test",
+        proprietaires_adresse: "Test",
+        telephones: "",
+        taxe_sejour_par_personne_par_nuit: 0,
+        iban: "",
+        titulaire: "Test",
+        gestionnaire_id: owner2.id,
+      },
+    });
+    for (const [propertyId, month, nights] of [
+      [second.id, "10", 3],
+      [gite, "09", 2],
+      [second.id, "09", 3],
+    ] as const) {
+      const reservation = await stay(propertyId, {
+        date_entree: new Date(`2026-${month}-10`),
+        date_sortie: new Date(`2026-${month}-${10 + nights}`),
+        nb_nuits: nights,
+        options: JSON.stringify({ tourist_tax: registerTax }),
+      });
+      await pay(reservation.id, 2 * nights, {
+        purpose: "tourist_tax",
+        paid_on: `2026-${month}-${10 + nights}`,
+      });
+    }
+    let state = await reports.getReportWorkspace({ force: true });
+    const definition = {
+      ...createReport("tourist", "combined-declaration"),
+      propertyIds: [gite, second.id],
+      nightDeclaration: true,
+      nightRegistrations: {
+        [gite]: { number: "", notApplicable: true },
+        [second.id]: { number: "", notApplicable: true },
+      },
+    };
+    state = await mutate(state, { type: "save", definition });
+    for (const month of ["2026-09", "2026-10"]) {
+      state = await mutate(
+        state,
+        { type: "ready", reportId: definition.id },
+        month,
+      );
+      state = await mutate(
+        state,
+        { type: "confirm", reportId: definition.id },
+        month,
+      );
+    }
+    const sourceKeys = [
+      reportPeriodKey(definition, "2026-09"),
+      reportPeriodKey(definition, "2026-10"),
+    ];
+    for (const [accountId, amount] of [
+      [ownerId, 800],
+      [owner2.id, 1200],
+    ] as const) {
+      state = await mutate(state, {
+        type: "remittance-save",
+        remittance: {
+          id: randomUUID(),
+          accountId,
+          label: "Regroupement de deux mois",
+          sourceKeys,
+          declaredAmountCents: amount,
+          declarationReference: "",
+          note: "",
+        },
+      });
+    }
+    assert.deepEqual(
+      state.taxRemittances!.map((r) => taxRemittanceTotals(r).collectedCents),
+      [800, 1200],
+    );
+    assert.deepEqual(
+      state.taxRemittances![0].sources.flatMap((s) =>
+        s.properties.map((p) => p.id),
+      ),
+      [gite, gite],
+    );
+    assert.deepEqual(
+      state.taxRemittances![1].sources.flatMap((s) =>
+        s.properties.map((p) => p.id),
+      ),
+      [second.id, second.id],
+    );
+    assert.equal(initial.taxRemittances, undefined);
+  }));

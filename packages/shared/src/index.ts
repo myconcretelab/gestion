@@ -128,3 +128,5 @@ export * from "./reportWorklist.js";
 export * from "./ota.js";
 
 export * from "./otaPricing.js";
+
+export * from "./touristTaxRemittance.js";

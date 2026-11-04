@@ -8,6 +8,7 @@ import {
   nightRegisterCsv,
   nightDeclarationCsv,
   reportMonthSchema,
+  reportMutationSchema,
 } from "@contrats/shared";
 import { getNightRegister } from "./nightRegister.js";
 import { renderNightRegisterHtml } from "./nightRegisterRender.js";
@@ -17,7 +18,42 @@ import {
   listOtaImports,
   previewOtaImport,
 } from "./otaImport.js";
+import { readRemittanceReceipt } from "./remittances.js";
 const router = Router();
+router.post("/receipts", async (req, res, next) => {
+  try {
+    const input = reportMutationSchema.parse(req.body);
+    if (input.command.type !== "remittance-receipt")
+      return res.status(400).json({ error: "Justificatif attendu." });
+    res.json(
+      await mutateReportWorkspace(
+        input,
+        (await getAuthenticatedAppUser(req))?.id,
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+router.get(
+  "/remittances/:remittanceId/payments/:paymentId/receipts/:receiptId",
+  async (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const state = await getReportWorkspace();
+      const receipt = state.taxRemittances
+        ?.find((r) => r.id === req.params.remittanceId)
+        ?.payments.find((p) => p.id === req.params.paymentId)
+        ?.receipts?.find((r) => r.id === req.params.receiptId);
+      if (!receipt)
+        return res.status(404).json({ error: "Justificatif introuvable." });
+      const content = await readRemittanceReceipt(receipt);
+      res.attachment(receipt.name).type(receipt.contentType).send(content);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 const importBody = z
   .object({
     content: z.string().min(1).max(5_000_000),
@@ -130,12 +166,9 @@ router.get("/:reportId/night-register", async (req, res, next) => {
       .strict()
       .parse(req.query);
     if ((resolution !== undefined || archiveKey) && source !== "confirmed")
-      return res
-        .status(400)
-        .json({
-          error:
-            "Choisissez une copie confirmée pour consulter une résolution.",
-        });
+      return res.status(400).json({
+        error: "Choisissez une copie confirmée pour consulter une résolution.",
+      });
     const register = await getNightRegister(
       req.params.reportId,
       month,
