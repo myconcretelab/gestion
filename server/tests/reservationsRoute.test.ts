@@ -222,12 +222,14 @@ test("POST /reservations conserve un séjour qui chevauche deux années en une s
     giteFindUnique: prisma.gite.findUnique,
     reservationFindMany: prisma.reservation.findMany,
     reservationCreate: prisma.reservation.create,
+    runtimeSettingFindFirst: prisma.organizationRuntimeSetting.findFirst,
     transaction: prisma.$transaction,
   };
 
   const createdRows: any[] = [];
 
   try {
+    prisma.organizationRuntimeSetting.findFirst = async () => null;
     prisma.gite.findUnique = async () => ({ id: "g1", airbnb_listing_id: null });
     prisma.reservation.findMany = async () => [];
     prisma.reservation.create = async ({ data }: any) => {
@@ -284,6 +286,7 @@ test("POST /reservations conserve un séjour qui chevauche deux années en une s
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.reservation.findMany = original.reservationFindMany;
     prisma.reservation.create = original.reservationCreate;
+    prisma.organizationRuntimeSetting.findFirst = original.runtimeSettingFindFirst;
     prisma.$transaction = original.transaction;
     if (envBackup.DATABASE_URL === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = envBackup.DATABASE_URL;
