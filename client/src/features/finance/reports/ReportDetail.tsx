@@ -264,9 +264,11 @@ export default function ReportDetail({
             </span>
             {displayedReport.kind === "tourist" && (
               <span>
-                {snapshot && !displayedReport.nightGuests
-                  ? "Occupants selon la copie confirmée"
-                  : nightGuestGroupsLabel(displayedReport.nightGuests)}
+                {displayedReport.nightDeclaration
+                  ? "Adultes taxables après exonérations"
+                  : snapshot && !displayedReport.nightGuests
+                    ? "Occupants selon la copie confirmée"
+                    : nightGuestGroupsLabel(displayedReport.nightGuests)}
               </span>
             )}
             {snapshot ? (
@@ -324,13 +326,6 @@ export default function ReportDetail({
               <ReportIcon name="download" />
               Exporter
             </button>
-            {report.kind === "tourist" && !snapshot && (
-              <ReportNightRegister
-                key={`${report.id}:${month}`}
-                reportId={report.id}
-                month={month}
-              />
-            )}
             {canEdit && (
               <Link
                 className="rp-button rp-button--secondary"
@@ -572,6 +567,25 @@ export default function ReportDetail({
           )}
         </div>
       </section>
+      {displayedReport.kind === "tourist" &&
+        (!snapshot || snapshot.nightRegister) && (
+          <ReportNightRegister
+            key={`${report.id}:${displayedMonth}:${snapshotKey}:${resolutionIndex}`}
+            reportId={report.id}
+            month={displayedMonth}
+            workspace={workspace}
+            archive={
+              snapshot && snapshotKey
+                ? {
+                    key: snapshotKey,
+                    ...(resolutionIndex !== null
+                      ? { resolution: resolutionIndex }
+                      : {}),
+                  }
+                : undefined
+            }
+          />
+        )}
       <section
         ref={operationsSection}
         tabIndex={-1}

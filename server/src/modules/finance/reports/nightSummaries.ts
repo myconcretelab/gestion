@@ -94,6 +94,10 @@ export function getNightSummaries(year: number): Promise<NightSummaryResponse> {
                 row.options,
                 {},
               ).tourist_tax?.infants ?? 0,
+            tourist_tax: fromJsonString<{ tourist_tax?: unknown }>(
+              row.options,
+              {},
+            ).tourist_tax,
           })),
         );
         const data: NightSummaryResponse = {

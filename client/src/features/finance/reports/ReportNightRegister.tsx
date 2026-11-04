@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { NIGHT_REGISTER_LEGAL_URL, type NightRegister } from "@contrats/shared";
 import { apiFetch, buildApiUrl, isAbortError } from "../../../utils/api";
 import { ReportDialog, ReportIcon } from "./ReportUi";
+import ReportNightSummary from "./ReportNightSummary";
+import ReportNightRegisterCompletion from "./ReportNightRegisterCompletion";
+import type { ReportWorkspace } from "./ReportsPage";
 
 export default function ReportNightRegister({
   reportId,
   month,
+  workspace,
+  archive,
 }: {
   reportId: string;
   month: string;
+  workspace: ReportWorkspace;
+  archive?: { key: string; resolution?: number };
 }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<NightRegister | null>(null);
@@ -17,13 +25,24 @@ export default function ReportNightRegister({
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const path = `/reports/${encodeURIComponent(reportId)}/night-register`;
+  const archiveKey = archive?.key;
+  const archiveResolution = archive?.resolution;
+  const sourcesKey = archiveKey
+    ? "archive"
+    : `${workspace.state.revision}:${workspace.state.factsRevision}`;
   useEffect(() => {
-    if (!open) return;
     const controller = new AbortController();
     setData(null);
     setLoading(true);
     setError("");
-    apiFetch<NightRegister>(`${path}?month=${encodeURIComponent(month)}`, {
+    const params = new URLSearchParams({ month });
+    if (archiveKey) {
+      params.set("source", "confirmed");
+      params.set("archiveKey", archiveKey);
+    }
+    if (archiveResolution !== undefined)
+      params.set("resolution", String(archiveResolution));
+    apiFetch<NightRegister>(`${path}?${params}`, {
       signal: controller.signal,
     })
       .then((register) => {
@@ -41,8 +60,8 @@ export default function ReportNightRegister({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [open, path, month, refresh]);
-  async function download(format: "pdf" | "csv") {
+  }, [path, month, refresh, archiveKey, archiveResolution, sourcesKey]);
+  async function download(format: "pdf" | "csv" | "summary-csv") {
     if (!data || downloading) return;
     setDownloading(true);
     setError("");
@@ -52,6 +71,12 @@ export default function ReportNightRegister({
         format,
         revision: data.revision,
       });
+      if (archiveKey) {
+        params.set("source", "confirmed");
+        params.set("archiveKey", archiveKey);
+      }
+      if (archiveResolution !== undefined)
+        params.set("resolution", String(archiveResolution));
       const response = await fetch(buildApiUrl(`${path}?${params}`), {
         credentials: "include",
       });
@@ -78,7 +103,7 @@ export default function ReportNightRegister({
         .replace(/[^a-zA-Z0-9-]/g, "-")
         .slice(0, 90);
       link.href = url;
-      link.download = `registre-sejours-${gites || "gites"}-${month}.${format}`;
+      link.download = `${format === "summary-csv" ? "synthese-nuitees" : "registre-sejours"}-${gites || "gites"}-${data.period.start}.${format === "summary-csv" ? "csv" : format}`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (failure) {
@@ -95,14 +120,62 @@ export default function ReportNightRegister({
     ? [...new Map(data.rows.map((row) => [row.reservationId, row])).values()]
     : [];
   return (
-    <>
-      <button
-        type="button"
-        className="rp-button rp-button--secondary"
-        onClick={() => setOpen(true)}
-      >
-        <ReportIcon name="download" /> Télécharger le registre
-      </button>
+    <section
+      className="rp-panel rp-declaration-panel"
+      aria-label="Déclaration de nuitées"
+    >
+      {loading && <p role="status">Préparation de la synthèse…</p>}
+      {!open && error && (
+        <p className="rp-notice" role="alert">
+          {error}
+        </p>
+      )}
+      {data && (
+        <>
+          <ReportNightSummary data={data} />
+          {!archive && workspace.canEdit && (
+            <p className="rp-muted">
+              <Link to={workspace.href(`/${reportId}/modifier`, month)}>
+                Configurer la déclaration et les numéros d’enregistrement des
+                gîtes
+              </Link>
+            </p>
+          )}
+          {data.incompleteCount > 0 && (
+            <p className="rp-notice">
+              {data.incompleteCount} séjour(s) à compléter avant de finaliser
+              une déclaration de taxe de séjour. Consultez le registre pour
+              vérifier les informations manquantes.
+            </p>
+          )}
+          {data.archivedAt && (
+            <p className="rp-muted">
+              Registre figé lors de la confirmation du{" "}
+              {new Date(data.archivedAt).toLocaleDateString("fr-FR", {
+                timeZone: "Europe/Paris",
+              })}
+              .
+            </p>
+          )}
+        </>
+      )}
+      <div className="rp-dialog__actions">
+        <button
+          type="button"
+          className="rp-button rp-button--secondary"
+          disabled={!data || loading || downloading}
+          onClick={() => void download("summary-csv")}
+        >
+          Exporter la synthèse CSV
+        </button>
+        <button
+          type="button"
+          className="rp-button rp-button--secondary"
+          onClick={() => setOpen(true)}
+        >
+          <ReportIcon name="download" /> Télécharger le registre
+        </button>
+      </div>
       {open && (
         <ReportDialog
           title="Registre des séjours"
@@ -110,8 +183,9 @@ export default function ReportNightRegister({
           onClose={() => setOpen(false)}
         >
           <p className="rp-muted">
-            Le justificatif reprend les données actuelles des gîtes et de la
-            période de ce rapport.
+            {archive
+              ? "Ce justificatif reprend les données figées lors de la confirmation."
+              : "Le justificatif reprend les données actuelles des gîtes et de la période de ce rapport."}
           </p>
           {loading && <p role="status">Préparation du registre…</p>}
           {error && (
@@ -147,6 +221,16 @@ export default function ReportNightRegister({
                   permet de les renseigner avant transmission. Une taxe calculée
                   n’est pas assimilée à une taxe perçue.
                 </p>
+              )}
+              <ReportNightSummary data={data} />
+              {!archive && (
+                <ReportNightRegisterCompletion
+                  key={data.revision}
+                  data={data}
+                  workspace={workspace}
+                  month={month}
+                  onSaved={() => setRefresh((value) => value + 1)}
+                />
               )}
               <ul
                 className="rp-register-stays"
@@ -219,6 +303,6 @@ export default function ReportNightRegister({
           </div>
         </ReportDialog>
       )}
-    </>
+    </section>
   );
 }

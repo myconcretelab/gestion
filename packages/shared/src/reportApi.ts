@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ReportOperation, ReportState } from "./reports.js";
+import { nightRegisterCompletionSchema } from "./nightRegister.js";
 
 export const reportMonthSchema = z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/);
 export const reportDefinitionSchema = z
@@ -10,7 +11,7 @@ export const reportDefinitionSchema = z
     description: z.string().trim().max(1000),
     recipient: z.string().trim().min(1).max(160),
     dateBasis: z.enum(["payment", "stay"]),
-    cadence: z.enum(["monthly", "quarterly", "yearly"]),
+    cadence: z.enum(["monthly", "quarterly", "yearly", "broceliande"]),
     categories: z
       .array(
         z.enum(["accommodation", "cleaning", "linen", "extras", "tourist_tax"]),
@@ -34,6 +35,22 @@ export const reportDefinitionSchema = z
       .max(3)
       .optional(),
     nightReference: z.boolean().optional(),
+    nightDeclaration: z.boolean().optional(),
+    nightRegistrations: z
+      .record(
+        z.string().min(1).max(100),
+        z
+          .object({
+            number: z.string().trim().max(100),
+            notApplicable: z.boolean(),
+          })
+          .strict()
+          .refine(
+            (value) => !(value.number && value.notApplicable),
+            "Choisissez un numéro ou la non-application.",
+          ),
+      )
+      .optional(),
     excludedBookingSources: z
       .array(z.string().trim().min(1).max(120))
       .max(100)
@@ -41,6 +58,28 @@ export const reportDefinitionSchema = z
   })
   .strict()
   .superRefine((report, ctx) => {
+    if (
+      report.kind !== "tourist" &&
+      (report.nightDeclaration ||
+        report.nightRegistrations ||
+        report.cadence === "broceliande")
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Ces réglages concernent les rapports de nuitées.",
+      });
+    if (
+      report.nightRegistrations &&
+      (Object.keys(report.nightRegistrations).length > 1000 ||
+        Object.keys(report.nightRegistrations).some(
+          (id) => !report.propertyIds.includes(id),
+        ))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Les numéros d’enregistrement doivent concerner les gîtes du rapport.",
+      });
     if (
       report.kind !== "tourist" &&
       (report.nightGuests || report.nightReference)
@@ -127,6 +166,13 @@ export type ReportAllocation = {
   amounts: { cleaning: number; linen: number; extras: number } | null;
 };
 export const reportCommandSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("night-register-completion"),
+      reportId: z.string().min(1).max(100),
+      completion: nightRegisterCompletionSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("worklist-start"),

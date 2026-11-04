@@ -6,11 +6,13 @@ import {
   reportDefinitionSchema,
   reportPeriodKey,
   touristTaxStaySchema,
+  summarizeNightRegister,
+  type ReportDefinition,
   type NightRegister,
   type NightRegisterRow,
   type ReportState,
 } from "@contrats/shared";
-import prisma from "../../../db/prisma.js";
+import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { fromJsonString } from "../../../utils/jsonFields.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
 import { loadReportFacts } from "./facts.js";
@@ -26,10 +28,11 @@ const parisDate = new Intl.DateTimeFormat("sv-SE", {
   day: "2-digit",
 });
 
-/** A current source register. Missing tax collection evidence is never inferred from calendar nights. */
+/** Current sources and immutable confirmed registers share the same export path. */
 export async function getNightRegister(
   reportId: string,
   month: string,
+  archive?: { resolution?: number; key?: string },
 ): Promise<NightRegister> {
   return prisma.$transaction(
     async (db) => {
@@ -37,306 +40,469 @@ export async function getNightRegister(
       const config = fromJsonString<ReportState | null>(store?.data_json, null);
       const raw = config?.reports.find((report) => report.id === reportId);
       if (!raw) throw fail("Rapport introuvable.", 404);
+      const report = reportDefinitionSchema.parse(raw);
+      if (archive) {
+        const progress =
+          config!.progress[archive.key ?? reportPeriodKey(report, month)];
+        const copy =
+          archive.resolution === undefined
+            ? progress?.snapshot
+            : progress?.resolutions?.[archive.resolution];
+        if (!copy?.nightRegister || copy.definition.id !== reportId)
+          throw fail(
+            "Cette ancienne copie ne contient pas de registre archivé.",
+            404,
+          );
+        return copy.nightRegister;
+      }
       if (raw.kind !== "tourist")
         throw fail("Le registre des séjours concerne les rapports de nuitées.");
-      const report = reportDefinitionSchema.parse(raw);
-      const facts = await loadReportFacts(db);
-      if (
-        report.propertyIds.some(
-          (id) => !facts.properties.some((property) => property.id === id),
-        )
-      )
-        throw fail(
-          "Un gîte du rapport n’existe plus. Vérifiez son périmètre avant de télécharger le registre.",
-        );
-      const period = getReportPeriod(month, report.cadence);
-      if (
-        report.managerId &&
-        (!facts.managers.some((manager) => manager.id === report.managerId) ||
-          report.propertyIds.some(
-            (id) => facts.propertyManagers[id] !== report.managerId,
-          ))
-      )
-        throw fail(
-          "Le rattachement au gestionnaire a changé. Vérifiez le périmètre du rapport avant de télécharger le registre.",
-        );
-      const gites = await db.gite.findMany({
-        where: { id: { in: report.propertyIds } },
-        orderBy: [{ ordre: "asc" }, { id: "asc" }],
-      });
-      const properties = gites.map((gite) => ({
-        id: gite.id,
-        name: gite.nom,
-        address: [gite.adresse_ligne1, gite.adresse_ligne2]
-          .filter(Boolean)
-          .join(", "),
-        registrationNumber: null,
-      }));
-      const evaluated = evaluateReport(
-        report,
-        month,
-        config!.overrides[reportPeriodKey(report, month)],
-        facts.operations,
-        { ...facts, operationEdits: {} },
-      );
-      const ids = [
-        ...new Set(
-          evaluated.rows
-            .filter((row) => row.status !== "excluded")
-            .flatMap((row) => (row.reservationId ? [row.reservationId] : [])),
-        ),
-      ];
-      const reservations = await db.reservation.findMany({
-        where: { id: { in: ids } },
-        include: { gite: true },
-        orderBy: [{ date_entree: "asc" }, { id: "asc" }],
-      });
-      const groupIds = [
-        ...new Set(
-          reservations.flatMap((row) =>
-            row.stay_group_id ? [row.stay_group_id] : [],
-          ),
-        ),
-      ];
-      const siblings = groupIds.length
-        ? await db.reservation.findMany({
-            where: { stay_group_id: { in: groupIds } },
-            orderBy: [{ date_entree: "asc" }, { id: "asc" }],
-          })
-        : [];
-      const tracking = await loadReservationPaymentTracking(ids, db);
-      const rows: NightRegisterRow[] = [];
-      for (const [index, reservation] of reservations.entries()) {
-        const group = reservation.stay_group_id
-          ? siblings.filter(
-              (row) => row.stay_group_id === reservation.stay_group_id,
-            )
-          : [reservation];
-        const first = group[0] ?? reservation;
-        const options = fromJsonString<{ tourist_tax?: unknown }>(
-          first.options,
-          {},
-        );
-        const checked = touristTaxStaySchema.safeParse(options.tourist_tax);
-        const stayTax = checked.success ? checked.data : null;
-        const nightsInGroup = group.reduce((sum, row) => sum + row.nb_nuits, 0);
-        const accommodation =
-          group.reduce((sum, row) => sum + Number(row.prix_total), 0) -
-          Number(first.remise_montant);
-        const tax = stayTax
-          ? computeTouristTax({
-              stay: stayTax,
-              nights: nightsInGroup,
-              adults: first.nb_adultes,
-              children: first.nb_enfants_2_17,
-              accommodation,
-              start: day(first.date_entree),
-            })
-          : null;
-        const arrival = day(reservation.date_entree),
-          departure = day(reservation.date_sortie);
-        const start = arrival > period.start ? arrival : period.start;
-        const end = departure < period.end ? departure : period.end;
-        const nights = Math.max(
-          0,
-          Math.round((Date.parse(end) - Date.parse(start)) / 86400000),
-        );
-        const infantsRecorded =
-          typeof options.tourist_tax === "object" &&
-          options.tourist_tax !== null &&
-          Object.hasOwn(options.tourist_tax, "infants");
-        const infants = stayTax && infantsRecorded ? stayTax.infants : null;
-        const occupants =
-          infants === null
-            ? null
-            : reservation.nb_adultes + reservation.nb_enfants_2_17 + infants;
-        const issues: string[] = [];
-        const address = [
-          reservation.gite?.adresse_ligne1,
-          reservation.gite?.adresse_ligne2,
-        ]
-          .filter(Boolean)
-          .join(", ");
-        if (!address) issues.push("Adresse du gîte à compléter.");
-        issues.push("Numéro d’enregistrement à compléter s’il s’applique.");
-        if (!stayTax)
-          issues.push(
-            "Barème du séjour, collecteur, bébés et exonérations non enregistrés.",
-          );
-        else if (infants === null)
-          issues.push(
-            "Nombre de bébés non enregistré ; nombre total de personnes à compléter.",
-          );
-        if (tax?.issues.length) issues.push(...tax.issues);
-        if (group.length > 1)
-          issues.push(
-            "Séjour regroupé : ventilation entre hébergements et périodes à vérifier.",
-          );
-        const crossesPeriod = arrival < period.start || departure > period.end;
-        if (crossesPeriod)
-          issues.push(
-            "Séjour à cheval sur plusieurs périodes : affectation de la taxe collectée à compléter sans la compter deux fois.",
-          );
-        const classified = stayTax?.settings.classified ?? null;
-        const flatPrice =
-          cents(Number(reservation.prix_par_nuit)) * reservation.nb_nuits ===
-            cents(Number(reservation.prix_total)) &&
-          Number(reservation.remise_montant) === 0;
-        const netCents = tax ? cents(tax.accommodation_amount) : null;
-        const nightlyPriceCents =
-          flatPrice &&
-          group.length === 1 &&
-          netCents !== null &&
-          reservation.nb_nuits > 0 &&
-          netCents % reservation.nb_nuits === 0
-            ? netCents / reservation.nb_nuits
-            : null;
-        if (classified === null)
-          issues.push("Classement du gîte au moment du séjour à vérifier.");
-        if (classified !== true && nightlyPriceCents === null)
-          issues.push(
-            "Prix de chaque nuitée hors taxe de séjour à compléter ; aucun prix moyen n’est substitué à un tarif non vérifiable.",
-          );
-        const reasons = [
-          reservation.nb_enfants_2_17 || infants ? "Personnes mineures" : "",
-          stayTax?.exemption_reason,
-        ]
-          .filter(Boolean)
-          .join(" ; ");
-        const exemptionReason = stayTax
-          ? reasons || "Aucune exonération renseignée"
-          : null;
-        if (stayTax?.collector === "platform")
-          issues.push(
-            "Taxe collectée par la plateforme : renseigner ses perceptions, sans la présenter comme collectée par l’hébergeur.",
-          );
-        const entries = (tracking.get(reservation.id)?.entries ?? []).filter(
-          (entry) =>
-            !entry.voided_at &&
-            entry.amount > 0 &&
-            (entry.purpose === "tourist_tax" ||
-              entry.ota?.category === "tourist_tax"),
-        );
-        const collections =
-          group.length === 1 && stayTax?.collector === "host" ? entries : [];
-        if (!collections.length && stayTax?.collector !== "not_applicable")
-          issues.push(
-            "Date et montant réels de perception de la taxe non identifiés. Un règlement global n’est pas assimilé à une perception de taxe.",
-          );
-        for (const [collectionIndex, entry] of (collections.length
-          ? collections
-          : [null]
-        ).entries()) {
-          const lineIssues = [...issues];
-          const collectionDate =
-            entry?.paid_on && !entry.paid_on_estimated
-              ? parisDate.format(new Date(entry.paid_on))
-              : null;
-          if (entry && !collectionDate)
-            lineIssues.push("Date de perception non enregistrée ou estimée.");
-          if ((entry?.refunded_amount ?? 0) > 0)
-            lineIssues.push(
-              "Remboursement présent : perception nette et date du remboursement à vérifier.",
-            );
-          const collectedTaxCents =
-            entry && !crossesPeriod && !(entry.refunded_amount ?? 0)
-              ? (entry.ota?.grossCents ?? cents(entry.amount))
-              : stayTax?.collector === "not_applicable"
-                ? 0
-                : null;
-          const additionalTaxes =
-            stayTax?.collector === "not_applicable"
-              ? "Sans perception : non-application déclarée"
-              : stayTax?.settings.additional_percentage === 0
-                ? "Aucune selon le barème enregistré"
-                : null;
-          if (!additionalTaxes)
-            lineIssues.push(
-              "Ventilation et montants collectés par taxe additionnelle à compléter s’ils s’appliquent.",
-            );
-          const operationIssues = evaluated.rows
-            .filter(
-              (row) =>
-                row.reservationId === reservation.id && row.status === "review",
-            )
-            .flatMap((row) => row.issues.map((issue) => issue.message));
-          lineIssues.push(...operationIssues);
-          rows.push({
-            reference: `Séjour ${index + 1}${collections.length > 1 ? ` / perception ${collectionIndex + 1}` : ""}`,
-            reservationId: reservation.id,
-            propertyId: reservation.gite_id!,
-            propertyName: reservation.gite?.nom ?? "Gîte à vérifier",
-            address,
-            registrationNumber: null,
-            arrival,
-            departure,
-            periodStart: start,
-            periodEnd: end,
-            collectionDate,
-            collector: stayTax?.collector ?? "unknown",
-            adults: reservation.nb_adultes,
-            children: reservation.nb_enfants_2_17,
-            infants,
-            occupants,
-            nights,
-            personNights: occupants === null ? null : occupants * nights,
-            classified,
-            nightlyPriceCents,
-            collectedTaxCents,
-            collectedBaseTaxCents:
-              stayTax?.collector === "not_applicable" ||
-              stayTax?.settings.additional_percentage === 0
-                ? collectedTaxCents
-                : null,
-            calculatedStayTaxCents: tax ? cents(tax.amount) : null,
-            additionalTaxes,
-            exemptionReason,
-            source:
-              evaluated.rows.find((row) => row.reservationId === reservation.id)
-                ?.bookingSource ??
-              evaluated.rows.find((row) => row.reservationId === reservation.id)
-                ?.channel ??
-              "",
-            issues: [...new Set(lineIssues)],
-          });
-        }
-      }
-      rows.sort(
-        (a, b) =>
-          (a.collectionDate ?? "9999").localeCompare(
-            b.collectionDate ?? "9999",
-          ) ||
-          a.arrival.localeCompare(b.arrival) ||
-          a.reference.localeCompare(b.reference, "fr", { numeric: true }),
-      );
-      return {
-        reportId,
-        reportName: report.name,
-        recipient: report.recipient,
-        period: { label: period.label, start: period.start, end: period.end },
-        generatedAt: new Date().toISOString(),
-        revision: createHash("sha256")
-          .update(
-            JSON.stringify({
-              report,
-              rows,
-              properties,
-              factsRevision: facts.factsRevision,
-              revision: store!.revision,
-            }),
-          )
-          .digest("hex"),
-        reportNights: evaluated.total,
-        stayCount: reservations.length,
-        incompleteCount: new Set(
-          rows
-            .filter((row) => row.issues.length)
-            .map((row) => row.reservationId),
-        ).size,
-        properties,
-        rows,
-      };
+      return buildNightRegister(db, report, month, config!);
     },
     { timeout: 60_000 },
   );
+}
+
+export async function buildNightRegister(
+  db: TenantTransactionClient,
+  report: ReportDefinition,
+  month: string,
+  config: Pick<ReportState, "overrides" | "nightRegisterCompletions">,
+  facts?: Awaited<ReturnType<typeof loadReportFacts>>,
+): Promise<NightRegister> {
+  facts ??= await loadReportFacts(db);
+  if (
+    report.propertyIds.some(
+      (id) => !facts.properties.some((property) => property.id === id),
+    )
+  )
+    throw fail(
+      "Un gîte du rapport n’existe plus. Vérifiez son périmètre avant de télécharger le registre.",
+    );
+  const period = getReportPeriod(month, report.cadence);
+  if (
+    report.managerId &&
+    (!facts.managers.some((manager) => manager.id === report.managerId) ||
+      report.propertyIds.some(
+        (id) => facts.propertyManagers[id] !== report.managerId,
+      ))
+  )
+    throw fail(
+      "Le rattachement au gestionnaire a changé. Vérifiez le périmètre du rapport avant de télécharger le registre.",
+    );
+  const gites = await db.gite.findMany({
+    where: { id: { in: report.propertyIds } },
+    orderBy: [{ ordre: "asc" }, { id: "asc" }],
+  });
+  const properties = gites.map((gite) => ({
+    id: gite.id,
+    name: gite.nom,
+    address: [gite.adresse_ligne1, gite.adresse_ligne2]
+      .filter(Boolean)
+      .join(", "),
+    registrationNumber: report.nightRegistrations?.[gite.id]?.notApplicable
+      ? "Non applicable"
+      : report.nightRegistrations?.[gite.id]?.number || null,
+  }));
+  const evaluated = evaluateReport(
+    report,
+    month,
+    config.overrides[reportPeriodKey(report, month)],
+    facts.operations,
+    { ...facts, operationEdits: {} },
+  );
+  const ids = [
+    ...new Set(
+      evaluated.rows
+        .filter((row) => row.status !== "excluded")
+        .flatMap((row) => (row.reservationId ? [row.reservationId] : [])),
+    ),
+  ];
+  const reservations = await db.reservation.findMany({
+    where: { id: { in: ids } },
+    include: { gite: true },
+    orderBy: [{ date_entree: "asc" }, { id: "asc" }],
+  });
+  const groupIds = [
+    ...new Set(
+      reservations.flatMap((row) =>
+        row.stay_group_id ? [row.stay_group_id] : [],
+      ),
+    ),
+  ];
+  const siblings = groupIds.length
+    ? await db.reservation.findMany({
+        where: { stay_group_id: { in: groupIds } },
+        orderBy: [{ date_entree: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const tracking = await loadReservationPaymentTracking(ids, db);
+  const testPayments = new Set(
+    (
+      await db.bookingPayment.findMany({
+        where: { stripe_mode: { not: "live" } },
+        select: { id: true },
+      })
+    ).map((payment) => payment.id),
+  );
+  const rows: NightRegisterRow[] = [];
+  for (const [index, reservation] of reservations.entries()) {
+    const group = reservation.stay_group_id
+      ? siblings.filter(
+          (row) => row.stay_group_id === reservation.stay_group_id,
+        )
+      : [reservation];
+    const first = group[0] ?? reservation;
+    const options = fromJsonString<{ tourist_tax?: unknown }>(
+      first.options,
+      {},
+    );
+    const checked = touristTaxStaySchema.safeParse(options.tourist_tax);
+    const stayTax = checked.success ? checked.data : null;
+    const nightsInGroup = group.reduce((sum, row) => sum + row.nb_nuits, 0);
+    const accommodation =
+      group.reduce((sum, row) => sum + Number(row.prix_total), 0) -
+      Number(first.remise_montant);
+    const tax = stayTax
+      ? computeTouristTax({
+          stay: stayTax,
+          nights: nightsInGroup,
+          adults: first.nb_adultes,
+          children: first.nb_enfants_2_17,
+          accommodation,
+          start: day(first.date_entree),
+        })
+      : null;
+    const arrival = day(reservation.date_entree),
+      departure = day(reservation.date_sortie);
+    const start = arrival > period.start ? arrival : period.start;
+    const end = departure < period.end ? departure : period.end;
+    const nights = Math.max(
+      0,
+      Math.round((Date.parse(end) - Date.parse(start)) / 86400000),
+    );
+    const infantsRecorded =
+      typeof options.tourist_tax === "object" &&
+      options.tourist_tax !== null &&
+      Object.hasOwn(options.tourist_tax, "infants");
+    const infants = stayTax && infantsRecorded ? stayTax.infants : null;
+    const occupants =
+      infants === null
+        ? null
+        : reservation.nb_adultes + reservation.nb_enfants_2_17 + infants;
+    const issues: string[] = [];
+    const address = [
+      reservation.gite?.adresse_ligne1,
+      reservation.gite?.adresse_ligne2,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    if (!address) issues.push("Adresse du gîte à compléter.");
+    const registration = report.nightRegistrations?.[reservation.gite_id!];
+    const registrationNumber = registration?.notApplicable
+      ? "Non applicable"
+      : registration?.number || null;
+    if (!registrationNumber)
+      issues.push("Numéro d’enregistrement à compléter s’il s’applique.");
+    if (!stayTax)
+      issues.push(
+        "Barème du séjour, collecteur, bébés et exonérations non enregistrés.",
+      );
+    else if (infants === null)
+      issues.push(
+        "Nombre de bébés non enregistré ; nombre total de personnes à compléter.",
+      );
+    if (tax?.issues.length) issues.push(...tax.issues);
+    if (group.length > 1)
+      issues.push(
+        "Séjour regroupé : ventilation entre hébergements et périodes à vérifier.",
+      );
+    const crossesPeriod = arrival < period.start || departure > period.end;
+    if (crossesPeriod)
+      issues.push(
+        "Séjour à cheval sur plusieurs périodes : affectation de la taxe collectée à compléter sans la compter deux fois.",
+      );
+    const classified = stayTax?.settings.classified ?? null;
+    const flatPrice =
+      cents(Number(reservation.prix_par_nuit)) * reservation.nb_nuits ===
+        cents(Number(reservation.prix_total)) &&
+      Number(reservation.remise_montant) === 0;
+    const netCents = tax ? cents(tax.accommodation_amount) : null;
+    const nightlyPriceCents =
+      flatPrice &&
+      group.length === 1 &&
+      netCents !== null &&
+      reservation.nb_nuits > 0 &&
+      netCents % reservation.nb_nuits === 0
+        ? netCents / reservation.nb_nuits
+        : null;
+    if (classified === null)
+      issues.push("Classement du gîte au moment du séjour à vérifier.");
+    if (classified !== true && nightlyPriceCents === null)
+      issues.push(
+        "Prix de chaque nuitée hors taxe de séjour à compléter ; aucun prix moyen n’est substitué à un tarif non vérifiable.",
+      );
+    const reasons = [
+      reservation.nb_enfants_2_17 || infants ? "Personnes mineures" : "",
+      stayTax?.exemption_reason,
+    ]
+      .filter(Boolean)
+      .join(" ; ");
+    const exemptionReason = stayTax
+      ? reasons || "Aucune exonération renseignée"
+      : null;
+    if (stayTax?.collector === "platform")
+      issues.push(
+        "Taxe collectée par la plateforme : renseigner ses perceptions, sans la présenter comme collectée par l’hébergeur.",
+      );
+    const entries = (tracking.get(reservation.id)?.entries ?? []).filter(
+      (entry) =>
+        !entry.voided_at &&
+        !testPayments.has(entry.id) &&
+        entry.amount > 0 &&
+        (entry.purpose === "tourist_tax" ||
+          entry.ota?.category === "tourist_tax"),
+    );
+    const collections =
+      group.length === 1 && stayTax?.collector === "host" ? entries : [];
+    const noTaxDue = Boolean(tax && !tax.issues.length && tax.amount === 0);
+    if (
+      !collections.length &&
+      stayTax?.collector !== "not_applicable" &&
+      !noTaxDue
+    )
+      issues.push(
+        "Date et montant réels de perception de la taxe non identifiés. Un règlement global n’est pas assimilé à une perception de taxe.",
+      );
+    for (const [collectionIndex, entry] of (collections.length
+      ? collections
+      : [null]
+    ).entries()) {
+      const lineIssues = [...issues];
+      const collectionDate =
+        entry?.paid_on && !entry.paid_on_estimated
+          ? parisDate.format(new Date(entry.paid_on))
+          : null;
+      if (entry && !collectionDate)
+        lineIssues.push("Date de perception non enregistrée ou estimée.");
+      if ((entry?.refunded_amount ?? 0) > 0)
+        lineIssues.push(
+          "Remboursement présent : perception nette et date du remboursement à vérifier.",
+        );
+      const collectedTaxCents =
+        entry && !crossesPeriod && !(entry.refunded_amount ?? 0)
+          ? (entry.ota?.grossCents ?? cents(entry.amount))
+          : stayTax?.collector === "not_applicable" || noTaxDue
+            ? 0
+            : null;
+      const additionalTaxes = noTaxDue
+        ? "Aucune taxe due selon le barème enregistré"
+        : stayTax?.collector === "not_applicable"
+          ? "Sans perception : non-application déclarée"
+          : stayTax?.settings.additional_percentage === 0
+            ? "Aucune selon le barème enregistré"
+            : null;
+      if (!additionalTaxes)
+        lineIssues.push(
+          "Ventilation et montants collectés par taxe additionnelle à compléter s’ils s’appliquent.",
+        );
+      const operationIssues = evaluated.rows
+        .filter(
+          (row) =>
+            row.reservationId === reservation.id && row.status === "review",
+        )
+        .flatMap((row) => row.issues.map((issue) => issue.message));
+      lineIssues.push(...operationIssues);
+      rows.push({
+        key: entry?.id ?? `stay:${reservation.id}`,
+        reference: `Séjour ${index + 1}${collections.length > 1 ? ` / perception ${collectionIndex + 1}` : ""}`,
+        reservationId: reservation.id,
+        propertyId: reservation.gite_id!,
+        propertyName: reservation.gite?.nom ?? "Gîte à vérifier",
+        address,
+        registrationNumber,
+        arrival,
+        departure,
+        periodStart: start,
+        periodEnd: end,
+        collectionDate,
+        collector: stayTax?.collector ?? "unknown",
+        adults: reservation.nb_adultes,
+        taxableAdults:
+          tax && !tax.issues.length
+            ? stayTax!.collector === "not_applicable"
+              ? 0
+              : Math.max(0, reservation.nb_adultes - stayTax!.exempt_adults)
+            : null,
+        exemptAdults: tax && !tax.issues.length ? stayTax!.exempt_adults : null,
+        children: reservation.nb_enfants_2_17,
+        infants,
+        occupants,
+        nights,
+        personNights: occupants === null ? null : occupants * nights,
+        classified,
+        nightlyPriceCents,
+        collectedTaxCents,
+        observedCollectionCents: entry
+          ? (entry.ota?.grossCents ??
+            cents(entry.amount + (entry.refunded_amount ?? 0)))
+          : null,
+        collectedBaseTaxCents:
+          stayTax?.collector === "not_applicable" ||
+          noTaxDue ||
+          stayTax?.settings.additional_percentage === 0
+            ? collectedTaxCents
+            : null,
+        calculatedStayTaxCents: tax ? cents(tax.amount) : null,
+        additionalTaxes,
+        exemptionReason,
+        source:
+          evaluated.rows.find((row) => row.reservationId === reservation.id)
+            ?.bookingSource ??
+          evaluated.rows.find((row) => row.reservationId === reservation.id)
+            ?.channel ??
+          "",
+        issues: [...new Set(lineIssues)],
+      });
+    }
+  }
+  rows.sort(
+    (a, b) =>
+      (a.collectionDate ?? "9999").localeCompare(b.collectionDate ?? "9999") ||
+      a.arrival.localeCompare(b.arrival) ||
+      a.reference.localeCompare(b.reference, "fr", { numeric: true }),
+  );
+  const { favorite: _favorite, ...definition } = report;
+  const sourceRevision = createHash("sha256")
+    .update(
+      JSON.stringify({
+        report: definition,
+        rows,
+        properties,
+        sourceSignatures: evaluated.rows
+          .filter((row) => row.status !== "excluded")
+          .map(
+            (row) =>
+              facts.operations.find((operation) => operation.id === row.id)
+                ?.declarationSourceSignature,
+          ),
+      }),
+    )
+    .digest("hex");
+  const completion =
+    config.nightRegisterCompletions?.[reportPeriodKey(report, month)];
+  const completionCurrent = completion?.sourceRevision === sourceRevision;
+  if (completion && !completionCurrent)
+    rows.forEach((row) =>
+      row.issues.push(
+        "Les sources ont changé : vérifiez et enregistrez à nouveau les compléments du registre.",
+      ),
+    );
+  if (completionCurrent)
+    for (const row of rows) {
+      const edit = completion.rows[row.key];
+      if (!edit) continue;
+      if (row.collector !== "unknown" && row.collector !== "not_applicable") {
+        row.collectionDate = edit.collectionDate;
+        row.collectedTaxCents = edit.collectedTaxCents;
+        row.collectedBaseTaxCents = edit.collectedBaseTaxCents;
+        row.additionalTaxes = edit.additionalTaxes || null;
+        const perceptionComplete =
+          row.collectionDate !== null && row.collectedTaxCents !== null;
+        const splitComplete =
+          row.collectedTaxCents !== null &&
+          row.collectedBaseTaxCents !== null &&
+          row.collectedBaseTaxCents <= row.collectedTaxCents &&
+          Boolean(row.additionalTaxes);
+        row.issues = row.issues.filter(
+          (issue) =>
+            !(
+              (perceptionComplete &&
+                (issue.startsWith("Date et montant réels") ||
+                  issue.startsWith("Date de perception") ||
+                  issue.startsWith("Taxe collectée par la plateforme"))) ||
+              (splitComplete &&
+                issue.startsWith("Ventilation et montants collectés")) ||
+              (perceptionComplete &&
+                splitComplete &&
+                edit.allocationReviewed &&
+                (issue.startsWith("Séjour regroupé") ||
+                  issue.startsWith("Séjour à cheval") ||
+                  issue.startsWith("Remboursement présent")))
+            ),
+        );
+        if (
+          row.collectedTaxCents !== null &&
+          row.collectedBaseTaxCents !== null &&
+          row.collectedBaseTaxCents > row.collectedTaxCents
+        )
+          row.issues.push(
+            "La part hors taxes additionnelles dépasse le total collecté.",
+          );
+        if (edit.allocationReviewed && !perceptionComplete)
+          row.issues.push(
+            "La ventilation vérifiée doit indiquer la date et le montant collectés.",
+          );
+        if (
+          (!row.collectionDate || row.collectedTaxCents === null) &&
+          !(row.calculatedStayTaxCents === 0 && row.collectedTaxCents === 0)
+        )
+          row.issues.push(
+            "Date et montant réels de perception de la taxe à compléter.",
+          );
+        if (!splitComplete)
+          row.issues.push(
+            "Ventilation et montants collectés par taxe additionnelle à compléter.",
+          );
+      }
+      if (edit.nightlyPriceCents !== null && row.classified === false) {
+        row.nightlyPriceCents = edit.nightlyPriceCents;
+        row.issues = row.issues.filter(
+          (issue) => !issue.startsWith("Prix de chaque nuitée"),
+        );
+      }
+      if (edit.nightlyPrices?.length && row.classified === false) {
+        const prices = [...edit.nightlyPrices].sort((a, b) =>
+          a.date.localeCompare(b.date),
+        );
+        if (
+          prices.length === row.nights &&
+          new Set(prices.map((night) => night.date)).size === row.nights &&
+          prices.every(
+            (night) =>
+              night.date >= row.periodStart && night.date < row.periodEnd,
+          )
+        ) {
+          row.nightlyPrices = prices;
+          row.nightlyPriceCents = null;
+          row.issues = row.issues.filter(
+            (issue) => !issue.startsWith("Prix de chaque nuitée"),
+          );
+        } else
+          row.issues.push(
+            "Le détail des prix doit couvrir chaque nuit de la période une seule fois.",
+          );
+      }
+    }
+  const register: NightRegister = {
+    reportId: report.id,
+    reportName: report.name,
+    recipient: report.recipient,
+    period: { label: period.label, start: period.start, end: period.end },
+    generatedAt: new Date().toISOString(),
+    sourceRevision,
+    revision: createHash("sha256")
+      .update(JSON.stringify({ sourceRevision, rows, completion }))
+      .digest("hex"),
+    ...(completion ? { completion } : {}),
+    reportNights: evaluated.total,
+    stayCount: reservations.length,
+    incompleteCount: new Set(
+      rows.filter((row) => row.issues.length).map((row) => row.reservationId),
+    ).size,
+    properties,
+    rows,
+    summary: summarizeNightRegister({ properties, rows }),
+  };
+  return register;
 }

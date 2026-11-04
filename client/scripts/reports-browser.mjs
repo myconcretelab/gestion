@@ -17,6 +17,8 @@ import {
   DEFAULT_TOURIST_TAX_COLLECTION,
   BOOKING_SOURCES,
   nightRegisterCsv,
+  nightDeclarationCsv,
+  summarizeNightRegister,
 } from "@contrats/shared";
 import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
 
@@ -158,13 +160,14 @@ function data() {
 }
 let browser;
 function registerData() {
-  return {
+  const register = {
     reportId: "nights-a",
     reportName: "Nuitées",
     recipient: "Camille Martin",
     period: { label: "octobre 2026", start: "2026-10-01", end: "2026-11-01" },
     generatedAt: "2026-11-02T12:00:00Z",
     revision: "a".repeat(64),
+    sourceRevision: "c".repeat(64),
     reportNights: 19,
     stayCount: 1,
     incompleteCount: 1,
@@ -178,6 +181,7 @@ function registerData() {
     ],
     rows: [
       {
+        key: "stay:reservation-a",
         reference: "Séjour 1",
         reservationId: "reservation-a",
         propertyId: "g1",
@@ -191,6 +195,8 @@ function registerData() {
         collectionDate: null,
         collector: "host",
         adults: 1,
+        taxableAdults: 1,
+        exemptAdults: 0,
         children: 0,
         infants: 0,
         occupants: 1,
@@ -199,6 +205,7 @@ function registerData() {
         classified: true,
         nightlyPriceCents: 5000,
         collectedTaxCents: null,
+        observedCollectionCents: null,
         collectedBaseTaxCents: null,
         calculatedStayTaxCents: 1900,
         additionalTaxes: "Aucune selon le barème enregistré",
@@ -211,6 +218,8 @@ function registerData() {
       },
     ],
   };
+  register.summary = summarizeNightRegister(register);
+  return register;
 }
 const runtimeErrors = [];
 const unexpectedRequests = [];
@@ -687,11 +696,14 @@ try {
             error:
               "Les données du registre ont changé. Rechargez son aperçu avant de télécharger.",
           };
-        } else if (format === "csv") {
+        } else if (format === "csv" || format === "summary-csv") {
           return route.fulfill({
             status: 200,
             contentType: "text/csv; charset=utf-8",
-            body: nightRegisterCsv(fixture.nightRegister),
+            body:
+              format === "summary-csv"
+                ? nightDeclarationCsv(fixture.nightRegister)
+                : nightRegisterCsv(fixture.nightRegister),
           });
         } else if (format === "pdf") {
           return route.fulfill({
@@ -750,6 +762,20 @@ try {
               if (command.override)
                 state.overrides[key][command.operationId] = command.override;
               else delete state.overrides[key][command.operationId];
+            } else if (command.type === "night-register-completion") {
+              state.nightRegisterCompletions ??= {};
+              state.nightRegisterCompletions[key] = command.completion;
+              fixture.nightRegister.completion = command.completion;
+              for (const row of fixture.nightRegister.rows) {
+                Object.assign(row, command.completion.rows[row.key]);
+                row.issues = row.issues.filter(
+                  (issue) => !issue.startsWith("Date et montant"),
+                );
+              }
+              fixture.nightRegister.revision = "d".repeat(64);
+              fixture.nightRegister.summary = summarizeNightRegister(
+                fixture.nightRegister,
+              );
             } else if (command.type === "ready")
               state.progress[key] = { ready: true };
             else if (command.type === "confirm")
@@ -1927,7 +1953,7 @@ try {
     .click();
   assert.match(
     (await csvDownload).suggestedFilename(),
-    /registre-sejours-.*2026-10\.csv$/,
+    /registre-sejours-.*2026-10-01\.csv$/,
   );
   groupedFixture.registerFailDownload = 1;
   await registerDialog
@@ -1940,14 +1966,103 @@ try {
     .click();
   assert.match(
     (await pdfDownload).suggestedFilename(),
-    /registre-sejours-.*2026-10\.pdf$/,
+    /registre-sejours-.*2026-10-01\.pdf$/,
   );
+  await registerDialog
+    .getByRole("button", {
+      name: "Compléter les perceptions et leur ventilation",
+      exact: true,
+    })
+    .click();
+  await registerDialog.locator(".rp-register-completion-row summary").click();
+  await registerDialog
+    .getByLabel("Date réelle de perception", { exact: true })
+    .fill("2026-10-20");
+  await registerDialog
+    .getByLabel("Taxe collectée affectée à cette période (€)", { exact: true })
+    .fill("19.00");
+  await registerDialog
+    .getByLabel("Part hors taxes additionnelles (€)", { exact: true })
+    .fill("19.00");
+  await registerDialog
+    .getByLabel("Justification et références des pièces vérifiées", {
+      exact: true,
+    })
+    .fill("Reçu de collecte du 20 octobre vérifié");
+  await capture(grouped, "night-register-completion-desktop.png");
+  await grouped.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(grouped);
+  await capture(grouped, "night-register-completion-mobile.png");
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
+  await registerDialog
+    .getByRole("button", { name: "Enregistrer les compléments", exact: true })
+    .click();
+  await registerDialog
+    .getByRole("button", {
+      name: "Compléter les perceptions et leur ventilation",
+      exact: true,
+    })
+    .waitFor();
+  const completionCommand = groupedFixture.commands
+    .filter((command) => command.type === "night-register-completion")
+    .at(-1);
+  assert.equal(
+    completionCommand.completion.rows["stay:reservation-a"].collectedTaxCents,
+    1900,
+  );
+  assert.equal(
+    completionCommand.completion.rows["stay:reservation-a"].collectionDate,
+    "2026-10-20",
+  );
+  await registerDialog
+    .getByRole("button", { name: "Fermer", exact: true })
+    .click();
+  const summaryDownload = grouped.waitForEvent("download");
+  await grouped
+    .getByRole("button", { name: "Exporter la synthèse CSV", exact: true })
+    .click();
+  assert.match(
+    (await summaryDownload).suggestedFilename(),
+    /synthese-nuitees-.*2026-10-01\.csv$/,
+  );
+  await grouped
+    .getByRole("button", { name: "Télécharger le registre", exact: true })
+    .click();
   await grouped.setViewportSize({ width: 390, height: 844 });
   await noOverflow(grouped);
   await capture(grouped, "night-register-preview-mobile.png");
   await registerDialog
     .getByRole("button", { name: "Fermer", exact: true })
     .click();
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
+  await open(grouped, "/nights-a/modifier");
+  await grouped
+    .getByRole("checkbox", {
+      name: "Déclaration de taxe de séjour",
+      exact: true,
+    })
+    .check();
+  await grouped
+    .getByLabel("Numéro d’enregistrement · La Maison du verger", {
+      exact: true,
+    })
+    .fill("3500012345678");
+  await grouped
+    .getByLabel("Périodicité")
+    .selectOption("broceliande");
+  await capture(grouped, "night-declaration-settings-desktop.png");
+  await grouped
+    .getByRole("button", { name: "Appliquer les règles", exact: true })
+    .click();
+  await grouped
+    .getByText("Total des nuitées taxables incluses", { exact: true })
+    .waitFor();
+  const declarationRules = groupedFixture.commands
+    .filter((command) => command.type === "save")
+    .at(-1).definition;
+  assert.equal(declarationRules.nightDeclaration, true);
+  assert.equal(declarationRules.cadence, "broceliande");
+  assert.equal(declarationRules.nightRegistrations.g1.number, "3500012345678");
   await grouped.context().close();
 
   // Copy the displayed amount, rounded to whole euros; this remains available in read-only mode.

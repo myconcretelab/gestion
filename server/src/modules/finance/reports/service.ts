@@ -18,6 +18,7 @@ import {
 } from "./configuration.js";
 import { loadReportFacts } from "./facts.js";
 import { reportCacheIsCurrent, storeReportCalculation } from "./cache.js";
+import { buildNightRegister } from "./nightRegister.js";
 
 type Facts = Awaited<ReturnType<typeof loadReportFacts>>;
 const fail = (message: string, status = 409) =>
@@ -46,6 +47,8 @@ const evaluate = (
       operatorIssues: facts.operatorIssues,
       socialIssues: facts.socialIssues,
       operationEdits: {},
+      nightRegisterCompletions: config.nightRegisterCompletions,
+      nightRegisterCompletionRevisions: config.nightRegisterCompletionRevisions,
     },
   );
 
@@ -65,7 +68,10 @@ function response(
         key,
         {
           ...value,
-          ready: value.readyFingerprint === fingerprint(report, result),
+          ready:
+            value.readyFingerprint === fingerprint(report, result) &&
+            (!report.nightDeclaration ||
+              value.readyFactsRevision === facts.factsRevision),
         },
       ];
     }),
@@ -238,7 +244,74 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
           if (!report) throw fail("Rapport introuvable.", 404);
           const key = reportPeriodKey(report, month);
           const result = evaluate(config, facts, report, month);
-          if (command.type === "favorite") report.favorite = command.favorite;
+          if (command.type === "night-register-completion") {
+            if (report.kind !== "tourist")
+              throw fail(
+                "Ce complément concerne les rapports de nuitées.",
+                400,
+              );
+            const register = await buildNightRegister(
+              db,
+              report,
+              month,
+              config,
+              facts,
+            );
+            if (register.sourceRevision !== command.completion.sourceRevision)
+              throw fail(
+                "Les sources du registre ont changé. Rechargez son aperçu avant d’enregistrer les compléments.",
+              );
+            if (
+              Object.keys(command.completion.rows).some(
+                (id) => !register.rows.some((row) => row.key === id),
+              )
+            )
+              throw fail(
+                "Un séjour ou une perception ne fait pas partie de ce registre.",
+                400,
+              );
+            for (const row of register.rows) {
+              const amount =
+                command.completion.rows[row.key]?.collectedTaxCents;
+              if (
+                amount === null ||
+                amount === undefined ||
+                row.observedCollectionCents === null
+              )
+                continue;
+              const elsewhere = Object.entries(
+                config.nightRegisterCompletions ?? {},
+              )
+                .filter(
+                  ([period]) =>
+                    period !== key &&
+                    period.startsWith(`${report.id}:`) &&
+                    period.endsWith(`:${report.cadence}`),
+                )
+                .reduce(
+                  (total, [, completion]) =>
+                    total + (completion.rows[row.key]?.collectedTaxCents ?? 0),
+                  0,
+                );
+              if (amount + elsewhere > row.observedCollectionCents)
+                throw fail(
+                  "La somme affectée aux périodes dépasse la perception enregistrée. Vérifiez la ventilation pour éviter de compter la taxe plusieurs fois.",
+                  400,
+                );
+            }
+            config.nightRegisterCompletions = {
+              ...config.nightRegisterCompletions,
+              [key]: command.completion,
+            };
+            config.nightRegisterCompletionRevisions = {
+              ...config.nightRegisterCompletionRevisions,
+              [key]: createHash("sha256")
+                .update(JSON.stringify(command.completion))
+                .digest("hex"),
+            };
+            config.progress[key] = { ...config.progress[key], ready: false };
+          } else if (command.type === "favorite")
+            report.favorite = command.favorite;
           else if (command.type === "override") {
             if (report.kind === "social" || report.kind === "tourist")
               throw fail(
@@ -308,6 +381,16 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 "Vérifiez les opérations avant de finaliser le rapport.",
                 400,
               );
+            const register =
+              report.kind === "tourist"
+                ? await buildNightRegister(db, report, month, config, facts)
+                : undefined;
+            if (report.nightDeclaration && register?.incompleteCount)
+              throw fail(
+                `${register.incompleteCount} séjour(s) comportent encore des informations à compléter dans le registre. Vérifiez la synthèse et le registre avant de finaliser la déclaration.`,
+                400,
+              );
+            if (register) register.archivedAt = new Date().toISOString();
             const current = config.progress[key];
             if (command.type === "resolve") {
               if (
@@ -326,6 +409,9 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                     note: command.note,
                     definition: structuredClone(report),
                     result: structuredClone(result),
+                    ...(register
+                      ? { nightRegister: structuredClone(register) }
+                      : {}),
                   },
                 ],
               };
@@ -338,6 +424,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
               if (
                 command.type === "confirm" &&
                 (!current?.ready ||
+                  (report.nightDeclaration &&
+                    current.readyFactsRevision !== facts.factsRevision) ||
                   current.readyFingerprint !== readyFingerprint)
               )
                 throw fail(
@@ -345,7 +433,13 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 );
               config.progress[key] =
                 command.type === "ready"
-                  ? { ready: true, readyFingerprint }
+                  ? {
+                      ready: true,
+                      readyFingerprint,
+                      ...(report.nightDeclaration
+                        ? { readyFactsRevision: facts.factsRevision }
+                        : {}),
+                    }
                   : {
                       ready: true,
                       readyFingerprint,
@@ -354,6 +448,9 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                         confirmedBy: userId ?? null,
                         definition: structuredClone(report),
                         result: structuredClone(result),
+                        ...(register
+                          ? { nightRegister: structuredClone(register) }
+                          : {}),
                       },
                     };
             }

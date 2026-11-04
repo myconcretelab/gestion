@@ -289,6 +289,21 @@ export async function loadReportFacts(
         basis: "stay",
       });
     }
+    const declarationSourceSignature = createHash("sha256")
+      .update(
+        JSON.stringify({
+          stays: rows,
+          properties: gites
+            .filter((gite) => rows.some((row) => row.gite_id === gite.id))
+            .map((gite) => ({
+              id: gite.id,
+              name: gite.nom,
+              address: [gite.adresse_ligne1, gite.adresse_ligne2],
+            })),
+          payments: ledger.entries,
+        }),
+      )
+      .digest("hex");
     operations.push(
       ...buildNightOperations(
         rows.map((row) => ({
@@ -296,9 +311,11 @@ export async function loadReportFacts(
           infants:
             fromJsonString<OptionsInput>(row.options, {}).tourist_tax
               ?.infants ?? 0,
+          tourist_tax: options.tourist_tax,
         })),
       ).map((operation) => ({
         ...operation,
+        declarationSourceSignature,
         propertyLabel: properties.find(
           (property) => property.id === operation.propertyId,
         )?.name,

@@ -19,7 +19,7 @@ export const REPORT_PAYMENT_METHODS = [
 ] as const;
 export type ReportPaymentMethod = (typeof REPORT_PAYMENT_METHODS)[number]["id"];
 export type ReportKind = "social" | "tourist" | "owner" | "custom";
-export type ReportCadence = "monthly" | "quarterly" | "yearly";
+export type ReportCadence = "monthly" | "quarterly" | "yearly" | "broceliande";
 export type ReportDefinition = {
   id: string;
   kind: ReportKind;
@@ -40,6 +40,11 @@ export type ReportDefinition = {
   otaAmountBasis?: "gross" | "net";
   nightGuests?: NightGuestGroup[];
   nightReference?: boolean;
+  nightDeclaration?: boolean;
+  nightRegistrations?: Record<
+    string,
+    { number: string; notApplicable: boolean }
+  >;
   excludedBookingSources?: string[];
 };
 export type ReportOperation = {
@@ -51,6 +56,8 @@ export type ReportOperation = {
   amountCents: number;
   nights: number;
   nightCounts?: Record<NightGuestGroup, number>;
+  taxableNights?: number | null;
+  nightTaxIssue?: string;
   paymentDate: string | null;
   paymentDateEstimated?: boolean;
   stayDate: string;
@@ -62,6 +69,7 @@ export type ReportOperation = {
   propertyLabel?: string;
   reservationId?: string;
   basis?: "payment" | "stay" | "nights";
+  declarationSourceSignature?: string;
   allocationNote?: string;
   categoryUncertain?: boolean;
   ota?: import("./ota.js").OtaAmounts;
@@ -79,6 +87,11 @@ export type ReportIssue = {
   actionLabel: string;
 };
 export type ReportSources = {
+  nightRegisterCompletionRevisions?: Record<string, string>;
+  nightRegisterCompletions?: Record<
+    string,
+    import("./nightRegister.js").NightRegisterCompletion
+  >;
   propertyOperators: Record<string, string | null>;
   propertyManagers?: Record<string, string | null>;
   operatorIssues?: Record<string, string>;
@@ -107,6 +120,7 @@ export type ReportSnapshot = {
   confirmedBy?: string | null;
   definition: ReportDefinition;
   result: ReportResult;
+  nightRegister?: import("./nightRegister.js").NightRegister;
 };
 export type ReportResolution = {
   resolvedAt: string;
@@ -115,11 +129,13 @@ export type ReportResolution = {
   note: string;
   definition: ReportDefinition;
   result: ReportResult;
+  nightRegister?: import("./nightRegister.js").NightRegister;
 };
 export type ReportProgress = {
   ready?: boolean;
   snapshot?: ReportSnapshot;
   readyFingerprint?: string;
+  readyFactsRevision?: string;
   resolutions?: ReportResolution[];
 };
 export type ReportState = ReportSources & {
@@ -219,7 +235,12 @@ export const reportIncludesBookingSource = (
       operation.bookingSource ?? operation.channel,
     ));
 export const cadenceLabel = (cadence: ReportCadence) =>
-  ({ monthly: "Mensuel", quarterly: "Trimestriel", yearly: "Annuel" })[cadence];
+  ({
+    monthly: "Mensuel",
+    quarterly: "Trimestriel",
+    yearly: "Annuel",
+    broceliande: "Périodes de Brocéliande Communauté",
+  })[cadence];
 
 const monthFormatter = new Intl.DateTimeFormat("fr-FR", {
   month: "long",
@@ -235,21 +256,40 @@ const amountFormatter = new Intl.NumberFormat("fr-FR", {
 export function getReportPeriod(month: string, cadence: ReportCadence) {
   const [year, monthNumber] = month.split("-").map(Number);
   const startMonth =
-    cadence === "yearly"
-      ? 1
-      : cadence === "quarterly"
-        ? Math.floor((monthNumber - 1) / 3) * 3 + 1
-        : monthNumber;
-  const length = cadence === "yearly" ? 12 : cadence === "quarterly" ? 3 : 1;
+    cadence === "broceliande"
+      ? monthNumber <= 5
+        ? 1
+        : monthNumber <= 9
+          ? 6
+          : 10
+      : cadence === "yearly"
+        ? 1
+        : cadence === "quarterly"
+          ? Math.floor((monthNumber - 1) / 3) * 3 + 1
+          : monthNumber;
+  const length =
+    cadence === "broceliande"
+      ? startMonth === 1
+        ? 5
+        : startMonth === 6
+          ? 4
+          : 3
+      : cadence === "yearly"
+        ? 12
+        : cadence === "quarterly"
+          ? 3
+          : 1;
   const start = `${year}-${String(startMonth).padStart(2, "0")}-01`;
   const endDate = new Date(Date.UTC(year, startMonth - 1 + length, 1));
   const end = endDate.toISOString().slice(0, 10);
   const label =
-    cadence === "yearly"
-      ? String(year)
-      : cadence === "quarterly"
-        ? `${Math.floor((monthNumber - 1) / 3) + 1}ᵉ trimestre ${year}`
-        : monthFormatter.format(new Date(`${start}T12:00:00Z`));
+    cadence === "broceliande"
+      ? `${monthFormatter.format(new Date(Date.UTC(year, startMonth - 1, 1)))} – ${monthFormatter.format(new Date(Date.UTC(year, startMonth + length - 2, 1)))}`
+      : cadence === "yearly"
+        ? String(year)
+        : cadence === "quarterly"
+          ? `${Math.floor((monthNumber - 1) / 3) + 1}ᵉ trimestre ${year}`
+          : monthFormatter.format(new Date(`${start}T12:00:00Z`));
   return { start, end, label, key: `${start}:${cadence}` };
 }
 
@@ -271,6 +311,9 @@ export const operationSourceSignature = (operation: ReportOperation) =>
     operation.categoryUncertain,
     operation.reviewReason,
     operation.ota,
+    ...(operation.declarationSourceSignature
+      ? [operation.declarationSourceSignature]
+      : []),
     ...(operation.paymentDateEstimated ? ["estimated-payment-date"] : []),
   ]);
 
@@ -302,6 +345,19 @@ export function evaluateReport(
     const candidateDate = effectiveDate ?? original.stayDate;
     if (candidateDate < period.start || candidateDate >= period.end) continue;
     const operation = { ...original, ...sources.operationEdits[original.id] };
+    if (report.kind === "tourist" && report.nightDeclaration) {
+      if (operation.taxableNights == null)
+        operation.reviewReason =
+          operation.nightTaxIssue ??
+          "Nuitées taxables à vérifier dans la réservation.";
+      operation.declarationSourceSignature = JSON.stringify([
+        operation.declarationSourceSignature,
+        sources.nightRegisterCompletionRevisions?.[
+          reportPeriodKey(report, month)
+        ],
+        report.nightRegistrations?.[operation.propertyId],
+      ]);
+    } else delete operation.declarationSourceSignature;
     const inProperty = report.propertyIds.includes(operation.propertyId);
     const inSource = reportIncludesBookingSource(report, operation);
     const uncertainCategories =
@@ -453,7 +509,9 @@ export function evaluateReport(
     }
     const value =
       report.kind === "tourist"
-        ? reportNightValue(operation, report.nightGuests)
+        ? report.nightDeclaration
+          ? (operation.taxableNights ?? 0)
+          : reportNightValue(operation, report.nightGuests)
         : operation.ota
           ? report.otaAmountBasis === "net"
             ? operation.ota.netCents
@@ -537,7 +595,10 @@ export function reportTotalLabel(
   report: ReportDefinition,
   result: ReportResult,
 ) {
-  if (report.kind === "tourist") return "Total des nuitées incluses";
+  if (report.kind === "tourist")
+    return report.nightDeclaration
+      ? "Total des nuitées taxables incluses"
+      : "Total des nuitées incluses";
   if (report.dateBasis === "stay") return "Total des recettes au séjour";
   const amounts = platformAmountBreakdown(result);
   if (amounts.undetailedCount)
@@ -637,7 +698,11 @@ export function reportCsv(report: ReportDefinition, result: ReportResult) {
     "Mode de paiement",
     "Canal de réservation",
     "Date retenue",
-    report.kind === "tourist" ? "Nuitées" : "Montant EUR",
+    report.kind === "tourist"
+      ? report.nightDeclaration
+        ? "Nuitées taxables"
+        : "Nuitées"
+      : "Montant EUR",
     "Traitement",
     "Explication",
     "Brut OTA EUR",

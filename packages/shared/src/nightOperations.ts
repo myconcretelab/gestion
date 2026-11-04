@@ -1,5 +1,6 @@
 import { getBookingSource } from "./reservationPayments.js";
 import type { ReportOperation } from "./reports.js";
+import { touristTaxStaySchema } from "./touristTax.js";
 
 export const NIGHT_GUEST_GROUPS = [
   { id: "adults", label: "Adultes" },
@@ -32,6 +33,7 @@ export type NightReservation = {
   nb_adultes: number;
   nb_enfants_2_17?: number;
   infants?: number;
+  tourist_tax?: unknown;
   booking_source?: string | null;
   source_paiement?: string | null;
 };
@@ -49,6 +51,23 @@ export function buildNightOperations(
       new Date(reservation.date_sortie).toISOString().slice(0, 10),
     );
     const operations: ReportOperation[] = [];
+    const tax = touristTaxStaySchema.safeParse(reservation.tourist_tax);
+    const taxIssue = !tax.success
+      ? "Barème, collecteur et exonérations du séjour à renseigner."
+      : tax.data.collector === "unknown"
+        ? "Collecteur de la taxe de séjour à renseigner."
+        : tax.data.exempt_adults > reservation.nb_adultes
+          ? "Le nombre d’adultes exonérés dépasse le nombre d’adultes."
+          : (tax.data.exempt_adults > 0 ||
+                tax.data.collector === "not_applicable") &&
+              !tax.data.exemption_reason
+            ? "Motif d’exonération ou de non-application à renseigner."
+            : tax.data.collector === "platform" && !tax.data.platform
+              ? "Plateforme collectrice à renseigner."
+              : new Date(reservation.date_entree).toISOString().slice(0, 10) <
+                  tax.data.settings.effective_from
+                ? "Le séjour commence avant la date d’application du barème."
+                : undefined;
     while (start < end) {
       const date = new Date(start);
       const next = Math.min(
@@ -72,6 +91,17 @@ export function buildNightOperations(
         amountCents: 0,
         nights: nightCounts.adults,
         nightCounts,
+        taxableNights:
+          tax.success && !taxIssue
+            ? nights *
+              (tax.data.collector === "not_applicable"
+                ? 0
+                : Math.max(
+                    0,
+                    count(reservation.nb_adultes) - tax.data.exempt_adults,
+                  ))
+            : null,
+        nightTaxIssue: taxIssue,
         stayDate,
         paymentDate: null,
         channel: getBookingSource(reservation),

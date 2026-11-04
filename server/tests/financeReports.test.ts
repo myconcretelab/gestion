@@ -2503,6 +2503,422 @@ const registerTax = {
   exempt_adults: 0,
   exemption_reason: "",
 };
+test("déclaration : contrôles de complétude, compléments justifiés, copie figée et revalidation des sources", async () => {
+  await fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-13"),
+      nb_nuits: 3,
+      prix_par_nuit: 50,
+      prix_total: 150,
+      options: JSON.stringify({
+        tourist_tax: {
+          ...registerTax,
+          exempt_adults: 1,
+          exemption_reason: "Saisonnier dans la commune",
+        },
+      }),
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "declaration-complete"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightReference: true,
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    await assert.rejects(
+      () =>
+        mutate(state, { type: "ready", reportId: definition.id }, "2026-09"),
+      /registre/,
+    );
+    state = await mutate(
+      state,
+      {
+        type: "save",
+        definition: {
+          ...definition,
+          nightRegistrations: {
+            [gite]: { number: "1234567890123", notApplicable: false },
+          },
+        },
+      },
+      "2026-09",
+    );
+    let register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.summary[0].taxablePersonNights, 3);
+    assert.equal(register.summary[0].exemptAdultPersonNights, 3);
+    assert.equal(register.summary[0].exemptMinorPersonNights, 3);
+    assert.equal(register.summary[0].hostCollectedCents, null);
+    const completion = {
+      sourceRevision: register.sourceRevision,
+      note: "Encaissement de taxe vérifié sur reçu du 12 septembre",
+      rows: {
+        [register.rows[0].key]: {
+          collectionDate: "2026-09-12",
+          collectedTaxCents: 300,
+          collectedBaseTaxCents: 300,
+          additionalTaxes: "Aucune selon le barème enregistré",
+          nightlyPriceCents: null,
+          allocationReviewed: false,
+        },
+      },
+    };
+    state = await mutate(
+      state,
+      {
+        type: "night-register-completion",
+        reportId: definition.id,
+        completion,
+      },
+      "2026-09",
+    );
+    register = await nightRegister.getNightRegister(definition.id, "2026-09");
+    assert.equal(register.incompleteCount, 0);
+    assert.equal(
+      result(
+        state,
+        "2026-09",
+        state.reports.find((row) => row.id === definition.id)!,
+      ).total,
+      3,
+    );
+    const badges = await nightSummaries.getNightSummaries(2026);
+    assert.equal(badges.report?.id, definition.id);
+    assert.equal(
+      badges.properties.find((row) => row.id === gite)!.months[8].included,
+      3,
+    );
+    assert.equal(register.summary[0].hostCollectedCents, 300);
+    assert.equal(register.summary[0].additionalCollectedCents, 0);
+    state = await mutate(
+      state,
+      { type: "ready", reportId: definition.id },
+      "2026-09",
+    );
+    state = await mutate(
+      state,
+      { type: "confirm", reportId: definition.id },
+      "2026-09",
+    );
+    const key = reportPeriodKey(definition, "2026-09");
+    const frozen = state.progress[key].snapshot!.nightRegister!;
+    assert.ok(frozen.archivedAt);
+    assert.equal(frozen.summary[0].taxablePersonNights, 3);
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: { nb_adultes: 3 },
+    });
+    state = await reports.getReportWorkspace({ force: true });
+    const current = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(current.summary[0].taxablePersonNights, 6);
+    assert.match(current.rows[0].issues.join(" "), /sources ont changé/);
+    assert.equal(
+      snapshotDiffers(
+        state.progress[key].snapshot!,
+        result(
+          state,
+          "2026-09",
+          state.reports.find((row) => row.id === definition.id)!,
+        ),
+      ),
+      true,
+    );
+    assert.deepEqual(
+      await nightRegister.getNightRegister(definition.id, "2026-09", {}),
+      frozen,
+    );
+    await assert.rejects(
+      () =>
+        mutate(
+          state,
+          {
+            type: "night-register-completion",
+            reportId: definition.id,
+            completion,
+          },
+          "2026-09",
+        ),
+      /sources du registre ont changé/,
+    );
+    state = await mutate(
+      state,
+      {
+        type: "save",
+        definition: {
+          ...state.reports.find((row) => row.id === definition.id)!,
+          cadence: "yearly",
+        },
+      },
+      "2026-09",
+    );
+    assert.deepEqual(
+      await nightRegister.getNightRegister(definition.id, "2026-09", { key }),
+      frozen,
+    );
+    await assert.rejects(
+      () => nightRegister.getNightRegister("guest-nights", "2026-09", { key }),
+      /copie/,
+    );
+  });
+});
+
+test("déclaration : impossible d’effacer une perception connue pour obtenir un registre complet", async () => {
+  await fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await pay(reservation.id, 4, {
+      purpose: "tourist_tax",
+      paid_on: "2026-09-12",
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "declaration-null"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    const register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.incompleteCount, 0);
+    state = await mutate(
+      state,
+      {
+        type: "night-register-completion",
+        reportId: definition.id,
+        completion: {
+          sourceRevision: register.sourceRevision,
+          note: "Saisie incomplète",
+          rows: {
+            [register.rows[0].key]: {
+              collectionDate: null,
+              collectedTaxCents: null,
+              collectedBaseTaxCents: null,
+              additionalTaxes: "",
+              nightlyPriceCents: null,
+              allocationReviewed: false,
+            },
+          },
+        },
+      },
+      "2026-09",
+    );
+    assert.ok(
+      (await nightRegister.getNightRegister(definition.id, "2026-09"))
+        .incompleteCount,
+    );
+    await assert.rejects(
+      () =>
+        mutate(state, { type: "ready", reportId: definition.id }, "2026-09"),
+      /registre/,
+    );
+  });
+});
+
+test("déclaration : le partage d’une perception entre mois ne peut pas dépasser le montant encaissé", async () => {
+  await fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      options: JSON.stringify({
+        tourist_tax: {
+          ...registerTax,
+          settings: { ...registerTax.settings, additional_percentage: 10 },
+        },
+      }),
+    });
+    await pay(reservation.id, 8.8, {
+      purpose: "tourist_tax",
+      paid_on: "2026-10-31",
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "declaration-allocation"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition });
+    const edit = async (
+      month: string,
+      collectedTaxCents: number,
+      collectedBaseTaxCents: number,
+    ) => {
+      const register = await nightRegister.getNightRegister(
+        definition.id,
+        month,
+      );
+      return mutate(
+        state,
+        {
+          type: "night-register-completion",
+          reportId: definition.id,
+          completion: {
+            sourceRevision: register.sourceRevision,
+            note: "Ventilation vérifiée entre octobre et novembre",
+            rows: {
+              [register.rows[0].key]: {
+                collectionDate: "2026-10-31",
+                collectedTaxCents,
+                collectedBaseTaxCents,
+                additionalTaxes: "Taxe départementale : 0,40 €",
+                nightlyPriceCents: null,
+                allocationReviewed: true,
+              },
+            },
+          },
+        },
+        month,
+      );
+    };
+    state = await edit("2026-10", 440, 400);
+    await assert.rejects(
+      () => edit("2026-11", 880, 800),
+      /dépasse la perception/,
+    );
+    state = await edit("2026-11", 440, 400);
+    for (const month of ["2026-10", "2026-11"]) {
+      const register = await nightRegister.getNightRegister(
+        definition.id,
+        month,
+      );
+      assert.equal(register.incompleteCount, 0);
+      assert.equal(register.summary[0].hostCollectedCents, 440);
+      assert.equal(register.summary[0].additionalCollectedCents, 40);
+    }
+  });
+});
+
+test("déclaration : une modification des exonérations après préparation exige une nouvelle vérification", async () => {
+  await fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await pay(reservation.id, 4, {
+      purpose: "tourist_tax",
+      paid_on: "2026-09-12",
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "declaration-ready"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    state = await mutate(
+      state,
+      { type: "ready", reportId: definition.id },
+      "2026-09",
+    );
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        options: JSON.stringify({
+          tourist_tax: {
+            ...registerTax,
+            exempt_adults: 1,
+            exemption_reason: "Saisonnier",
+          },
+        }),
+      },
+    });
+    state = await reports.getReportWorkspace({ force: true });
+    assert.equal(
+      state.progress[reportPeriodKey(definition, "2026-09")].ready,
+      false,
+    );
+    await assert.rejects(
+      () =>
+        mutate(state, { type: "confirm", reportId: definition.id }, "2026-09"),
+      /marqué comme prêt/,
+    );
+  });
+});
+
+test("déclaration : tarifs variables détaillés et exonération totale sans perception inventée", async () => {
+  await fixture(async ({ gite }) => {
+    await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      remise_montant: 10,
+      options: JSON.stringify({
+        tourist_tax: {
+          ...registerTax,
+          settings: { ...registerTax.settings, classified: false, stars: 0 },
+          exempt_adults: 2,
+          exemption_reason: "Saisonniers dans la commune",
+        },
+      }),
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "declaration-prices"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    let register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.summary[0].taxablePersonNights, 0);
+    assert.equal(register.summary[0].hostCollectedCents, 0);
+    const completion = {
+      sourceRevision: register.sourceRevision,
+      note: "Prix détaillés vérifiés dans le contrat",
+      rows: {
+        [register.rows[0].key]: {
+          collectionDate: null,
+          collectedTaxCents: 0,
+          collectedBaseTaxCents: 0,
+          additionalTaxes: "Aucune taxe due",
+          allocationReviewed: false,
+          nightlyPriceCents: null,
+          nightlyPrices: [
+            { date: "2026-09-10", amountCents: 4000 },
+            { date: "2026-09-11", amountCents: 5000 },
+          ],
+        },
+      },
+    };
+    state = await mutate(
+      state,
+      {
+        type: "night-register-completion",
+        reportId: definition.id,
+        completion,
+      },
+      "2026-09",
+    );
+    register = await nightRegister.getNightRegister(definition.id, "2026-09");
+    assert.equal(register.incompleteCount, 0);
+    assert.equal(register.rows[0].nightlyPriceCents, null);
+    assert.equal(register.rows[0].nightlyPrices!.length, 2);
+    assert.match(
+      nightRegisterCsv(register),
+      /2026-09-10 : 40,00 ; 2026-09-11 : 50,00/,
+    );
+    await mutate(state, { type: "ready", reportId: definition.id }, "2026-09");
+  });
+});
+
 test("registre : perceptions réelles, mineurs, source et nuitées sans double compte", async () => {
   await fixture(async ({ gite, org }) => {
     const reservation = await stay(gite, {

@@ -144,6 +144,12 @@ export default function ReportEditor({
   ];
   const update = (patch: Partial<ReportDefinition>) => {
     if ("bookingSources" in patch) patch.excludedBookingSources = undefined;
+    if (patch.propertyIds && draft.nightRegistrations)
+      patch.nightRegistrations = Object.fromEntries(
+        Object.entries(draft.nightRegistrations).filter(([id]) =>
+          patch.propertyIds!.includes(id),
+        ),
+      );
     setError("");
     setDraft(draftKey, { ...draft, ...patch });
   };
@@ -569,8 +575,9 @@ export default function ReportEditor({
                             type="checkbox"
                             checked={selected.includes(group.id)}
                             disabled={
-                              selected.length === 1 &&
-                              selected.includes(group.id)
+                              Boolean(draft.nightDeclaration) ||
+                              (selected.length === 1 &&
+                                selected.includes(group.id))
                             }
                             onChange={(event) =>
                               update({
@@ -586,10 +593,75 @@ export default function ReportEditor({
                     })}
                   </div>
                   <p className="rp-field-help">
-                    Par défaut, seuls les adultes sont comptés. Les enfants et
-                    les bébés restent exclus tant que vous ne les sélectionnez
-                    pas.
+                    {draft.nightDeclaration
+                      ? "Le total à déclarer compte les adultes taxables, après exonérations. La synthèse détaille aussi les enfants, les bébés et les autres exonérations."
+                      : "Par défaut, seuls les adultes sont comptés. Les enfants et les bébés restent exclus tant que vous ne les sélectionnez pas."}
                   </p>
+                  <label className="rp-reference-choice">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draft.nightDeclaration)}
+                      onChange={(event) =>
+                        update({
+                          nightDeclaration: event.target.checked,
+                          ...(event.target.checked
+                            ? { nightGuests: ["adults"] }
+                            : {}),
+                        })
+                      }
+                    />
+                    Déclaration de taxe de séjour
+                  </label>
+                  <p className="rp-field-help">
+                    La synthèse distingue les nuitées taxables et exonérées. En
+                    activant cette option, le registre doit être complet avant
+                    de marquer le rapport prêt ou de confirmer sa transmission.
+                  </p>
+                  {draft.nightDeclaration &&
+                    draft.propertyIds.map((id) => {
+                      const registration = draft.nightRegistrations?.[id] ?? {
+                        number: "",
+                        notApplicable: false,
+                      };
+                      const setRegistration = (value: typeof registration) =>
+                        update({
+                          nightRegistrations: {
+                            ...draft.nightRegistrations,
+                            [id]: value,
+                          },
+                        });
+                      return (
+                        <div className="rp-registration-field" key={id}>
+                          <label className="rp-field">
+                            Numéro d’enregistrement · {propertyName(id)}
+                            <input
+                              value={registration.number}
+                              maxLength={100}
+                              disabled={registration.notApplicable}
+                              onChange={(event) =>
+                                setRegistration({
+                                  ...registration,
+                                  number: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="rp-reference-choice">
+                            <input
+                              type="checkbox"
+                              checked={registration.notApplicable}
+                              onChange={(event) =>
+                                setRegistration({
+                                  number: "",
+                                  notApplicable: event.target.checked,
+                                })
+                              }
+                            />
+                            Enregistrement non applicable à ce gîte
+                          </label>
+                        </div>
+                      );
+                    })}
                   <label className="rp-reference-choice">
                     <input
                       type="checkbox"
@@ -661,7 +733,9 @@ export default function ReportEditor({
                 </div>
                 <p className="rp-field-help">
                   {draft.kind === "tourist"
-                    ? `Le rapport compte les occupants sélectionnés par nuit : ${nightGuestGroupsLabel(draft.nightGuests).toLocaleLowerCase("fr")}. Il ne calcule pas un montant de taxe.`
+                    ? draft.nightDeclaration
+                      ? "Le rapport compte les adultes taxables par nuit, après les exonérations enregistrées. La synthèse détaille les autres occupants et la taxe collectée."
+                      : `Le rapport compte les occupants sélectionnés par nuit : ${nightGuestGroupsLabel(draft.nightGuests).toLocaleLowerCase("fr")}. Il ne calcule pas un montant de taxe.`
                     : "Une même recette peut alimenter plusieurs rapports."}
                 </p>
               </fieldset>
@@ -684,6 +758,12 @@ export default function ReportEditor({
                   <option value="monthly">Chaque mois</option>
                   <option value="quarterly">Chaque trimestre</option>
                   <option value="yearly">Chaque année</option>
+                  {draft.kind === "tourist" && (
+                    <option value="broceliande">
+                      Brocéliande Communauté · janvier–mai, juin–septembre,
+                      octobre–décembre
+                    </option>
+                  )}
                 </select>
               </label>
               {draft.kind !== "tourist" && draft.dateBasis === "payment" && (

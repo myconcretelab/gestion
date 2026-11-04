@@ -2969,6 +2969,95 @@
   align-self: flex-start;
   flex-wrap: wrap;
 }
+
+.rp-declaration-panel {
+  padding: 24px;
+}
+.rp-night-summary h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+.rp-night-summary-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+.rp-night-summary table {
+  width: 100%;
+  min-width: 1050px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.rp-night-summary th,
+.rp-night-summary td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  text-align: right;
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+.rp-night-summary th:first-child {
+  min-width: 160px;
+  text-align: left;
+}
+.rp-night-summary thead {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+.rp-night-summary th small {
+  display: block;
+  font-weight: 400;
+  margin-top: 4px;
+}
+.rp-night-summary-scroll:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.rp-register-completion {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+.rp-register-completion-row {
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+}
+.rp-register-completion-row summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.rp-register-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.rp-register-inputs .rp-reference-choice {
+  grid-column: 1 / -1;
+}
+.rp-registration-field {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.rp-register-completion textarea {
+  min-height: 80px;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .rp-declaration-panel {
+    padding: 16px;
+  }
+  .rp-register-inputs {
+    grid-template-columns: 1fr;
+  }
+}
 .rp-total-copy small {
   font-variant-numeric: tabular-nums;
   padding-left: 6px;

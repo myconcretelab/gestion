@@ -20,6 +20,8 @@ export type ReportConfiguration = Pick<
   | "worklistStartMonth"
   | "nightSettingsVersion"
   | "nightSettingsWarnings"
+  | "nightRegisterCompletions"
+  | "nightRegisterCompletionRevisions"
 >;
 type Configuration = ReportConfiguration;
 function initialConfiguration(
