@@ -1,4 +1,8 @@
 import { reportNightValue, type NightGuestGroup } from "./nightOperations.js";
+import {
+  resolveTouristTaxRegistration,
+  type TouristTaxDeclarationDetails,
+} from "./touristTax.js";
 
 export const REPORT_CATEGORIES = [
   { id: "accommodation", label: "Hébergement" },
@@ -87,6 +91,10 @@ export type ReportIssue = {
   actionLabel: string;
 };
 export type ReportSources = {
+  propertyNightDeclarations?: Record<
+    string,
+    TouristTaxDeclarationDetails | undefined
+  >;
   nightRegisterCompletionRevisions?: Record<string, string>;
   nightRegisterCompletions?: Record<
     string,
@@ -350,12 +358,20 @@ export function evaluateReport(
         operation.reviewReason =
           operation.nightTaxIssue ??
           "Nuitées taxables à vérifier dans la réservation.";
+      const declaration =
+        sources.propertyNightDeclarations?.[operation.propertyId];
       operation.declarationSourceSignature = JSON.stringify([
         operation.declarationSourceSignature,
         sources.nightRegisterCompletionRevisions?.[
           reportPeriodKey(report, month)
         ],
-        report.nightRegistrations?.[operation.propertyId],
+        resolveTouristTaxRegistration(
+          report.nightRegistrations?.[operation.propertyId],
+          declaration,
+        ),
+        ...(declaration?.receiptReference
+          ? [declaration.receiptReference]
+          : []),
       ]);
     } else delete operation.declarationSourceSignature;
     const inProperty = report.propertyIds.includes(operation.propertyId);
@@ -637,6 +653,9 @@ export function reportChanges(
       row.effectiveDate,
       recorded?.paymentMethod === "unknown" ? null : row.paymentMethod,
       ...(row.paymentDateEstimated ? ["estimated-payment-date"] : []),
+      ...(row.declarationSourceSignature
+        ? [row.declarationSourceSignature]
+        : []),
     ]);
   return [...new Set([...before.keys(), ...after.keys()])].flatMap((id) => {
     const oldRow = before.get(id);

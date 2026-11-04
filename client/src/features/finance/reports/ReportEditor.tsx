@@ -8,6 +8,7 @@ import {
 } from "@contrats/shared";
 import AccommodationBreakdown from "./AccommodationBreakdown";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
+import ReportNightRegistrationSettings from "./ReportNightRegistrationSettings";
 import ReportPageHeader from "./ReportPageHeader";
 import {
   categoryLabel,
@@ -617,51 +618,19 @@ export default function ReportEditor({
                     activant cette option, le registre doit être complet avant
                     de marquer le rapport prêt ou de confirmer sa transmission.
                   </p>
-                  {draft.nightDeclaration &&
-                    draft.propertyIds.map((id) => {
-                      const registration = draft.nightRegistrations?.[id] ?? {
-                        number: "",
-                        notApplicable: false,
-                      };
-                      const setRegistration = (value: typeof registration) =>
-                        update({
-                          nightRegistrations: {
-                            ...draft.nightRegistrations,
-                            [id]: value,
-                          },
-                        });
-                      return (
-                        <div className="rp-registration-field" key={id}>
-                          <label className="rp-field">
-                            Numéro d’enregistrement · {propertyName(id)}
-                            <input
-                              value={registration.number}
-                              maxLength={100}
-                              disabled={registration.notApplicable}
-                              onChange={(event) =>
-                                setRegistration({
-                                  ...registration,
-                                  number: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label className="rp-reference-choice">
-                            <input
-                              type="checkbox"
-                              checked={registration.notApplicable}
-                              onChange={(event) =>
-                                setRegistration({
-                                  number: "",
-                                  notApplicable: event.target.checked,
-                                })
-                              }
-                            />
-                            Enregistrement non applicable à ce gîte
-                          </label>
-                        </div>
-                      );
-                    })}
+                  {draft.nightDeclaration && (
+                    <ReportNightRegistrationSettings
+                      properties={state.properties.filter((property) =>
+                        draft.propertyIds.includes(property.id),
+                      )}
+                      overrides={draft.nightRegistrations}
+                      onChange={(nightRegistrations) =>
+                        update({ nightRegistrations })
+                      }
+                      disabled={saving || workspace.loading}
+                      refresh={workspace.refresh}
+                    />
+                  )}
                   <label className="rp-reference-choice">
                     <input
                       type="checkbox"

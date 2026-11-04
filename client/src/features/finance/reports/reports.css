@@ -3046,6 +3046,20 @@
   gap: 8px;
   margin: 16px 0;
 }
+.rp-night-registration-settings .rp-registration-field {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.rp-night-registration-settings .rp-field-help {
+  margin: 0;
+}
+.rp-night-registration-settings .rp-text-button {
+  white-space: normal;
+  text-align: left;
+}
 .rp-register-completion textarea {
   min-height: 80px;
   width: 100%;

@@ -195,6 +195,15 @@ export default function ReportDiscrepancy({
                         </Link>
                       )}
                   </header>
+                  {before &&
+                    after &&
+                    before.declarationSourceSignature !==
+                      after.declarationSourceSignature && (
+                      <p className="rp-field-help">
+                        Les informations du registre de déclaration ont changé.
+                        Consultez le registre des séjours pour les vérifier.
+                      </p>
+                    )}
                   <div className="rp-discrepancy-values">
                     <div>
                       <span>Avant</span>

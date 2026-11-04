@@ -586,6 +586,9 @@ export async function loadReportFacts(
   const propertyManagers = Object.fromEntries(
     properties.map((row) => [row.id, row.managerId ?? null]),
   );
+  const propertyNightDeclarations = Object.fromEntries(
+    properties.map((row) => [row.id, row.declaration]),
+  );
   const factsRevision = createHash("sha256")
     .update(
       JSON.stringify({
@@ -627,6 +630,7 @@ export async function loadReportFacts(
     operations,
     propertyOperators,
     propertyManagers,
+    propertyNightDeclarations,
     operatorIssues,
     socialIssues,
     factsRevision,

@@ -2097,6 +2097,14 @@ try {
     .getByRole("button", { name: "Fermer", exact: true })
     .click();
   await grouped.setViewportSize({ width: 1440, height: 1050 });
+  groupedFixture.state.properties[0].declaration = {
+    registration: { number: "NER-FICHE", notApplicable: false },
+    portalReference: "PMM-PORTAIL",
+    receiptReference: "RCP-MAIRIE",
+  };
+  groupedFixture.state.propertyNightDeclarations = {
+    g1: groupedFixture.state.properties[0].declaration,
+  };
   await open(grouped, "/nights-a/modifier");
   await grouped
     .getByRole("checkbox", {
@@ -2104,6 +2112,56 @@ try {
       exact: true,
     })
     .check();
+  await grouped.getByText("NER-FICHE", { exact: true }).waitFor();
+  await grouped
+    .getByText("Référence du portail : PMM-PORTAIL", { exact: true })
+    .waitFor();
+  groupedFixture.state.properties[0].declaration.registration.number =
+    "NER-FICHE-2";
+  await grouped
+    .getByRole("button", {
+      name: "Actualiser les informations des gîtes",
+      exact: true,
+    })
+    .click();
+  await grouped.getByText("NER-FICHE-2", { exact: true }).waitFor();
+  assert.equal(
+    await grouped
+      .getByRole("checkbox", {
+        name: "Déclaration de taxe de séjour",
+        exact: true,
+      })
+      .isChecked(),
+    true,
+  );
+  await grouped
+    .getByRole("button", {
+      name: "Utiliser une valeur propre à ce rapport · La Maison du verger",
+      exact: true,
+    })
+    .click();
+  await grouped
+    .getByLabel("Numéro d’enregistrement · La Maison du verger", {
+      exact: true,
+    })
+    .fill("ANCIEN-RAPPORT");
+  await grouped
+    .getByRole("button", {
+      name: "Utiliser les informations de la fiche · La Maison du verger",
+      exact: true,
+    })
+    .click();
+  await grouped.getByText("NER-FICHE-2", { exact: true }).waitFor();
+  await grouped.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(grouped);
+  await capture(grouped, "night-declaration-inherited-settings-mobile.png");
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
+  await grouped
+    .getByRole("button", {
+      name: "Utiliser une valeur propre à ce rapport · La Maison du verger",
+      exact: true,
+    })
+    .click();
   await grouped
     .getByLabel("Numéro d’enregistrement · La Maison du verger", {
       exact: true,

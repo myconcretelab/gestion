@@ -43,6 +43,7 @@ export function getNightSummaries(year: number): Promise<NightSummaryResponse> {
             select: {
               id: true,
               nom: true,
+              taxe_sejour_config: true,
               gestionnaire_id: true,
               fiscal_establishment: {
                 select: {
@@ -117,6 +118,12 @@ export function getNightSummaries(year: number): Promise<NightSummaryResponse> {
           })),
         };
         const sources = {
+          propertyNightDeclarations: Object.fromEntries(
+            scope.properties.map((property) => [
+              property.id,
+              property.declaration,
+            ]),
+          ),
           propertyOperators: Object.fromEntries(
             scope.properties.map((property) => [
               property.id,

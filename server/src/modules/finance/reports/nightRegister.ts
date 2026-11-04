@@ -7,6 +7,8 @@ import {
   reportPeriodKey,
   touristTaxStaySchema,
   parseTouristTaxSettings,
+  touristTaxDeclarationDetails,
+  resolveTouristTaxRegistration,
   summarizeNightRegister,
   buildNightTaxBasis,
   allocateNightTaxCollections,
@@ -103,19 +105,32 @@ export async function buildNightRegister(
     where: { id: { in: report.propertyIds } },
     orderBy: [{ ordre: "asc" }, { id: "asc" }],
   });
-  const properties = gites.map((gite) => ({
-    id: gite.id,
-    name: gite.nom,
-    portalReference:
-      parseTouristTaxSettings(gite.taxe_sejour_config)?.portal_reference ||
-      null,
-    address: [gite.adresse_ligne1, gite.adresse_ligne2]
-      .filter(Boolean)
-      .join(", "),
-    registrationNumber: report.nightRegistrations?.[gite.id]?.notApplicable
-      ? "Non applicable"
-      : report.nightRegistrations?.[gite.id]?.number || null,
-  }));
+  const properties = gites.map((gite) => {
+    const declaration = touristTaxDeclarationDetails(
+      parseTouristTaxSettings(gite.taxe_sejour_config),
+    );
+    const registration = resolveTouristTaxRegistration(
+      report.nightRegistrations?.[gite.id],
+      declaration,
+    );
+    return {
+      id: gite.id,
+      name: gite.nom,
+      portalReference: declaration?.portalReference || null,
+      ...(declaration?.receiptReference
+        ? { declarationReceiptReference: declaration.receiptReference }
+        : {}),
+      address: [gite.adresse_ligne1, gite.adresse_ligne2]
+        .filter(Boolean)
+        .join(", "),
+      registrationNumber: registration?.notApplicable
+        ? "Non applicable"
+        : registration?.number || null,
+    };
+  });
+  const propertiesById = new Map(
+    properties.map((property) => [property.id, property]),
+  );
   const evaluated = evaluateReport(
     report,
     month,
@@ -222,10 +237,8 @@ export async function buildNightRegister(
       .filter(Boolean)
       .join(", ");
     if (!address) issues.push("Adresse du gîte à compléter.");
-    const registration = report.nightRegistrations?.[reservation.gite_id!];
-    const registrationNumber = registration?.notApplicable
-      ? "Non applicable"
-      : registration?.number || null;
+    const registrationNumber =
+      propertiesById.get(reservation.gite_id!)?.registrationNumber ?? null;
     if (!registrationNumber)
       issues.push("Numéro d’enregistrement à compléter s’il s’applique.");
     if (!stayTax)

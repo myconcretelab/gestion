@@ -20,6 +20,17 @@
   margin-bottom: 16px;
   cursor: pointer;
 }
+.tourist-tax-registration-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.tourist-tax-registration-choice input {
+  width: auto;
+  min-height: auto;
+  accent-color: var(--primary);
+}
 .tourist-tax-switch small {
   display: block;
   color: var(--muted);

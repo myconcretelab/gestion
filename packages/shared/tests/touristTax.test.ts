@@ -4,6 +4,8 @@ import {
   computeTouristTax,
   createTouristTaxStay,
   touristTaxSettingsSchema,
+  touristTaxDeclarationDetails,
+  resolveTouristTaxRegistration,
   reservationAmountToCollect,
   reservationTouristTax,
   type TouristTaxSettings,
@@ -217,6 +219,55 @@ test("les références du portail et la validité du classement restent distinct
     false,
   );
   assert.equal(touristTaxSettingsSchema.safeParse(policy()).success, true);
+});
+
+test("l’enregistrement central distingue le numéro officiel du portail et du récépissé", () => {
+  const settings = touristTaxSettingsSchema.parse(
+    policy({
+      portal_reference: "PMM-PORTAIL",
+      declaration_receipt_reference: " RCP-MAIRIE ",
+    }),
+  );
+  const declaration = touristTaxDeclarationDetails(settings);
+  assert.equal(declaration?.receiptReference, "RCP-MAIRIE");
+  assert.equal(
+    resolveTouristTaxRegistration(undefined, declaration),
+    undefined,
+  );
+  const registered = touristTaxDeclarationDetails({
+    ...settings,
+    registration: { number: "NER-CENTRAL", notApplicable: false },
+  });
+  assert.equal(
+    resolveTouristTaxRegistration(undefined, registered)?.number,
+    "NER-CENTRAL",
+  );
+  assert.deepEqual(
+    resolveTouristTaxRegistration(
+      { number: "", notApplicable: false },
+      registered,
+    ),
+    { number: "", notApplicable: false },
+  );
+  assert.deepEqual(
+    resolveTouristTaxRegistration(undefined, {
+      registration: { number: "", notApplicable: true },
+    }),
+    { number: "", notApplicable: true },
+  );
+  assert.equal(
+    touristTaxSettingsSchema.safeParse(
+      policy({ registration: { number: "NER", notApplicable: true } }),
+    ).success,
+    false,
+  );
+  assert.deepEqual(
+    calculate({
+      ...settings,
+      registration: { number: "NER", notApplicable: false },
+    }),
+    calculate(),
+  );
 });
 
 test("les réservations historiques restent inchangées et le barème enregistré reste figé", () => {

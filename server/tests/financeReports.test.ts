@@ -3205,6 +3205,252 @@ test("déclaration : contrôles de complétude, compléments justifiés, copie f
   });
 });
 
+test("enregistrement central : reprise par les rapports, concurrence et copies confirmées figées", async () => {
+  await fixture(async ({ gite }) => {
+    const configuration = {
+      ...registerTax.settings,
+      portal_reference: "PMM-PORTAIL",
+      declaration_receipt_reference: "RCP-MAIRIE",
+    };
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { taxe_sejour_config: JSON.stringify(configuration) },
+    });
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    const originalOptions = reservation.options;
+    await pay(reservation.id, 4, {
+      purpose: "tourist_tax",
+      paid_on: "2026-09-12",
+    });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "registration-central"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    const missing = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(missing.properties[0].registrationNumber, null);
+    assert.equal(
+      missing.properties[0].declarationReceiptReference,
+      "RCP-MAIRIE",
+    );
+    assert.ok(
+      missing.rows[0].issues.some((issue) => issue.includes("enregistrement")),
+    );
+    const registered = {
+      ...configuration,
+      registration: { number: "NER-CENTRAL-A", notApplicable: false },
+    };
+    await db.default.gite.update({
+      where: { id: gite },
+      data: { taxe_sejour_config: JSON.stringify(registered) },
+    });
+    await assert.rejects(
+      mutate(state, { type: "ready", reportId: definition.id }, "2026-09"),
+      /données ont changé/,
+    );
+    state = await reports.getReportWorkspace();
+    assert.equal(
+      state.properties.find((property) => property.id === gite)?.declaration
+        ?.registration?.number,
+      "NER-CENTRAL-A",
+    );
+    const register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.properties[0].registrationNumber, "NER-CENTRAL-A");
+    assert.equal(register.rows[0].registrationNumber, "NER-CENTRAL-A");
+    assert.equal(register.incompleteCount, 0);
+    assert.match(nightRegisterCsv(register), /RCP-MAIRIE/);
+    const { renderNightRegisterHtml } =
+      await import("../src/modules/finance/reports/nightRegisterRender.js");
+    assert.match(
+      renderNightRegisterHtml(register),
+      /Récépissé de déclaration en mairie : RCP-MAIRIE/,
+    );
+    state = await mutate(
+      state,
+      { type: "ready", reportId: definition.id },
+      "2026-09",
+    );
+    state = await mutate(
+      state,
+      { type: "confirm", reportId: definition.id },
+      "2026-09",
+    );
+    const key = reportPeriodKey(definition, "2026-09");
+    const archived = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+      {},
+    );
+    const next = JSON.stringify({
+      ...registered,
+      registration: { number: "NER-CENTRAL-B", notApplicable: false },
+      declaration_receipt_reference: "RCP-NOUVEAU",
+    });
+    await db.default
+      .$executeRaw`UPDATE gites SET taxe_sejour_config=${next} WHERE id=${gite}`;
+    const updated = await reports.getReportWorkspace();
+    const live = await nightRegister.getNightRegister(definition.id, "2026-09");
+    assert.equal(live.properties[0].registrationNumber, "NER-CENTRAL-B");
+    assert.equal(live.properties[0].declarationReceiptReference, "RCP-NOUVEAU");
+    const beforeResult = state.progress[key].snapshot!.result;
+    const afterResult = result(
+      updated,
+      "2026-09",
+      updated.reports.find((report) => report.id === definition.id)!,
+    );
+    assert.equal(beforeResult.total, afterResult.total);
+    assert.equal(
+      snapshotDiffers(state.progress[key].snapshot!, afterResult),
+      true,
+    );
+    assert.deepEqual(
+      await nightRegister.getNightRegister(definition.id, "2026-09", {}),
+      archived,
+    );
+    assert.equal(archived.properties[0].registrationNumber, "NER-CENTRAL-A");
+    assert.equal(
+      archived.properties[0].declarationReceiptReference,
+      "RCP-MAIRIE",
+    );
+    assert.equal(
+      (
+        await db.default.reservation.findUniqueOrThrow({
+          where: { id: reservation.id },
+        })
+      ).options,
+      originalOptions,
+    );
+  });
+});
+
+test("enregistrement central : valeurs propres aux rapports conservées et retour à la fiche", async () => {
+  await fixture(async ({ gite }) => {
+    await db.default.gite.update({
+      where: { id: gite },
+      data: {
+        taxe_sejour_config: JSON.stringify({
+          ...registerTax.settings,
+          registration: { number: "NER-FICHE", notApplicable: false },
+        }),
+      },
+    });
+    await stay(gite, { options: JSON.stringify({ tourist_tax: registerTax }) });
+    let state = await reports.getReportWorkspace();
+    const definition = {
+      ...createReport("tourist", "registration-override"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: {
+        [gite]: { number: "NER-RAPPORT", notApplicable: false },
+      },
+    };
+    state = await mutate(state, { type: "save", definition });
+    assert.equal(
+      (await nightRegister.getNightRegister(definition.id, "2026-10")).rows[0]
+        .registrationNumber,
+      "NER-RAPPORT",
+    );
+    state = await mutate(state, {
+      type: "save",
+      definition: {
+        ...definition,
+        nightRegistrations: { [gite]: { number: "", notApplicable: false } },
+      },
+    });
+    assert.equal(
+      (await nightRegister.getNightRegister(definition.id, "2026-10")).rows[0]
+        .registrationNumber,
+      null,
+    );
+    state = await mutate(state, {
+      type: "save",
+      definition: {
+        ...definition,
+        nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+      },
+    });
+    assert.equal(
+      (await nightRegister.getNightRegister(definition.id, "2026-10")).rows[0]
+        .registrationNumber,
+      "Non applicable",
+    );
+    await mutate(state, {
+      type: "save",
+      definition: { ...definition, nightRegistrations: undefined },
+    });
+    assert.equal(
+      (await nightRegister.getNightRegister(definition.id, "2026-10")).rows[0]
+        .registrationNumber,
+      "NER-FICHE",
+    );
+  });
+});
+
+test("les réglages de déclaration invalident seulement leur organisation, avec rollback et mise à jour sans effet", async () => {
+  await fixture(async ({ gite, org }) => {
+    const otherOrg = `${org}_other`;
+    await db.systemPrisma.organization.create({
+      data: { id: otherOrg, slug: otherOrg, name: "Autre organisation" },
+    });
+    const otherBefore =
+      await db.systemPrisma.financeReportCache.findUniqueOrThrow({
+        where: { organization_id: otherOrg },
+      });
+    const original = await db.default.financeReportCache.findFirstOrThrow();
+    const configuration = JSON.stringify({
+      ...registerTax.settings,
+      registration: { number: "NER-CENTRAL", notApplicable: false },
+    });
+    await assert.rejects(
+      db.default.$transaction(async (tx) => {
+        await tx.gite.update({
+          where: { id: gite },
+          data: { taxe_sejour_config: configuration },
+        });
+        throw new Error("rollback");
+      }),
+      /rollback/,
+    );
+    assert.equal(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision,
+      original.source_revision,
+    );
+    await db.default
+      .$executeRaw`UPDATE gites SET taxe_sejour_config=${configuration} WHERE id=${gite}`;
+    const changed = await db.default.financeReportCache.findFirstOrThrow();
+    assert.ok(changed.source_revision > original.source_revision);
+    await db.default.gite.updateMany({
+      where: { id: gite },
+      data: { taxe_sejour_config: configuration },
+    });
+    assert.equal(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision,
+      changed.source_revision,
+    );
+    assert.equal(
+      (
+        await db.systemPrisma.financeReportCache.findUniqueOrThrow({
+          where: { organization_id: otherOrg },
+        })
+      ).source_revision,
+      otherBefore.source_revision,
+    );
+  });
+});
+
 test("déclaration : impossible d’effacer une perception connue pour obtenir un registre complet", async () => {
   await fixture(async ({ gite }) => {
     const reservation = await stay(gite, {

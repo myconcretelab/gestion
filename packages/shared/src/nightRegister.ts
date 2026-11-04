@@ -67,6 +67,7 @@ export type NightRegister = {
     address: string;
     registrationNumber: string | null;
     portalReference?: string | null;
+    declarationReceiptReference?: string | null;
   }>;
   rows: NightRegisterRow[];
 };
@@ -239,6 +240,8 @@ export function nightDeclarationCsv(register: NightRegister) {
       "Taxes additionnelles (EUR)",
       "Séjours à compléter",
       "Référence du portail de déclaration",
+      "Numéro d’enregistrement (si applicable)",
+      "Référence du récépissé de déclaration en mairie",
     ],
     ...register.summary.map((row) => [
       register.period.label,
@@ -256,6 +259,10 @@ export function nightDeclarationCsv(register: NightRegister) {
       row.incompleteStays,
       register.properties.find((property) => property.id === row.propertyId)
         ?.portalReference ?? "",
+      register.properties.find((property) => property.id === row.propertyId)
+        ?.registrationNumber ?? "À compléter si applicable",
+      register.properties.find((property) => property.id === row.propertyId)
+        ?.declarationReceiptReference ?? "",
     ]),
   ];
   return (
@@ -305,6 +312,7 @@ export function nightRegisterCsv(register: NightRegister) {
     "Source",
     "Informations à compléter",
     "Référence du portail de déclaration",
+    "Référence du récépissé de déclaration en mairie",
   ];
   return (
     "\uFEFF" +
@@ -352,6 +360,8 @@ export function nightRegisterCsv(register: NightRegister) {
         row.issues.join(" · "),
         register.properties.find((property) => property.id === row.propertyId)
           ?.portalReference ?? "",
+        register.properties.find((property) => property.id === row.propertyId)
+          ?.declarationReceiptReference ?? "",
       ]),
     ]
       .map((row) => row.map(quote).join(";"))

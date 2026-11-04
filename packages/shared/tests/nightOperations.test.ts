@@ -5,6 +5,7 @@ import {
   createReport,
   evaluateReport,
   reportDefinitionSchema,
+  snapshotDiffers,
 } from "../src/index.js";
 
 const stay = {
@@ -98,6 +99,81 @@ test("le filtre d’occupants est non vide, sans doublon et réservé aux rappor
     );
   assert.equal(
     reportDefinitionSchema.safeParse({ ...report, kind: "custom" }).success,
+    false,
+  );
+});
+
+test("les identifiants repris du gîte changent la déclaration sans changer les nuitées", () => {
+  const definition = { ...report, nightDeclaration: true };
+  const operations = buildNightOperations([stay]).map((operation) => ({
+    ...operation,
+    taxableNights: operation.nights,
+  }));
+  const source = {
+    propertyOperators: {},
+    operationEdits: {},
+    propertyNightDeclarations: {
+      g: {
+        registration: { number: "NER-A", notApplicable: false },
+        receiptReference: "RCP-A",
+      },
+    },
+  };
+  const evaluate = (sources = source, rules = definition) =>
+    evaluateReport(rules, "2026-12", {}, operations, sources);
+  const before = evaluate();
+  const after = evaluate({
+    ...source,
+    propertyNightDeclarations: {
+      g: {
+        ...source.propertyNightDeclarations.g,
+        registration: { number: "NER-B", notApplicable: false },
+      },
+    },
+  });
+  assert.equal(after.total, before.total);
+  assert.equal(snapshotDiffers({ result: before }, after), true);
+  const receiptChange = evaluate({
+    ...source,
+    propertyNightDeclarations: {
+      g: { ...source.propertyNightDeclarations.g, receiptReference: "RCP-B" },
+    },
+  });
+  assert.equal(snapshotDiffers({ result: before }, receiptChange), true);
+  const manual = {
+    ...definition,
+    nightRegistrations: { g: { number: "MANUEL", notApplicable: false } },
+  };
+  const overriddenBefore = evaluate(source, manual);
+  assert.equal(
+    snapshotDiffers(
+      { result: overriddenBefore },
+      evaluate(
+        {
+          ...source,
+          propertyNightDeclarations: {
+            g: {
+              ...source.propertyNightDeclarations.g,
+              registration: { number: "NER-B", notApplicable: false },
+            },
+          },
+        },
+        manual,
+      ),
+    ),
+    false,
+  );
+  const historical = evaluateReport(definition, "2026-12", {}, operations);
+  const legacySources = {
+    propertyOperators: {},
+    operationEdits: {},
+    propertyNightDeclarations: { g: { portalReference: "PMM" } },
+  };
+  assert.equal(
+    snapshotDiffers(
+      { result: historical },
+      evaluateReport(definition, "2026-12", {}, operations, legacySources),
+    ),
     false,
   );
 });

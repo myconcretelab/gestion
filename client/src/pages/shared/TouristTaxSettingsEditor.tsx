@@ -204,11 +204,13 @@ export default function TouristTaxSettingsEditor({
               Référence du portail de déclaration
               <input
                 id={`${idPrefix}-portal_reference`}
+                aria-label="Référence du portail de déclaration"
+                aria-describedby={`${idPrefix}-portal-reference-help`}
                 value={value.portal_reference ?? ""}
                 maxLength={100}
                 onChange={(e) => patch({ portal_reference: e.target.value })}
               />
-              <small>
+              <small id={`${idPrefix}-portal-reference-help`}>
                 Référence de l’hébergement sur le portail de taxe de séjour.
                 Elle est distincte du numéro d’enregistrement officiel.
               </small>
@@ -232,6 +234,65 @@ export default function TouristTaxSettingsEditor({
               </label>
             )}
           </div>
+          <h4>Enregistrement et déclaration en mairie</h4>
+          <div className="grid-2">
+            <label className="field">
+              Numéro d’enregistrement officiel
+              <input
+                id={`${idPrefix}-registration-number`}
+                aria-label="Numéro d’enregistrement officiel"
+                aria-describedby={`${idPrefix}-registration-help`}
+                value={value.registration?.number ?? ""}
+                maxLength={100}
+                disabled={value.registration?.notApplicable ?? false}
+                onChange={(e) =>
+                  patch({
+                    registration: {
+                      number: e.target.value,
+                      notApplicable: false,
+                    },
+                  })
+                }
+              />
+              <small id={`${idPrefix}-registration-help`}>
+                Repris automatiquement dans les rapports de nuitées de ce gîte.
+              </small>
+            </label>
+            <label className="field">
+              Référence du récépissé de déclaration en mairie
+              <input
+                id={`${idPrefix}-declaration_receipt_reference`}
+                aria-label="Référence du récépissé de déclaration en mairie"
+                aria-describedby={`${idPrefix}-receipt-help`}
+                value={value.declaration_receipt_reference ?? ""}
+                maxLength={100}
+                onChange={(e) =>
+                  patch({ declaration_receipt_reference: e.target.value })
+                }
+              />
+              <small id={`${idPrefix}-receipt-help`}>
+                Facultative. Le récépissé est distinct du numéro
+                d’enregistrement officiel.
+              </small>
+            </label>
+          </div>
+          <label className="tourist-tax-registration-choice">
+            <input
+              type="checkbox"
+              checked={value.registration?.notApplicable ?? false}
+              onChange={(e) =>
+                patch({
+                  registration: { number: "", notApplicable: e.target.checked },
+                })
+              }
+            />
+            Enregistrement non applicable à ce gîte
+          </label>
+          <p className="field-hint">
+            Si vous ne connaissez pas encore votre situation, laissez ces
+            informations à compléter. Les rapports distinguent le numéro
+            officiel, le récépissé de mairie et la référence du portail.
+          </p>
           <p className="field-hint">
             Renseignez le barème officiel de votre collectivité. Un tarif fixe
             pour un gîte classé relève ici de la taxe au réel, pas du régime de

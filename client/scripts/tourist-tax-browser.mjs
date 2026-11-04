@@ -21,12 +21,15 @@ import { BrowserRouter } from "react-router-dom";
 import Shell from "/src/pages/settings/SettingsShell.tsx";
 import Settings from "/src/pages/settings/TouristTaxCollectionSettings.tsx";
 import Editor from "/src/pages/shared/TouristTaxStayEditor.tsx";
+import GiteSettings from "/src/pages/shared/TouristTaxSettingsEditor.tsx";
 import { setCurrentAuthUser } from "/src/utils/auth.ts";
 import "/src/styles.css";
 if (location.search.includes("readonly")) setCurrentAuthUser({permissions:{canWrite:false,canViewAmounts:true,isOwner:false},pageAccess:["settings","gites","reservations"]});
 history.replaceState(null, "", "/parametres/taxe-sejour" + location.search);
 function App() {
  const [source,setSource] = useState("Direct"), [value,setValue] = useState();
+ const [giteTax,setGiteTax] = useState({version:1,classified:true,stars:1,included:true,fixed_rate:.8,percentage:0,cap:0,additional_percentage:0,accommodation_vat_rate:0,authority:"Collectivité de test",effective_from:"2026-01-01",portal_reference:"PMM-PORTAIL",classification_valid_until:"2031-04-30"});
+ if (location.search.includes("gite-settings")) return React.createElement("main",{style:{maxWidth:760,margin:"24px auto",padding:16}},React.createElement(GiteSettings,{value:giteTax,onChange:setGiteTax}));
  if (location.search.includes("editor")) return React.createElement("main", {style:{maxWidth:760,margin:"24px auto",padding:16}},
  React.createElement("label", null, "Origine test", React.createElement("select",{value:source,onChange:e=>setSource(e.target.value)},["Direct","Airbnb"].map(x=>React.createElement("option",{key:x},x)))),
  React.createElement(Editor, {source,value,onChange:setValue,initialize:true,settings:{version:1,classified:true,stars:1,included:true,fixed_rate:.8,percentage:4,cap:4,additional_percentage:0,accommodation_vat_rate:0,authority:"Ploërmel",effective_from:"2026-01-01"},nights:2,adults:2,children:0,accommodation:100,start:"2026-09-10"}));
@@ -243,6 +246,54 @@ try {
       .isDisabled(),
     true,
   );
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.goto(origin + "/__tourist_tax_test.html?gite-settings");
+  const official = page.getByLabel("Numéro d’enregistrement officiel", {
+    exact: true,
+  });
+  const receipt = page.getByLabel(
+    "Référence du récépissé de déclaration en mairie",
+    { exact: true },
+  );
+  const portal = page.getByLabel("Référence du portail de déclaration", {
+    exact: true,
+  });
+  await official.fill("NER-GITE");
+  await receipt.fill("RCP-MAIRIE");
+  const notApplicable = page.getByRole("checkbox", {
+    name: "Enregistrement non applicable à ce gîte",
+    exact: true,
+  });
+  await notApplicable.check();
+  assert.equal(await official.inputValue(), "");
+  assert.equal(await official.isDisabled(), true);
+  assert.equal(await receipt.inputValue(), "RCP-MAIRIE");
+  assert.equal(await portal.inputValue(), "PMM-PORTAIL");
+  await notApplicable.uncheck();
+  assert.equal(await official.isDisabled(), false);
+  assert.equal(await official.inputValue(), "");
+  await official.fill("NER-GITE");
+  assert.equal(
+    await page
+      .getByLabel("Tarif de base / personne / nuit (€)", { exact: true })
+      .inputValue(),
+    "0.8",
+  );
+  await page.screenshot({
+    path: path.join(screenshots, "gite-declaration-settings-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: path.join(screenshots, "gite-declaration-settings-mobile.png"),
+    fullPage: true,
+  });
   assert.deepEqual(errors, []);
   console.log(
     `Taxe de séjour : parcours et captures vérifiés dans ${screenshots}`,

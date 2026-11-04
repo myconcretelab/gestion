@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { ReportOperation, ReportState } from "./reports.js";
 import { nightRegisterCompletionSchema } from "./nightRegister.js";
+import {
+  touristTaxRegistrationSchema,
+  type TouristTaxDeclarationDetails,
+} from "./touristTax.js";
 
 export const reportMonthSchema = z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/);
 export const reportDefinitionSchema = z
@@ -37,19 +41,7 @@ export const reportDefinitionSchema = z
     nightReference: z.boolean().optional(),
     nightDeclaration: z.boolean().optional(),
     nightRegistrations: z
-      .record(
-        z.string().min(1).max(100),
-        z
-          .object({
-            number: z.string().trim().max(100),
-            notApplicable: z.boolean(),
-          })
-          .strict()
-          .refine(
-            (value) => !(value.number && value.notApplicable),
-            "Choisissez un numéro ou la non-application.",
-          ),
-      )
+      .record(z.string().min(1).max(100), touristTaxRegistrationSchema)
       .optional(),
     excludedBookingSources: z
       .array(z.string().trim().min(1).max(120))
@@ -230,6 +222,7 @@ export type ReportProperty = {
   initials: string;
   operatorId: string | null;
   managerId?: string | null;
+  declaration?: TouristTaxDeclarationDetails;
 };
 export type ReportOperator = { id: string; name: string; legacy: boolean };
 export type ReportManager = { id: string; name: string };

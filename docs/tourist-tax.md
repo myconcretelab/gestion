@@ -10,6 +10,8 @@ La gestion dédiée s’active dans la fiche d’un gîte, rubrique Gestion → 
 - Les tarifs sont saisis depuis le barème de la collectivité. Aucune grille locale ni classification officielle n’est déduite automatiquement. Un tarif fixe au réel n’est pas le régime fiscal de taxe au forfait, non pris en charge ici.
 - La référence du portail de déclaration et la date de fin du classement se renseignent dans la fiche du gîte. La référence est reprise séparément dans les registres PDF et CSV et dans la synthèse CSV ; elle ne remplace pas le numéro d’enregistrement officiel. La date de classement est informative et ne modifie pas automatiquement le barème.
 
+Le numéro d’enregistrement officiel et la référence facultative du récépissé de déclaration en mairie se renseignent aussi dans cette fiche. Les rapports reprennent ces informations automatiquement. La non-application de l’enregistrement exige une sélection explicite ; laisser le numéro vide conserve un état à compléter. Les anciennes valeurs propres à un rapport gardent leur priorité jusqu’au choix « Utiliser les informations de la fiche ». Les récépissés et références du portail ne renseignent jamais automatiquement le numéro officiel.
+
 ## Séjours et documents
 
 Les réglages sont copiés dans `options.tourist_tax` et conservés avec le séjour. Les changements de barème n’altèrent pas les documents déjà enregistrés. Une reprise historique ou une actualisation de barème demande une action explicite dans le formulaire.

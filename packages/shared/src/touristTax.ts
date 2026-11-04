@@ -11,6 +11,25 @@ const date = z
       new Date(value).toISOString().slice(0, 10) === value,
     "Date invalide.",
   );
+export const touristTaxRegistrationSchema = z
+  .object({
+    number: z.string().trim().max(100),
+    notApplicable: z.boolean(),
+  })
+  .strict()
+  .refine(
+    (value) => !(value.number && value.notApplicable),
+    "Choisissez un numéro ou la non-application.",
+  );
+export type TouristTaxRegistration = z.infer<
+  typeof touristTaxRegistrationSchema
+>;
+export type TouristTaxDeclarationDetails = {
+  registration?: TouristTaxRegistration;
+  portalReference?: string;
+  receiptReference?: string;
+};
+
 export const touristTaxSettingsSchema = z
   .object({
     version: z.literal(1),
@@ -26,6 +45,8 @@ export const touristTaxSettingsSchema = z
     effective_from: date,
     portal_reference: z.string().trim().max(100).optional(),
     classification_valid_until: date.optional(),
+    registration: touristTaxRegistrationSchema.optional(),
+    declaration_receipt_reference: z.string().trim().max(100).optional(),
   })
   .superRefine((settings, ctx) => {
     if (settings.classified && settings.stars === 0)
@@ -43,6 +64,38 @@ export const touristTaxSettingsSchema = z
       });
   });
 export type TouristTaxSettings = z.infer<typeof touristTaxSettingsSchema>;
+
+export function touristTaxDeclarationDetails(
+  settings: TouristTaxSettings | null,
+): TouristTaxDeclarationDetails | undefined {
+  if (
+    !settings?.registration &&
+    !settings?.portal_reference &&
+    !settings?.declaration_receipt_reference
+  )
+    return undefined;
+  return {
+    ...(settings.registration ? { registration: settings.registration } : {}),
+    ...(settings.portal_reference
+      ? { portalReference: settings.portal_reference }
+      : {}),
+    ...(settings.declaration_receipt_reference
+      ? { receiptReference: settings.declaration_receipt_reference }
+      : {}),
+  };
+}
+
+/** An explicit report value, including an intentional blank, keeps its precedence. */
+export function resolveTouristTaxRegistration(
+  override: TouristTaxRegistration | undefined,
+  declaration: TouristTaxDeclarationDetails | undefined,
+): TouristTaxRegistration | undefined {
+  if (override) return override;
+  const registration = declaration?.registration;
+  return registration?.number || registration?.notApplicable
+    ? registration
+    : undefined;
+}
 export const touristTaxStaySchema = z.object({
   settings: touristTaxSettingsSchema,
   collector: z.enum(["unknown", "host", "platform", "not_applicable"]),
