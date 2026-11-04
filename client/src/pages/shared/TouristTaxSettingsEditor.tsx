@@ -199,6 +199,39 @@ export default function TouristTaxSettingsEditor({
               />
             </label>
           </div>
+          <div className="grid-2">
+            <label className="field">
+              Référence du portail de déclaration
+              <input
+                id={`${idPrefix}-portal_reference`}
+                value={value.portal_reference ?? ""}
+                maxLength={100}
+                onChange={(e) => patch({ portal_reference: e.target.value })}
+              />
+              <small>
+                Référence de l’hébergement sur le portail de taxe de séjour.
+                Elle est distincte du numéro d’enregistrement officiel.
+              </small>
+            </label>
+            {value.classified && (
+              <label className="field">
+                Classement valable jusqu’au
+                <input
+                  type="date"
+                  id={`${idPrefix}-classification_valid_until`}
+                  value={value.classification_valid_until ?? ""}
+                  onChange={(e) =>
+                    patch({
+                      classification_valid_until: e.target.value || undefined,
+                    })
+                  }
+                />
+                <small>
+                  Date de fin de validité de la décision de classement.
+                </small>
+              </label>
+            )}
+          </div>
           <p className="field-hint">
             Renseignez le barème officiel de votre collectivité. Un tarif fixe
             pour un gîte classé relève ici de la taxe au réel, pas du régime de

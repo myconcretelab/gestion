@@ -3457,6 +3457,16 @@ test("déclaration : tarifs variables détaillés et exonération totale sans pe
 
 test("registre : perceptions réelles, mineurs, source et nuitées sans double compte", async () => {
   await fixture(async ({ gite, org }) => {
+    await db.default.gite.update({
+      where: { id: gite },
+      data: {
+        taxe_sejour_config: JSON.stringify({
+          ...registerTax.settings,
+          portal_reference: "PMM225HT@",
+          classification_valid_until: "2030-10-29",
+        }),
+      },
+    });
     const reservation = await stay(gite, {
       date_entree: new Date("2026-09-10"),
       date_sortie: new Date("2026-09-12"),
@@ -3512,7 +3522,16 @@ test("registre : perceptions réelles, mineurs, source et nuitées sans double c
     assert.match(register.rows[0].exemptionReason!, /mineures/);
     assert.equal(register.properties[0].address, "Test");
     assert.equal(register.rows[0].registrationNumber, null);
+    assert.equal(register.properties[0].portalReference, "PMM225HT@");
     const csv = nightRegisterCsv(register);
+    assert.match(csv, /Référence du portail de déclaration/);
+    assert.match(csv, /PMM225HT@/);
+    const { renderNightRegisterHtml } =
+      await import("../src/modules/finance/reports/nightRegisterRender.js");
+    assert.match(
+      renderNightRegisterHtml(register),
+      /Référence du portail de déclaration : PMM225HT@/,
+    );
     assert.match(csv, /Date de perception/);
     assert.match(csv, /hors taxes additionnelles/);
     assert.doesNotMatch(csv, /Voyageur de test/);

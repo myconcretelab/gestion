@@ -6,6 +6,7 @@ import {
   reportDefinitionSchema,
   reportPeriodKey,
   touristTaxStaySchema,
+  parseTouristTaxSettings,
   summarizeNightRegister,
   buildNightTaxBasis,
   allocateNightTaxCollections,
@@ -105,6 +106,9 @@ export async function buildNightRegister(
   const properties = gites.map((gite) => ({
     id: gite.id,
     name: gite.nom,
+    portalReference:
+      parseTouristTaxSettings(gite.taxe_sejour_config)?.portal_reference ||
+      null,
     address: [gite.adresse_ligne1, gite.adresse_ligne2]
       .filter(Boolean)
       .join(", "),

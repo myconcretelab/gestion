@@ -208,7 +208,11 @@ export default function ReportNightRegister({
                       key={property.id}
                     >
                       <ReportIcon name="home" />
-                      <span>{property.name}</span>
+                      <span>
+                        {property.name}
+                        {property.portalReference &&
+                          ` · ${property.portalReference}`}
+                      </span>
                     </span>
                   ))}
                 </div>

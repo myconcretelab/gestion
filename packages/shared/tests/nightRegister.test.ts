@@ -160,9 +160,11 @@ test("le CSV de synthèse conserve les valeurs inconnues et protège les cellule
   });
   const csv = nightDeclarationCsv({
     summary,
+    properties: [{ ...property, portalReference: "=PORTAIL" }],
     period: { label: "octobre 2026" },
   } as NightRegister);
   assert.match(csv, /Nuitées taxables/);
   assert.match(csv, /"'=FORMULE"/);
+  assert.match(csv, /"'=PORTAIL"/);
   assert.match(csv, /À compléter/);
 });

@@ -66,6 +66,7 @@ export type NightRegister = {
     name: string;
     address: string;
     registrationNumber: string | null;
+    portalReference?: string | null;
   }>;
   rows: NightRegisterRow[];
 };
@@ -237,6 +238,7 @@ export function nightDeclarationCsv(register: NightRegister) {
       "Part hors taxes additionnelles (EUR)",
       "Taxes additionnelles (EUR)",
       "Séjours à compléter",
+      "Référence du portail de déclaration",
     ],
     ...register.summary.map((row) => [
       register.period.label,
@@ -252,6 +254,8 @@ export function nightDeclarationCsv(register: NightRegister) {
       euro(row.baseCollectedCents),
       euro(row.additionalCollectedCents),
       row.incompleteStays,
+      register.properties.find((property) => property.id === row.propertyId)
+        ?.portalReference ?? "",
     ]),
   ];
   return (
@@ -300,6 +304,7 @@ export function nightRegisterCsv(register: NightRegister) {
     "Motifs d’exonération",
     "Source",
     "Informations à compléter",
+    "Référence du portail de déclaration",
   ];
   return (
     "\uFEFF" +
@@ -345,6 +350,8 @@ export function nightRegisterCsv(register: NightRegister) {
         row.exemptionReason ?? "À compléter",
         row.source,
         row.issues.join(" · "),
+        register.properties.find((property) => property.id === row.propertyId)
+          ?.portalReference ?? "",
       ]),
     ]
       .map((row) => row.map(quote).join(";"))

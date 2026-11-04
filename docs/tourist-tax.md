@@ -8,6 +8,7 @@ La gestion dédiée s’active dans la fiche d’un gîte, rubrique Gestion → 
 - Inclusion : switch taxe comprise dans le prix annoncé/en supplément.
 - Barème : tarif de base, taxes additionnelles (pourcentage du montant de base), TVA de l’hébergement pour reconstruire le prix HT proportionnel, collectivité et date d’application.
 - Les tarifs sont saisis depuis le barème de la collectivité. Aucune grille locale ni classification officielle n’est déduite automatiquement. Un tarif fixe au réel n’est pas le régime fiscal de taxe au forfait, non pris en charge ici.
+- La référence du portail de déclaration et la date de fin du classement se renseignent dans la fiche du gîte. La référence est reprise séparément dans les registres PDF et CSV et dans la synthèse CSV ; elle ne remplace pas le numéro d’enregistrement officiel. La date de classement est informative et ne modifie pas automatiquement le barème.
 
 ## Séjours et documents
 
@@ -31,7 +32,7 @@ Le calcul est commun au navigateur et au serveur. Les factures regroupées repre
 
 ## Limites de cette étape
 
-- Le registre d’encaissement, de déclaration et de reversement avec justificatifs et export n’est pas encore développé ; les rappels existants de nuitées restent disponibles.
+- Les rapports de nuitées proposent la synthèse, les perceptions rattachées aux règlements, les compléments justifiés et les registres PDF/CSV figés à la confirmation. Ils ne transmettent pas la déclaration au portail et n’effectuent pas son reversement ; voir [les rapports](reports.md).
 - Les PDF locaux incluent la taxe. L’export EN16931/SuperPDP des factures avec taxe collectée par le loueur n’est pas implémenté : aucun instantané électronique candidat n’est produit pour ces factures et leur préparation distante reste bloquée. Les taxes collectées ailleurs n’augmentent pas le montant électronique des prestations.
 - Les modifications futures doivent maintenir l’égalité entre le calcul archivé, la taxe séparée, le total à payer et les paiements, sans reclasser une taxe en ligne de prestation pour contourner l’export.
 

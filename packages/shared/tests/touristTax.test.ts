@@ -199,6 +199,26 @@ test("la configuration impose un vrai classement ou un barème proportionnel ren
   );
 });
 
+test("les références du portail et la validité du classement restent distinctes du calcul", () => {
+  const settings = touristTaxSettingsSchema.parse(
+    policy({
+      portal_reference: " PMM225HT@ ",
+      classification_valid_until: "2030-10-29",
+    }),
+  );
+  assert.equal(settings.portal_reference, "PMM225HT@");
+  assert.deepEqual(calculate(settings), calculate());
+  assert.equal(
+    touristTaxSettingsSchema.safeParse(
+      policy({
+        classification_valid_until: "2030-02-30",
+      }),
+    ).success,
+    false,
+  );
+  assert.equal(touristTaxSettingsSchema.safeParse(policy()).success, true);
+});
+
 test("les réservations historiques restent inchangées et le barème enregistré reste figé", () => {
   const reservation = {
     nb_nuits: 2,

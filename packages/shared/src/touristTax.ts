@@ -24,6 +24,8 @@ export const touristTaxSettingsSchema = z
     accommodation_vat_rate: z.number().finite().min(0).max(100),
     authority: z.string().trim().max(200),
     effective_from: date,
+    portal_reference: z.string().trim().max(100).optional(),
+    classification_valid_until: date.optional(),
   })
   .superRefine((settings, ctx) => {
     if (settings.classified && settings.stars === 0)
