@@ -261,7 +261,8 @@ export async function buildNightRegister(
         !testPayments.has(entry.id) &&
         entry.amount > 0 &&
         (entry.purpose === "tourist_tax" ||
-          entry.ota?.category === "tourist_tax"),
+          entry.ota?.category === "tourist_tax" ||
+          entry.tourist_tax),
     );
     const collections =
       group.length === 1 && stayTax?.collector === "host" ? entries : [];
@@ -289,9 +290,15 @@ export async function buildNightRegister(
         lineIssues.push(
           "Remboursement présent : perception nette et date du remboursement à vérifier.",
         );
+      if (entry?.tourist_tax_stale)
+        lineIssues.push(
+          "La part de taxe du règlement est à vérifier après une modification du séjour ou du barème.",
+        );
       const collectedTaxCents =
         entry && !crossesPeriod && !(entry.refunded_amount ?? 0)
-          ? (entry.ota?.grossCents ?? cents(entry.amount))
+          ? (entry.tourist_tax?.amountCents ??
+            entry.ota?.grossCents ??
+            cents(entry.amount))
           : stayTax?.collector === "not_applicable" || noTaxDue
             ? 0
             : null;
@@ -344,7 +351,8 @@ export async function buildNightRegister(
         nightlyPriceCents,
         collectedTaxCents,
         observedCollectionCents: entry
-          ? (entry.ota?.grossCents ??
+          ? (entry.tourist_tax?.amountCents ??
+            entry.ota?.grossCents ??
             cents(entry.amount + (entry.refunded_amount ?? 0)))
           : null,
         collectedBaseTaxCents:

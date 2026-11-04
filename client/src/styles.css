@@ -22508,3 +22508,29 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
   color: var(--primary-strong);
   font-weight: 650;
 }
+
+.reservation-tax-fields {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--primary-strong);
+  border-radius: 8px;
+  background: var(--primary-soft);
+}
+.reservation-ledger__form .reservation-tax-fields__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.reservation-tax-fields input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
+  margin-top: 2px;
+  accent-color: var(--primary);
+}
+.reservation-tax-fields small { line-height: 1.45; }
+.reservation-payment-tax { display: grid; gap: 5px; margin-top: 5px; }
+.reservation-payment-tax > small { font-size: .72rem; }

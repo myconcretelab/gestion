@@ -2503,6 +2503,109 @@ const registerTax = {
   exempt_adults: 0,
   exemption_reason: "",
 };
+test("un règlement global confirme sa taxe sans doubler l’encaissement ni réduire les recettes de l’acompte", async () => {
+  await fixture(async ({ gite }) => {
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      prix_par_nuit: 50,
+      prix_total: 100,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    await pay(reservation.id, 20, {
+      purpose: "deposit",
+      paid_on: "2026-09-01",
+    });
+    let tracking = await ledger.getReservationPaymentTracking(reservation.id);
+    const paymentId = randomUUID();
+    tracking = await ledger.addReservationPayment(reservation.id, {
+      id: paymentId,
+      amount: 84,
+      method: "Virement",
+      purpose: "balance",
+      paid_on: "2026-09-12",
+      tourist_tax: {
+        amount_cents: 400,
+        source_revision: tracking.tourist_tax!.sourceRevision,
+      },
+    });
+    assert.equal(tracking.entries.length, 2);
+    assert.equal(tracking.received, 104);
+    assert.equal(tracking.remaining, 0);
+    let state = await reports.getReportWorkspace();
+    assert.equal(result(state, "2026-09").total, 10000);
+    const receipts = state.operations.filter((row) => row.basis === "payment");
+    assert.equal(
+      receipts.find(
+        (row) => row.id.includes(paymentId) && row.category === "tourist_tax",
+      )!.amountCents,
+      400,
+    );
+    assert.equal(
+      receipts
+        .filter((row) => row.category === "accommodation")
+        .reduce((total, row) => total + row.amountCents, 0),
+      10000,
+    );
+    const definition = {
+      ...createReport("tourist", "payment-tax-register"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    state = await mutate(state, { type: "save", definition }, "2026-09");
+    let register = await nightRegister.getNightRegister(
+      definition.id,
+      "2026-09",
+    );
+    assert.equal(register.incompleteCount, 0);
+    assert.equal(register.rows.length, 1);
+    assert.equal(register.rows[0].collectedTaxCents, 400);
+    assert.equal(register.rows[0].observedCollectionCents, 400);
+    assert.equal(register.rows[0].collectionDate, "2026-09-12");
+    state = await mutate(
+      state,
+      { type: "ready", reportId: definition.id },
+      "2026-09",
+    );
+    state = await mutate(
+      state,
+      { type: "confirm", reportId: definition.id },
+      "2026-09",
+    );
+    const frozen =
+      state.progress[reportPeriodKey(definition, "2026-09")].snapshot!
+        .nightRegister!;
+    await ledger.updateReservationPaymentDate(reservation.id, paymentId, {
+      paid_on: "2026-09-13",
+      expected_paid_on: tracking.entries.find(
+        (entry) => entry.id === paymentId,
+      )!.paid_on,
+    });
+    register = await nightRegister.getNightRegister(definition.id, "2026-09");
+    assert.equal(register.rows[0].collectionDate, "2026-09-13");
+    assert.equal(frozen.rows[0].collectionDate, "2026-09-12");
+    const before = await prismaCacheRevision();
+    tracking = await ledger.getReservationPaymentTracking(reservation.id);
+    await ledger.updateReservationPaymentTouristTax(reservation.id, paymentId, {
+      tourist_tax: null,
+      expected_revision: tracking.entries.find(
+        (entry) => entry.id === paymentId,
+      )!.tourist_tax_revision!,
+    });
+    assert.ok((await prismaCacheRevision()) > before);
+    assert.ok(
+      (await nightRegister.getNightRegister(definition.id, "2026-09"))
+        .incompleteCount > 0,
+    );
+    async function prismaCacheRevision() {
+      return (await db.default.financeReportCache.findFirstOrThrow())
+        .source_revision;
+    }
+  });
+});
+
 test("déclaration : contrôles de complétude, compléments justifiés, copie figée et revalidation des sources", async () => {
   await fixture(async ({ gite }) => {
     const reservation = await stay(gite, {

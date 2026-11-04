@@ -42,6 +42,15 @@ test("redactMonetaryValues retire les montants sans masquer les compteurs", () =
   assert.deepEqual(result.prices_by_gite, {});
 });
 
+test("les parts de taxe et leur contexte sont masqués sans droit aux montants", () => {
+  assert.equal(containsMonetaryFields({ tourist_tax: { expectedCents: 600 } }), true);
+  assert.deepEqual(redactMonetaryValues({
+    id: "payment-1",
+    tourist_tax: { amountCents: 600, sourceRevision: "a".repeat(64) },
+    tourist_tax_details: '{"amountCents":600}',
+  }), { id: "payment-1", tourist_tax: {}, tourist_tax_details: null });
+});
+
 const worker = {
   id: "user-1", loginId: "worker", displayName: "Worker", firstName: "Work", lastName: "Er",
   gestionnaireId: null, intervenantId: "worker-1", roles: ["worker"], status: "worker",

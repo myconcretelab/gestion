@@ -82,6 +82,9 @@ export const getBookingSource = (reservation: {
     : "Direct");
 
 export type ReservationPaymentEntry = {
+  tourist_tax?: import("./paymentTouristTax.js").RecordedPaymentTouristTax;
+  tourist_tax_revision?: string;
+  tourist_tax_stale?: boolean;
   id: string;
   amount: number;
   method: string | null;
@@ -96,6 +99,7 @@ export type ReservationPaymentEntry = {
   ota?: import("./ota.js").OtaAmounts;
 };
 export type ReservationPaymentTracking = {
+  tourist_tax?: import("./paymentTouristTax.js").PaymentTouristTaxContext;
   first_payment_default?: ReservationPaymentSettings["first_payment_default"];
   payment_shortcuts?: ReservationPaymentShortcut[];
   payment_channels?: string[];

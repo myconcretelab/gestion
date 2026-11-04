@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:reports-browser": "node scripts/reports-browser.mjs",
     "test:contracts-browser": "node scripts/contracts-signed-document-browser.mjs",
-    "test:ota-pricing-browser": "node scripts/ota-pricing-browser.mjs"
+    "test:ota-pricing-browser": "node scripts/ota-pricing-browser.mjs",
+    "test:payment-tax-browser": "node scripts/payment-tax-browser.mjs"
   },
   "dependencies": {
     "@daypicker/react": "^10.0.1",

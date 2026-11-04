@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   RESERVATION_PAYMENT_METHODS,
   RESERVATION_MANUAL_PAYMENT_METHODS,
+  paymentTouristTaxInputSchema,
 } from "@contrats/shared";
 import {
   addReservationPayment,
@@ -10,6 +11,7 @@ import {
   voidReservationPayment,
   updateReservationPaymentDate,
   updateReservationPaymentMethod,
+  updateReservationPaymentTouristTax,
 } from "../modules/reservationPayments/ledger.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 
@@ -55,6 +57,7 @@ const paymentSchema = z
     paid_on: dateSchema,
     note: z.string().trim().max(500).nullable().optional(),
     shortcut_id: z.string().trim().min(1).max(80).optional(),
+    tourist_tax: paymentTouristTaxInputSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -104,12 +107,40 @@ router.post<{ id: string }>("/", async (req, res, next) => {
         await addReservationPayment(
           req.params.id,
           paymentSchema.parse(req.body),
+          (await getAuthenticatedAppUser(req))?.id,
         ),
       );
   } catch (error) {
     next(error);
   }
 });
+router.patch<{ id: string; paymentId: string }>(
+  "/:paymentId/tourist-tax",
+  async (req, res, next) => {
+    try {
+      const input = z
+        .object({
+          tourist_tax: paymentTouristTaxInputSchema.nullable(),
+          expected_revision: z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .nullable(),
+        })
+        .strict()
+        .parse(req.body);
+      res.json(
+        await updateReservationPaymentTouristTax(
+          req.params.id,
+          req.params.paymentId,
+          input,
+          (await getAuthenticatedAppUser(req))?.id,
+        ),
+      );
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.post<{ id: string; paymentId: string }>(
   "/:paymentId/void",
   async (req, res, next) => {

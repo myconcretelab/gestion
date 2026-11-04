@@ -496,6 +496,11 @@ export async function applyOtaImport(
             };
             if (choice?.paymentId && choice.paymentId !== "new") {
               const existing = matchedPayment;
+              if (existing?.tourist_tax_details)
+                throw fail(
+                  `Ligne ${row.row} : ce règlement contient une collecte de taxe par l’hébergeur. Vérifiez sa ventilation avant de le rapprocher d’un versement de plateforme.`,
+                  400,
+                );
               if (
                 !existing ||
                 (existing.amount_cents !== amount &&

@@ -15,6 +15,8 @@ import {
   allocateOtaPriceRows,
   validOtaPriceSnapshot,
   allocateCents,
+  recordedPaymentTouristTaxSchema,
+  type PaymentTouristTaxInput,
   type OtaAmounts,
   type ReservationPaymentEntry,
   type ReservationPaymentTracking,
@@ -26,6 +28,10 @@ import type { OptionsInput } from "../../services/contractCalculator.js";
 import { readReservationPaymentSettings } from "../../services/reservationPaymentSettings.js";
 import { readTouristTaxCollectionSettings } from "../../services/touristTaxCollection.js";
 import { automaticPlatformReceiptThrough } from "./automaticReceipt.js";
+import {
+  paymentTaxRevision,
+  validatePaymentTaxCollection,
+} from "./taxCollection.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
   Object.assign(new Error(message), { statusCode });
@@ -214,6 +220,21 @@ export const loadReservationPaymentTracking = async (
           origin: row.origin === "legacy" ? "legacy" : "manual",
           voided_at: iso(row.voided_at),
           reservation_id: row.reservation_id,
+          ...(row.tourist_tax_details
+            ? (() => {
+                const raw = fromJsonString<unknown>(
+                  row.tourist_tax_details,
+                  null,
+                );
+                const checked = recordedPaymentTouristTaxSchema.safeParse(raw);
+                return {
+                  tourist_tax_revision: paymentTaxRevision(raw),
+                  ...(checked.success
+                    ? { tourist_tax: checked.data }
+                    : { tourist_tax_stale: true }),
+                };
+              })()
+            : {}),
           ...(row.ota_details
             ? {
                 ota: fromJsonString<OtaAmounts>(
@@ -480,7 +501,71 @@ export const loadReservationPaymentTracking = async (
         .filter((row) => !row.voided_at)
         .map((row) => Math.round(row.amount * 100)),
     );
+    const taxSourceRevision = paymentTaxRevision({
+      stays: rows.map((row) => ({
+        id: row.id,
+        gite: row.gite_id,
+        arrival: iso(row.date_entree),
+        departure: iso(row.date_sortie),
+        nights: row.nb_nuits,
+        adults: row.nb_adultes,
+        children: row.nb_enfants_2_17,
+        price: Number(row.prix_total),
+      })),
+      tax: options.tourist_tax,
+      accommodation,
+      discount: Number(first.remise_montant || 0),
+      result: tax,
+    });
+    for (const entry of entries)
+      if (entry.tourist_tax)
+        entry.tourist_tax_stale =
+          entry.tourist_tax.sourceRevision !== taxSourceRevision ||
+          entry.tourist_tax.amountCents > cents(entry.amount);
+    const active = entries.filter((entry) => !entry.voided_at);
+    const taxAllocated = sum(
+      active.map(
+        (entry) =>
+          entry.tourist_tax?.amountCents ??
+          (entry.purpose === "tourist_tax" ||
+          entry.ota?.category === "tourist_tax"
+            ? (entry.ota?.grossCents ?? cents(entry.amount))
+            : 0),
+      ),
+    );
+    const taxExpected = cents(tax?.host_amount ?? 0);
+    const taxReason =
+      rows.length > 1
+        ? "La ventilation d’un séjour regroupé se complète dans le registre."
+        : !tax
+          ? "Renseignez le barème de taxe dans la réservation."
+          : tax.issues.length
+            ? tax.issues.join(" ")
+            : tax.collector !== "host"
+              ? tax.collector === "platform"
+                ? "La plateforme collecte la taxe de ce séjour."
+                : "La taxe n’est pas collectée par l’hébergeur pour ce séjour."
+              : null;
     const tracking: ReservationPaymentTracking = {
+      tourist_tax: {
+        available: !taxReason,
+        reason: taxReason,
+        expectedCents: taxExpected,
+        allocatedCents: taxAllocated,
+        remainingCents: Math.max(0, taxExpected - taxAllocated),
+        sourceRevision: taxSourceRevision,
+        needsReview:
+          taxAllocated > taxExpected ||
+          active.some((entry) => entry.tourist_tax_stale),
+        hasUnassignedPayments: active.some(
+          (entry) =>
+            entry.amount > 0 &&
+            !entry.tourist_tax &&
+            entry.purpose !== "tourist_tax" &&
+            entry.origin !== "platform" &&
+            entry.method !== "Versement plateforme",
+        ),
+      },
       first_payment_default: settings.first_payment_default,
       payment_shortcuts: settings.shortcuts,
       payment_channels: [
@@ -646,6 +731,7 @@ export const syncManagedContractPayments = async (
 };
 
 export type NewRecordedPayment = {
+  tourist_tax?: PaymentTouristTaxInput;
   id: string;
   amount: number;
   method: string;
@@ -660,6 +746,7 @@ export type NewRecordedPayment = {
 export const addReservationPayment = async (
   id: string,
   input: NewRecordedPayment,
+  userId?: string,
 ) =>
   ledgerTransaction(async (tx) => {
     const stay = await lockedStay(id, tx);
@@ -674,6 +761,16 @@ export const addReservationPayment = async (
         existing.purpose !== input.purpose ||
         iso(existing.paid_on)?.slice(0, 10) !== input.paid_on ||
         (existing.note || null) !== (input.note || null) ||
+        JSON.stringify(fromJsonString(existing.tourist_tax_details, null)) !==
+          JSON.stringify(
+            input.tourist_tax
+              ? {
+                  version: 1,
+                  amountCents: input.tourist_tax.amount_cents,
+                  sourceRevision: input.tourist_tax.source_revision,
+                }
+              : null,
+          ) ||
         (existing.ota_details
           ? fromJsonString<OtaAmounts>(existing.ota_details, {} as OtaAmounts)
               .channel
@@ -719,6 +816,14 @@ export const addReservationPayment = async (
       throw ledgerError(
         "Le règlement dépasse le reste à payer. Actualisez la fiche et vérifiez le montant.",
       );
+    const taxCollection = input.tourist_tax
+      ? validatePaymentTaxCollection(
+          tracking,
+          cents(input.amount),
+          input.method,
+          input.tourist_tax,
+        )
+      : undefined;
     await materializeHistory(stay, tracking, tx);
     let ota: OtaAmounts | undefined;
     if (input.channel) {
@@ -823,9 +928,90 @@ export const addReservationPayment = async (
         paid_on: new Date(`${input.paid_on}T12:00:00Z`),
         note: input.note || null,
         ota_details: ota ? JSON.stringify(ota) : null,
+        tourist_tax_details: taxCollection
+          ? JSON.stringify(taxCollection)
+          : null,
       },
     });
+    if (taxCollection)
+      await tx.auditLog.create({
+        data: {
+          user_id: userId ?? null,
+          action: "reservation.payment.tax-collected",
+          organization_id: stay.rows[0].organization_id,
+          resource_type: "reservation",
+          resource_id: stay.canonicalId,
+          metadata_json: JSON.stringify({
+            payment_id: input.id,
+            paid_on: input.paid_on,
+            tourist_tax: taxCollection,
+          }),
+        },
+      });
     await syncManagedContractPayments(id, tx);
+    return getReservationPaymentTracking(id, tx);
+  });
+
+export const updateReservationPaymentTouristTax = async (
+  id: string,
+  paymentId: string,
+  input: {
+    tourist_tax: PaymentTouristTaxInput | null;
+    expected_revision: string | null;
+  },
+  userId?: string,
+) =>
+  ledgerTransaction(async (tx) => {
+    const stay = await lockedStay(id, tx);
+    const tracking = await getReservationPaymentTracking(id, tx);
+    const entry = tracking.entries.find((row) => row.id === paymentId);
+    if (
+      !entry ||
+      entry.voided_at ||
+      !["manual", "legacy"].includes(entry.origin) ||
+      entry.ota ||
+      entry.method === "Versement plateforme"
+    )
+      throw ledgerError(
+        "Seuls les règlements manuels ou historiques actifs peuvent recevoir une part de taxe.",
+        400,
+      );
+    if ((entry.tourist_tax_revision ?? null) !== input.expected_revision)
+      throw ledgerError(
+        "La part de taxe a changé. Rechargez les règlements avant de la corriger.",
+      );
+    const taxCollection = input.tourist_tax
+      ? validatePaymentTaxCollection(
+          tracking,
+          cents(entry.amount),
+          entry.method,
+          input.tourist_tax,
+          entry,
+        )
+      : null;
+    await materializeHistory(stay, tracking, tx);
+    await tx.reservationRecordedPayment.update({
+      where: { id: paymentId },
+      data: {
+        tourist_tax_details: taxCollection
+          ? JSON.stringify(taxCollection)
+          : null,
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        user_id: userId ?? null,
+        action: "reservation.payment.tax-updated",
+        organization_id: stay.rows[0].organization_id,
+        resource_type: "reservation",
+        resource_id: stay.canonicalId,
+        metadata_json: JSON.stringify({
+          payment_id: paymentId,
+          before: entry.tourist_tax ?? null,
+          after: taxCollection,
+        }),
+      },
+    });
     return getReservationPaymentTracking(id, tx);
   });
 

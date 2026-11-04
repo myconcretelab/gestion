@@ -22,6 +22,11 @@ import { getReservationOptionBadges } from "../../utils/reservationOptionBadges"
 import type { Reservation } from "../../utils/types";
 import OtaReservationPricing from "./OtaReservationPricing";
 import ReservationOptionDetails from "./ReservationOptionDetails";
+import ReservationPaymentTax, {
+  PaymentTaxFields,
+  paymentTaxDraft,
+  type PaymentTaxDraft,
+} from "./ReservationPaymentTax";
 
 export const reservationPaymentChanged = "reservation:payment-changed";
 type Props = {
@@ -55,6 +60,7 @@ const purposeLabel = (purpose: string) =>
         ? "Séjour"
         : "Versement";
 type PaymentInput = {
+  tourist_tax?: { amount_cents: number; source_revision: string };
   id: string;
   amount: number;
   method: string;
@@ -126,6 +132,8 @@ export default function ReservationPaymentsEditor({
   const [paymentCategory, setPaymentCategory] =
     useState<NonNullable<PaymentInput["category"]>>("extras");
   const [feeAmount, setFeeAmount] = useState("");
+  const [taxDraft, setTaxDraft] = useState<PaymentTaxDraft | null>(null);
+  const [activeShortcut, setActiveShortcut] = useState<string | null>(null);
   const formId = useId();
   const unconfirmedHistory =
     !tracking.managed &&
@@ -170,6 +178,8 @@ export default function ReservationPaymentsEditor({
       shortcutRequest.current = null;
       setAmount(String(next.remaining));
       setPurpose("balance");
+      setTaxDraft(null);
+      setActiveShortcut(null);
     } catch (error) {
       setError(
         error instanceof Error
@@ -190,6 +200,17 @@ export default function ReservationPaymentsEditor({
       purpose,
       paid_on: paidOn,
       note: note.trim() || null,
+      ...(activeShortcut ? { shortcut_id: activeShortcut } : {}),
+      ...(method !== "Versement plateforme" && taxDraft?.checked
+        ? {
+            tourist_tax: {
+              amount_cents: Math.round(
+                Number(taxDraft.amount.replace(",", ".")) * 100,
+              ),
+              source_revision: taxDraft.sourceRevision,
+            },
+          }
+        : {}),
       ...(method === "Versement plateforme"
         ? {
             channel: paymentChannel,
@@ -206,6 +227,20 @@ export default function ReservationPaymentsEditor({
     const value = getReservationPaymentShortcutValue(tracking, shortcut);
     if (value.amount <= 0) return;
     const paid_on = today();
+    const proposedTax = paymentTaxDraft(tracking, value.amount, value.purpose);
+    if (proposedTax && shortcut.method !== "Versement plateforme") {
+      setPurpose(value.purpose);
+      setAmount(String(value.amount));
+      setMethod(shortcut.method);
+      setPaidOn(paid_on);
+      setNote("");
+      setError(null);
+      setTaxDraft(proposedTax);
+      setActiveShortcut(shortcut.id);
+      requestId.current = crypto.randomUUID();
+      setExpanded(true);
+      return;
+    }
     const key = JSON.stringify([shortcut.id, value, shortcut.method, paid_on]);
     if (shortcutRequest.current?.key !== key)
       shortcutRequest.current = { key, id: crypto.randomUUID() };
@@ -249,7 +284,9 @@ export default function ReservationPaymentsEditor({
         json: { booking_source },
       });
       setSource(booking_source);
-      const next = await apiFetch<ReservationPaymentTracking>(`/reservations/${reservation.id}/payments`);
+      const next = await apiFetch<ReservationPaymentTracking>(
+        `/reservations/${reservation.id}/payments`,
+      );
       publish(next, booking_source);
     } catch (error) {
       setError(
@@ -336,7 +373,13 @@ export default function ReservationPaymentsEditor({
             disabled={busy || !canWrite}
             onChange={(event) => void changeSource(event.target.value)}
           >
-            {[...new Set([...BOOKING_SOURCES, ...(tracking.payment_channels ?? []), source])].map((item) => (
+            {[
+              ...new Set([
+                ...BOOKING_SOURCES,
+                ...(tracking.payment_channels ?? []),
+                source,
+              ]),
+            ].map((item) => (
               <option key={item}>{item}</option>
             ))}
           </select>
@@ -628,6 +671,15 @@ export default function ReservationPaymentsEditor({
                 </button>
               )
             ) : null}
+            <ReservationPaymentTax
+              reservationId={reservation.id}
+              entry={entry}
+              tracking={tracking}
+              canEdit={canWrite}
+              disabled={busy}
+              onBusy={setBusy}
+              onUpdated={(next) => publish(next)}
+            />
           </div>
         );
       })}
@@ -692,6 +744,8 @@ export default function ReservationPaymentsEditor({
               const next = getSuggestedReservationPayment(tracking);
               setPurpose(next.purpose);
               setAmount(String(next.amount));
+              setTaxDraft(paymentTaxDraft(tracking, next.amount, next.purpose));
+              setActiveShortcut(null);
               requestId.current = crypto.randomUUID();
               setExpanded(true);
             }}
@@ -756,6 +810,16 @@ export default function ReservationPaymentsEditor({
                 disabled={busy}
                 onChange={(event) => {
                   setPurpose(event.target.value);
+                  setActiveShortcut(null);
+                  const nextAmount =
+                    event.target.value === "deposit" && depositDue > 0
+                      ? depositDue
+                      : ["balance", "full"].includes(event.target.value)
+                        ? tracking.remaining
+                        : Number(amount);
+                  setTaxDraft(
+                    paymentTaxDraft(tracking, nextAmount, event.target.value),
+                  );
                   requestId.current = crypto.randomUUID();
                   if (event.target.value === "deposit" && depositDue > 0)
                     setAmount(String(depositDue));
@@ -789,6 +853,7 @@ export default function ReservationPaymentsEditor({
                 disabled={busy}
                 onChange={(event) => {
                   setAmount(event.target.value);
+                  setActiveShortcut(null);
                   requestId.current = crypto.randomUUID();
                 }}
               />
@@ -801,6 +866,7 @@ export default function ReservationPaymentsEditor({
                 disabled={busy}
                 onChange={(event) => {
                   setMethod(event.target.value as typeof method);
+                  setActiveShortcut(null);
                   if (
                     event.target.value === "Versement plateforme" &&
                     paymentCategory !== "accommodation"
@@ -902,6 +968,21 @@ export default function ReservationPaymentsEditor({
               />
             </label>
           </div>
+          {taxDraft && method !== "Versement plateforme" && (
+            <PaymentTaxFields
+              draft={taxDraft}
+              onChange={(draft) => {
+                setTaxDraft(draft);
+                requestId.current = crypto.randomUUID();
+              }}
+              maxCents={Math.min(
+                Math.round(Number(amount) * 100),
+                tracking.tourist_tax?.remainingCents ?? 0,
+              )}
+              disabled={busy}
+              unassigned={tracking.tourist_tax?.hasUnassignedPayments}
+            />
+          )}
           <label>
             Note facultative
             <input

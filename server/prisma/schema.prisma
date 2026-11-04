@@ -1823,6 +1823,7 @@ model ReservationRecordedPayment {
   paid_on           DateTime?
   note              String?
   origin            String    @default("manual")
+  tourist_tax_details String?
   ota_details       String?
   ota_transaction   OtaTransaction?
   voided_at         DateTime?

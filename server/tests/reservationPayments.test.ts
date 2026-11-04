@@ -52,6 +52,201 @@ const payment = (amount: number, overrides = {}) => ({
   paid_on: "2026-10-26",
   ...overrides,
 });
+const collectedTax = {
+  settings: {
+    version: 1,
+    classified: true,
+    stars: 2,
+    included: false,
+    fixed_rate: 0.75,
+    percentage: 5,
+    cap: 4,
+    additional_percentage: 0,
+    accommodation_vat_rate: 0,
+    authority: "Test",
+    effective_from: "2026-01-01",
+  },
+  collector: "host",
+  platform: "",
+  infants: 0,
+  exempt_adults: 0,
+  exemption_reason: "",
+};
+const taxedStay = () =>
+  stay({ options: JSON.stringify({ tourist_tax: collectedTax }) });
+
+test("taxe comprise dans le paiement : un seul encaissement, montant exact, retry et annulation", async () => {
+  const r = await taxedStay();
+  await inOrg(async () => {
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.total, 1006);
+    assert.equal(state.tourist_tax!.remainingCents, 600);
+    const input = payment(1006, {
+      purpose: "full",
+      tourist_tax: {
+        amount_cents: 600,
+        source_revision: state.tourist_tax!.sourceRevision,
+      },
+    });
+    state = await ledger.addReservationPayment(r.id, input, "test-user");
+    assert.equal(state.entries.length, 1);
+    assert.equal(state.received, 1006);
+    assert.equal(state.remaining, 0);
+    assert.equal(state.entries[0].tourist_tax!.amountCents, 600);
+    assert.equal(state.entries[0].tourist_tax_stale, false);
+    assert.equal(state.tourist_tax!.remainingCents, 0);
+    assert.equal(
+      (await ledger.addReservationPayment(r.id, input)).entries.length,
+      1,
+    );
+    await assert.rejects(
+      () =>
+        ledger.addReservationPayment(r.id, {
+          ...input,
+          tourist_tax: { ...input.tourist_tax, amount_cents: 500 },
+        }),
+      /déjà été utilisée/,
+    );
+    const audit = await db.default.auditLog.findFirstOrThrow({
+      where: { action: "reservation.payment.tax-collected", resource_id: r.id },
+    });
+    assert.equal(audit.user_id, "test-user");
+    state = await ledger.voidReservationPayment(r.id, input.id);
+    assert.equal(state.received, 0);
+    assert.equal(state.tourist_tax!.remainingCents, 600);
+  });
+});
+
+test("la taxe ne dépasse ni le paiement ni la taxe restante entre plusieurs saisies", async () => {
+  const r = await taxedStay();
+  await inOrg(async () => {
+    const initial = await ledger.getReservationPaymentTracking(r.id);
+    const source_revision = initial.tourist_tax!.sourceRevision;
+    await assert.rejects(
+      () =>
+        ledger.addReservationPayment(
+          r.id,
+          payment(2, { tourist_tax: { amount_cents: 300, source_revision } }),
+        ),
+      /dépasser son montant/,
+    );
+    let state = await ledger.addReservationPayment(
+      r.id,
+      payment(400, { tourist_tax: { amount_cents: 400, source_revision } }),
+    );
+    assert.equal(state.tourist_tax!.remainingCents, 200);
+    await assert.rejects(
+      () =>
+        ledger.addReservationPayment(
+          r.id,
+          payment(400, { tourist_tax: { amount_cents: 400, source_revision } }),
+        ),
+      /taxe restant/,
+    );
+    state = await ledger.addReservationPayment(
+      r.id,
+      payment(400, { tourist_tax: { amount_cents: 200, source_revision } }),
+    );
+    assert.equal(state.received, 800);
+    assert.equal(state.tourist_tax!.remainingCents, 0);
+    assert.equal(
+      await db.default.reservationRecordedPayment.count({
+        where: { reservation_id: r.id },
+      }),
+      2,
+    );
+  });
+});
+
+test("corriger la part de taxe conserve le paiement, sa date et son montant et refuse une version périmée", async () => {
+  const r = await taxedStay();
+  await inOrg(async () => {
+    const input = payment(400);
+    let state = await ledger.addReservationPayment(r.id, input);
+    const source_revision = state.tourist_tax!.sourceRevision;
+    state = await ledger.updateReservationPaymentTouristTax(
+      r.id,
+      input.id,
+      {
+        expected_revision: null,
+        tourist_tax: { amount_cents: 600, source_revision },
+      },
+      "tax-editor",
+    );
+    const entry = state.entries.find((row) => row.id === input.id)!;
+    assert.equal(entry.amount, 400);
+    assert.equal(entry.paid_on!.slice(0, 10), input.paid_on);
+    assert.equal(state.received, 400);
+    assert.equal(state.entries.length, 1);
+    await assert.rejects(
+      () =>
+        ledger.updateReservationPaymentTouristTax(r.id, input.id, {
+          expected_revision: null,
+          tourist_tax: null,
+        }),
+      /part de taxe a changé/,
+    );
+    state = await ledger.updateReservationPaymentTouristTax(r.id, input.id, {
+      expected_revision: entry.tourist_tax_revision!,
+      tourist_tax: null,
+    });
+    assert.equal(state.tourist_tax!.allocatedCents, 0);
+    assert.equal(state.received, 400);
+    assert.equal(state.entries.length, 1);
+    assert.equal(
+      await db.default.auditLog.count({
+        where: { action: "reservation.payment.tax-updated", resource_id: r.id },
+      }),
+      2,
+    );
+  });
+});
+
+test("un changement d’exonération rend la part de taxe à vérifier sans inventer un nouvel encaissement", async () => {
+  const r = await taxedStay();
+  await inOrg(async () => {
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    const source_revision = state.tourist_tax!.sourceRevision;
+    const input = payment(400, {
+      tourist_tax: { amount_cents: 600, source_revision },
+    });
+    state = await ledger.addReservationPayment(r.id, input);
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: {
+        options: JSON.stringify({
+          tourist_tax: {
+            ...collectedTax,
+            exempt_adults: 1,
+            exemption_reason: "Saisonnier",
+          },
+        }),
+      },
+    });
+    state = await ledger.getReservationPaymentTracking(r.id);
+    assert.equal(state.entries[0].tourist_tax_stale, true);
+    assert.equal(state.tourist_tax!.needsReview, true);
+    assert.equal(state.received, 400);
+    await assert.rejects(
+      () =>
+        ledger.updateReservationPaymentTouristTax(r.id, input.id, {
+          expected_revision: state.entries[0].tourist_tax_revision!,
+          tourist_tax: { amount_cents: 300, source_revision },
+        }),
+      /barème ou le séjour a changé/,
+    );
+    state = await ledger.updateReservationPaymentTouristTax(r.id, input.id, {
+      expected_revision: state.entries[0].tourist_tax_revision!,
+      tourist_tax: {
+        amount_cents: 300,
+        source_revision: state.tourist_tax!.sourceRevision,
+      },
+    });
+    assert.equal(state.entries[0].tourist_tax_stale, false);
+    assert.equal(state.tourist_tax!.remainingCents, 0);
+    assert.equal(state.received, 400);
+  });
+});
 const contractFor = (id: string, overrides: Record<string, unknown> = {}) =>
   inOrg(() =>
     db.default.contrat.create({
@@ -234,6 +429,86 @@ test("reprise des arrhes du contrat sans inventer leur date ni doubler les somme
     assert.equal(next.remaining, 200);
   });
 });
+test("la part de taxe d’un règlement historique conserve sa date inconnue et son montant", async () => {
+  const r = await taxedStay();
+  await contractFor(r.id, {
+    statut_paiement_arrhes: "recu",
+    date_paiement_arrhes: null,
+  });
+  await inOrg(async () => {
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    const entry = state.entries[0];
+    assert.equal(state.managed, false);
+    state = await ledger.updateReservationPaymentTouristTax(r.id, entry.id, {
+      expected_revision: null,
+      tourist_tax: {
+        amount_cents: 600,
+        source_revision: state.tourist_tax!.sourceRevision,
+      },
+    });
+    assert.equal(state.managed, true);
+    assert.equal(state.entries.length, 1);
+    assert.equal(state.entries[0].id, entry.id);
+    assert.equal(state.entries[0].paid_on, null);
+    assert.equal(state.entries[0].tourist_tax!.amountCents, 600);
+    assert.equal(state.received, 200);
+    assert.equal(state.remaining, 806);
+  });
+});
+test("plusieurs parts périmées se revalident successivement sans bloquer la correction", async () => {
+  const r = await taxedStay();
+  await inOrg(async () => {
+    let state = await ledger.getReservationPaymentTracking(r.id);
+    const source_revision = state.tourist_tax!.sourceRevision;
+    await ledger.addReservationPayment(
+      r.id,
+      payment(500, { tourist_tax: { amount_cents: 300, source_revision } }),
+    );
+    await ledger.addReservationPayment(
+      r.id,
+      payment(500, { tourist_tax: { amount_cents: 300, source_revision } }),
+    );
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: {
+        options: JSON.stringify({
+          tourist_tax: {
+            ...collectedTax,
+            settings: {
+              ...collectedTax.settings,
+              authority: "Correction du barème",
+            },
+          },
+        }),
+      },
+    });
+    state = await ledger.getReservationPaymentTracking(r.id);
+    assert.ok(state.entries.every((entry) => entry.tourist_tax_stale));
+    await assert.rejects(
+      ledger.addReservationPayment(
+        r.id,
+        payment(6, {
+          tourist_tax: {
+            amount_cents: 1,
+            source_revision: state.tourist_tax!.sourceRevision,
+          },
+        }),
+      ),
+      /Vérifiez les parts/,
+    );
+    for (const entry of state.entries)
+      state = await ledger.updateReservationPaymentTouristTax(r.id, entry.id, {
+        expected_revision: entry.tourist_tax_revision!,
+        tourist_tax: {
+          amount_cents: 300,
+          source_revision: state.tourist_tax!.sourceRevision,
+        },
+      });
+    assert.equal(state.tourist_tax!.needsReview, false);
+    assert.equal(state.received, 1000);
+    assert.equal(state.entries.length, 2);
+  });
+});
 test("un règlement historique peut être annulé avant le premier nouveau versement", async () => {
   const r = await stay();
   await contractFor(r.id, {
@@ -377,8 +652,108 @@ test("le registre et ses annulations sont isolés par organisme", async () => {
       ledger.voidReservationPayment(r.id, input.id),
       /introuvable/,
     );
+    await assert.rejects(
+      ledger.updateReservationPaymentTouristTax(r.id, input.id, {
+        tourist_tax: null,
+        expected_revision: null,
+      }),
+      /introuvable/,
+    );
     assert.equal(await db.default.reservationRecordedPayment.count(), 0);
   }, "org_ledger_other");
+});
+test("l’API confirme et corrige une part de taxe avec contrôle de révision et validation stricte", async () => {
+  const r = await taxedStay();
+  const tracking = await inOrg(() =>
+    ledger.getReservationPaymentTracking(r.id),
+  );
+  const router = (await import("../src/routes/reservationPayments.js")).default;
+  const app = express();
+  app.use(express.json());
+  app.use((_req, _res, next) => inOrg(next));
+  app.use("/reservations/:id/payments", router);
+  app.use((error: any, _req: any, res: any, _next: any) =>
+    res.status(error.statusCode || 400).json({ error: error.message }),
+  );
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/reservations/${r.id}/payments`;
+  const send = (endpoint: string, method: string, body: unknown) =>
+    fetch(endpoint, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  try {
+    for (const tourist_tax of [
+      {
+        amount_cents: 0,
+        source_revision: tracking.tourist_tax!.sourceRevision,
+      },
+      {
+        amount_cents: 1.5,
+        source_revision: tracking.tourist_tax!.sourceRevision,
+      },
+      { amount_cents: 600, source_revision: "obsolete" },
+      {
+        amount_cents: 600,
+        source_revision: tracking.tourist_tax!.sourceRevision,
+        paid_on: "2026-01-01",
+      },
+    ])
+      assert.equal(
+        (await send(url, "POST", payment(1006, { tourist_tax }))).status,
+        400,
+      );
+    const response = await send(
+      url,
+      "POST",
+      payment(1006, {
+        tourist_tax: {
+          amount_cents: 600,
+          source_revision: tracking.tourist_tax!.sourceRevision,
+        },
+      }),
+    );
+    assert.equal(response.status, 201);
+    const recorded = (await response.json()) as any;
+    assert.equal(recorded.entries.length, 1);
+    const entry = recorded.entries[0],
+      endpoint = `${url}/${entry.id}/tourist-tax`;
+    for (const invalid of [
+      { tourist_tax: null },
+      { tourist_tax: null, expected_revision: null, amount: 999 },
+      {
+        tourist_tax: {
+          amount_cents: -1,
+          source_revision: tracking.tourist_tax!.sourceRevision,
+        },
+        expected_revision: entry.tourist_tax_revision,
+      },
+    ])
+      assert.equal((await send(endpoint, "PATCH", invalid)).status, 400);
+    assert.equal(
+      (
+        await send(endpoint, "PATCH", {
+          tourist_tax: null,
+          expected_revision: null,
+        })
+      ).status,
+      409,
+    );
+    const correction = await send(endpoint, "PATCH", {
+      tourist_tax: null,
+      expected_revision: entry.tourist_tax_revision,
+    });
+    assert.equal(correction.status, 200);
+    const corrected = (await correction.json()) as any;
+    assert.equal(corrected.received, 1006);
+    assert.equal(corrected.entries.length, 1);
+    assert.equal(corrected.entries[0].tourist_tax, undefined);
+    assert.equal(corrected.tourist_tax.remainingCents, 600);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 test("l'API valide les dates réelles, les centimes, les moyens et refuse un montant nul", async () => {
   const r = await stay();

@@ -26,6 +26,16 @@ Chaque nouvelle confirmation et résolution d’un rapport de nuitées conserve 
 
 Ces ajouts utilisent le document de configuration existant et les JSON archivés, sans migration de base. Le moteur de cache passe en version 8. Aucun déploiement n’est effectué dans le cadre de cette modification.
 
+## Taxe comprise dans un règlement
+
+Le formulaire habituel propose une part « Dont taxe de séjour » lorsque le séjour possède un barème valide et une collecte par l’hébergeur. Cette part reste comprise dans le montant reçu : aucun deuxième paiement n’est créé. Pour un premier règlement couvrant tout le séjour, elle est précochée ; pour les arrhes, un versement partiel ou des paiements antérieurs sans ventilation, elle attend une confirmation explicite. Un raccourci de paiement ouvre ce formulaire quand une taxe est proposée, afin de vérifier sa part et sa date avant enregistrement. La proposition est plafonnée au paiement et à la taxe restant à affecter.
+
+Un règlement manuel ou historique déjà enregistré permet de renseigner, corriger ou retirer cette affectation, sans changer son montant ni créer un nouvel encaissement. La date réelle du règlement devient celle de la perception. L’annulation du règlement retire sa collecte du calcul courant. Les confirmations sont auditées et protégées contre les modifications concurrentes ; une modification du séjour, des exonérations ou du barème rend la part à vérifier. Les anciennes copies de déclarations restent figées.
+
+Le registre reprend le montant confirmé et sa date. Dans les rapports de recettes, cette part exacte est isolée de l’hébergement ; les autres paiements du séjour ne consomment plus une part de taxe théorique au prorata. Les séjours sans affectation explicite conservent leur calcul historique. La ventilation entre périodes, logements regroupés et taxes additionnelles se complète encore dans le registre. Les paiements Stripe et les collectes des plateformes ne reçoivent aucune affectation automatique de taxe.
+
+La migration additive `20261104170000_payment_tourist_tax` ajoute les métadonnées facultatives du règlement et leur déclencheur d’invalidation pour SQLite et PostgreSQL, sans réécrire les paiements existants. Le moteur de cache passe en version 9. Le futur déploiement nécessitera une sauvegarde récupérable et le mode complet ; il reste en attente.
+
 ## Sources et calculs
 
 Le total dû du suivi des règlements reprend le montant courant de la réservation, options et taxe enregistrée comprises, y compris après l’émission d’un contrat ou d’un lien de paiement. Les montants des contrats et règlements déjà enregistrés restent conservés ; une prestation ajoutée ensuite réapparaît dans le reste à payer. Dans le popover, le moyen d’un règlement manuel ou historique peut être renseigné ou corrigé en cliquant dessus, sans annuler ni recréer le règlement. La correction conserve son montant, sa date et son identifiant, vérifie les modifications concurrentes et produit une trace d’audit. Les paiements Stripe et versements de plateforme conservent leur moyen d’origine.
@@ -122,6 +132,7 @@ La migration additive `20261030100000_ota_transactions` ajoute les métadonnées
 npm run migrate
 npm run test
 npm run test:reports-browser -w client
+npm run test:payment-tax-browser -w client
 npm run build
 ```
 

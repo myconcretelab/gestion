@@ -322,6 +322,9 @@ export async function loadReportFacts(
       })),
     );
     const remaining = components.map((row) => row.amount);
+    const explicitTaxMode = ledger.entries.some(
+      (entry) => !entry.voided_at && entry.tourist_tax,
+    );
     for (const entry of ledger.entries.filter(
       (entry) =>
         !entry.voided_at &&
@@ -420,6 +423,23 @@ export async function loadReportFacts(
         Boolean(ledger.platform) &&
         !preferAccommodation &&
         entry.purpose !== "deposit";
+      const taxWanted = explicitTaxMode
+        ? (entry.tourist_tax?.amountCents ??
+          (entry.purpose === "tourist_tax" ? received : 0))
+        : 0;
+      const taxWeights = components.map((row, i) =>
+        row.category === "tourist_tax" ? remaining[i] : 0,
+      );
+      const taxSplit = allocateCents(
+        Math.min(taxWanted, sum(taxWeights)),
+        taxWeights,
+      );
+      const available = remaining.map((value, i) =>
+        explicitTaxMode && components[i].category === "tourist_tax"
+          ? 0
+          : value - taxSplit[i],
+      );
+      const distributable = Math.max(0, received - sum(taxSplit));
       const preferred = components.map((row, i) =>
         (
           preferAccommodation
@@ -428,17 +448,21 @@ export async function loadReportFacts(
               ? row.category !== "accommodation"
               : true
         )
-          ? remaining[i]
+          ? available[i]
           : 0,
       );
-      const firstAmount = Math.min(received, sum(preferred));
+      const firstAmount = Math.min(distributable, sum(preferred));
       const split = allocateCents(firstAmount, preferred);
       const rest = allocateCents(
-        Math.min(received - firstAmount, sum(remaining) - firstAmount),
-        remaining.map((value, i) => value - split[i]),
+        Math.min(distributable - firstAmount, sum(available) - firstAmount),
+        available.map((value, i) => value - split[i]),
       );
-      const amounts = split.map((value, i) => value + rest[i]);
+      const amounts = split.map((value, i) => value + rest[i] + taxSplit[i]);
       const problems: string[] = [];
+      if (entry.tourist_tax_stale || taxWanted > sum(taxSplit))
+        problems.push(
+          "La part de taxe confirmée ne correspond plus aux données du séjour. Vérifiez-la dans ses règlements.",
+        );
       if (tax?.issues.length) problems.push(...tax.issues);
       if (cents(ledger.total) !== total)
         problems.push(
@@ -467,7 +491,9 @@ export async function loadReportFacts(
             (entry.method === "Versement plateforme"
               ? "Montant enregistré utilisé ; importez le relevé pour détailler le brut et la commission. "
               : "") +
-            "Règlement ventilé au prorata des montants restant dus par logement et catégorie. Les versements de plateforme sont affectés à l’hébergement en priorité ; les règlements sur place aux prestations et à la taxe.",
+            (explicitTaxMode
+              ? "La part de taxe confirmée est isolée au montant exact ; le reste du règlement est ventilé entre les autres catégories."
+              : "Règlement ventilé au prorata des montants restant dus par logement et catégorie. Les versements de plateforme sont affectés à l’hébergement en priorité ; les règlements sur place aux prestations et à la taxe."),
         });
       }
       if (entry.refunded_amount) {
