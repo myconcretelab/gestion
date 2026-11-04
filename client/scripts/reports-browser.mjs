@@ -208,6 +208,14 @@ function registerData() {
         observedCollectionCents: null,
         collectedBaseTaxCents: null,
         calculatedStayTaxCents: 1900,
+        allocationProposal: {
+          collectionDate: "2026-10-20",
+          collectedTaxCents: 1900,
+          collectedBaseTaxCents: 1900,
+          additionalTaxes: "Aucune selon le barème enregistré",
+          explanation:
+            "Proposition répartie sur les nuits taxables du séjour ; vérifiez les justificatifs avant confirmation.",
+        },
         additionalTaxes: "Aucune selon le barème enregistré",
         exemptionReason: "Aucune exonération renseignée",
         source: "Direct",
@@ -1975,6 +1983,60 @@ try {
     })
     .click();
   await registerDialog.locator(".rp-register-completion-row summary").click();
+  const commandsBeforeProposal = groupedFixture.commands.length;
+  await registerDialog
+    .getByRole("button", {
+      name: "Préremplir les ventilations proposées",
+      exact: true,
+    })
+    .click();
+  assert.equal(
+    groupedFixture.commands.length,
+    commandsBeforeProposal,
+    "Préremplir ne confirme pas la ventilation",
+  );
+  assert.equal(
+    await registerDialog
+      .getByLabel("Taxe collectée affectée à cette période (€)", {
+        exact: true,
+      })
+      .inputValue(),
+    "19.00",
+  );
+  assert.equal(
+    await registerDialog
+      .getByLabel("Part hors taxes additionnelles (€)", { exact: true })
+      .inputValue(),
+    "19.00",
+  );
+  assert.equal(
+    await registerDialog
+      .getByLabel("Date réelle de perception", { exact: true })
+      .inputValue(),
+    "2026-10-20",
+  );
+  assert.equal(
+    await registerDialog
+      .getByLabel("Justification et références des pièces vérifiées", {
+        exact: true,
+      })
+      .inputValue(),
+    "",
+  );
+  const review = registerDialog.getByRole("checkbox", {
+    name: /Ventilation entre périodes, hébergements et remboursements/,
+  });
+  assert.equal(await review.isChecked(), false);
+  await review.check();
+  await registerDialog
+    .getByRole("button", { name: "Utiliser cette proposition", exact: true })
+    .click();
+  assert.equal(
+    await review.isChecked(),
+    false,
+    "Une nouvelle proposition attend une nouvelle vérification",
+  );
+  await review.check();
   await registerDialog
     .getByLabel("Date réelle de perception", { exact: true })
     .fill("2026-10-20");
@@ -2047,9 +2109,7 @@ try {
       exact: true,
     })
     .fill("3500012345678");
-  await grouped
-    .getByLabel("Périodicité")
-    .selectOption("broceliande");
+  await grouped.getByLabel("Périodicité").selectOption("broceliande");
   await capture(grouped, "night-declaration-settings-desktop.png");
   await grouped
     .getByRole("button", { name: "Appliquer les règles", exact: true })

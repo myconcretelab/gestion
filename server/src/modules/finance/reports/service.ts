@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  isNightCollectionKey,
   evaluateReport,
   reportDefinitionSchema,
   reportPeriodKey,
@@ -254,7 +255,14 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
               db,
               report,
               month,
-              config,
+              {
+                ...config,
+                nightRegisterCompletions: Object.fromEntries(
+                  Object.entries(config.nightRegisterCompletions ?? {}).filter(
+                    ([period]) => period !== key,
+                  ),
+                ),
+              },
               facts,
             );
             if (register.sourceRevision !== command.completion.sourceRevision)
@@ -270,15 +278,48 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 "Un séjour ou une perception ne fait pas partie de ce registre.",
                 400,
               );
+            const checkedCollections = new Set<string>();
             for (const row of register.rows) {
-              const amount =
-                command.completion.rows[row.key]?.collectedTaxCents;
+              const collectionId = row.collectionId ?? row.key;
               if (
-                amount === null ||
-                amount === undefined ||
-                row.observedCollectionCents === null
+                row.observedCollectionCents === null ||
+                checkedCollections.has(collectionId)
               )
                 continue;
+              checkedCollections.add(collectionId);
+              const amount = register.rows
+                .filter(
+                  (candidate) =>
+                    (candidate.collectionId ?? candidate.key) === collectionId,
+                )
+                .reduce(
+                  (total, candidate) =>
+                    total +
+                    (Object.hasOwn(command.completion.rows, candidate.key)
+                      ? (command.completion.rows[candidate.key]
+                          .collectedTaxCents ?? 0)
+                      : (candidate.collectedTaxCents ?? 0)),
+                  0,
+                );
+              if (amount === 0) continue;
+              if (
+                row.collectionId &&
+                Object.entries(config.nightRegisterCompletions ?? {}).some(
+                  ([period, completion]) =>
+                    period !== key &&
+                    period.startsWith(`${report.id}:`) &&
+                    period.endsWith(`:${report.cadence}`) &&
+                    row.collectionReservationIds?.some(
+                      (id) =>
+                        (completion.rows[`stay:${id}`]?.collectedTaxCents ??
+                          0) > 0,
+                    ),
+                )
+              )
+                throw fail(
+                  "Une ancienne ventilation du séjour existe sur une autre période sans rattachement aux perceptions. Retirez d’abord les anciennes affectations à remplacer, puis rattachez les montants aux règlements.",
+                  400,
+                );
               const elsewhere = Object.entries(
                 config.nightRegisterCompletions ?? {},
               )
@@ -290,7 +331,16 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 )
                 .reduce(
                   (total, [, completion]) =>
-                    total + (completion.rows[row.key]?.collectedTaxCents ?? 0),
+                    total +
+                    Object.entries(completion.rows)
+                      .filter(([key]) =>
+                        isNightCollectionKey(key, collectionId),
+                      )
+                      .reduce(
+                        (subtotal, [, edit]) =>
+                          subtotal + (edit.collectedTaxCents ?? 0),
+                        0,
+                      ),
                   0,
                 );
               if (amount + elsewhere > row.observedCollectionCents)

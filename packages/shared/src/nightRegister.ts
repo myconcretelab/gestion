@@ -5,6 +5,16 @@ export const NIGHT_REGISTER_LEGAL_URL =
 
 export type NightRegisterRow = {
   key: string;
+  collectionId?: string;
+  collectionReservationIds?: string[];
+  allocationProposal?: {
+    collectionDate: string;
+    collectedTaxCents: number;
+    collectedBaseTaxCents: number;
+    additionalTaxes: string;
+    explanation: string;
+  };
+  allocationUnavailableReason?: string;
   reference: string;
   reservationId: string;
   propertyId: string;

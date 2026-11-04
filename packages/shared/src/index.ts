@@ -4,6 +4,7 @@ export * from "./planning.js";
 export * from "./cleaningBilling.js";
 export * from "./documentOccupancy.js";
 export * from "./nightRegister.js";
+export * from "./nightTaxAllocation.js";
 export * from "./paymentTouristTax.js";
 
 export const organizationIdSchema = z

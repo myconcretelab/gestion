@@ -51,6 +51,26 @@ export default function ReportNightRegisterCompletion({
       ]),
     ),
   );
+  const applyProposals = (keys: string[]) =>
+    setRows((current) => {
+      const next = { ...current };
+      for (const row of data.rows) {
+        if (!keys.includes(row.key) || !row.allocationProposal) continue;
+        const proposal = row.allocationProposal;
+        next[row.key] = {
+          ...next[row.key],
+          collectionDate: proposal.collectionDate,
+          collectedTaxCents: moneyInput(proposal.collectedTaxCents),
+          collectedBaseTaxCents: moneyInput(proposal.collectedBaseTaxCents),
+          additionalTaxes: proposal.additionalTaxes,
+          allocationReviewed: false,
+        };
+      }
+      return next;
+    });
+  const proposalKeys = data.rows
+    .filter((row) => row.allocationProposal)
+    .map((row) => row.key);
   if (!workspace.canEdit || data.archivedAt) return null;
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -119,6 +139,24 @@ export default function ReportNightRegisterCompletion({
         une note ; une modification des sources demandera une nouvelle
         vérification.
       </p>
+      {proposalKeys.length > 0 && (
+        <div className="rp-allocation-proposal">
+          <p>
+            Une ventilation calculée est disponible pour {proposalKeys.length}{" "}
+            ligne(s) du registre. Elle conserve le montant total reçu, réparti
+            entre toutes les nuits du séjour. Vérifiez-la et précisez les taxes
+            additionnelles sur vos justificatifs avant d’enregistrer.
+          </p>
+          <button
+            type="button"
+            className="rp-button rp-button--secondary"
+            disabled={workspace.saving || workspace.loading}
+            onClick={() => applyProposals(proposalKeys)}
+          >
+            Préremplir les ventilations proposées
+          </button>
+        </div>
+      )}
       {data.rows.map((row) => {
         const edit = rows[row.key];
         const patch = (value: Partial<typeof edit>) =>
@@ -139,6 +177,36 @@ export default function ReportNightRegisterCompletion({
               >
                 Vérifier la réservation et ses règlements
               </Link>
+            )}
+            {row.allocationProposal && (
+              <div className="rp-allocation-proposal">
+                <p>{row.allocationProposal.explanation}</p>
+                <p>
+                  Proposition pour cette période :{" "}
+                  {moneyInput(row.allocationProposal.collectedTaxCents).replace(
+                    ".",
+                    ",",
+                  )}{" "}
+                  €, dont{" "}
+                  {moneyInput(
+                    row.allocationProposal.collectedBaseTaxCents,
+                  ).replace(".", ",")}{" "}
+                  € hors taxes additionnelles.
+                </p>
+                <button
+                  type="button"
+                  className="rp-text-button"
+                  disabled={workspace.saving || workspace.loading}
+                  onClick={() => applyProposals([row.key])}
+                >
+                  Utiliser cette proposition
+                </button>
+              </div>
+            )}
+            {row.allocationUnavailableReason && (
+              <p className="rp-muted">
+                Proposition indisponible : {row.allocationUnavailableReason}
+              </p>
             )}
             {row.collector === "unknown" ? (
               <p>

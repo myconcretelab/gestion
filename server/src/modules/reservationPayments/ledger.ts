@@ -16,6 +16,7 @@ import {
   validOtaPriceSnapshot,
   allocateCents,
   recordedPaymentTouristTaxSchema,
+  buildNightTaxBasis,
   type PaymentTouristTaxInput,
   type OtaAmounts,
   type ReservationPaymentEntry,
@@ -32,6 +33,7 @@ import {
   paymentTaxRevision,
   validatePaymentTaxCollection,
 } from "./taxCollection.js";
+import { nightTaxSegments } from "./taxBasis.js";
 
 export const ledgerError = (message: string, statusCode = 409) =>
   Object.assign(new Error(message), { statusCode });
@@ -516,6 +518,7 @@ export const loadReservationPaymentTracking = async (
       accommodation,
       discount: Number(first.remise_montant || 0),
       result: tax,
+      ...(rows.length > 1 ? { segments: nightTaxSegments(rows) } : {}),
     });
     for (const entry of entries)
       if (entry.tourist_tax)
@@ -536,7 +539,7 @@ export const loadReservationPaymentTracking = async (
     const taxExpected = cents(tax?.host_amount ?? 0);
     const taxReason =
       rows.length > 1
-        ? "La ventilation d’un séjour regroupé se complète dans le registre."
+        ? buildNightTaxBasis(nightTaxSegments(rows), tax).reason
         : !tax
           ? "Renseignez le barème de taxe dans la réservation."
           : tax.issues.length

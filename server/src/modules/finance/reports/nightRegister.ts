@@ -7,6 +7,12 @@ import {
   reportPeriodKey,
   touristTaxStaySchema,
   summarizeNightRegister,
+  buildNightTaxBasis,
+  allocateNightTaxCollections,
+  isNightCollectionKey,
+  validOtaPriceSnapshot,
+  otaIncludedTotal,
+  getBookingSource,
   type ReportDefinition,
   type NightRegister,
   type NightRegisterRow,
@@ -15,7 +21,9 @@ import {
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { fromJsonString } from "../../../utils/jsonFields.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
+import { nightTaxSegments } from "../../reservationPayments/taxBasis.js";
 import { loadReportFacts } from "./facts.js";
+import type { OptionsInput } from "../../../services/contractCalculator.js";
 
 const fail = (message: string, statusCode = 400) =>
   Object.assign(new Error(message), { statusCode });
@@ -146,6 +154,13 @@ export async function buildNightRegister(
     ).map((payment) => payment.id),
   );
   const rows: NightRegisterRow[] = [];
+  const plans = new Map<
+    string,
+    {
+      basis: ReturnType<typeof buildNightTaxBasis>;
+      allocation: ReturnType<typeof allocateNightTaxCollections>;
+    }
+  >();
   for (const [index, reservation] of reservations.entries()) {
     const group = reservation.stay_group_id
       ? siblings.filter(
@@ -153,23 +168,28 @@ export async function buildNightRegister(
         )
       : [reservation];
     const first = group[0] ?? reservation;
-    const options = fromJsonString<{ tourist_tax?: unknown }>(
-      first.options,
-      {},
-    );
+    const options = fromJsonString<OptionsInput>(first.options, {});
     const checked = touristTaxStaySchema.safeParse(options.tourist_tax);
     const stayTax = checked.success ? checked.data : null;
     const nightsInGroup = group.reduce((sum, row) => sum + row.nb_nuits, 0);
     const accommodation =
       group.reduce((sum, row) => sum + Number(row.prix_total), 0) -
       Number(first.remise_montant);
+    const includedOptions = validOtaPriceSnapshot(
+      options.ota_price,
+      cents(accommodation),
+      options,
+      getBookingSource(first),
+    )
+      ? otaIncludedTotal(options.ota_price!.included) / 100
+      : 0;
     const tax = stayTax
       ? computeTouristTax({
           stay: stayTax,
           nights: nightsInGroup,
           adults: first.nb_adultes,
           children: first.nb_enfants_2_17,
-          accommodation,
+          accommodation: accommodation - includedOptions,
           start: day(first.date_entree),
         })
       : null;
@@ -264,8 +284,30 @@ export async function buildNightRegister(
           entry.ota?.category === "tourist_tax" ||
           entry.tourist_tax),
     );
-    const collections =
-      group.length === 1 && stayTax?.collector === "host" ? entries : [];
+    const collections = stayTax?.collector === "host" ? entries : [];
+    let plan = plans.get(first.id);
+    if (!plan) {
+      const basis = buildNightTaxBasis(nightTaxSegments(group), tax);
+      const allocation = allocateNightTaxCollections(
+        basis,
+        collections.map((entry) => ({
+          id: entry.id,
+          amountCents:
+            entry.tourist_tax?.amountCents ??
+            entry.ota?.grossCents ??
+            cents(entry.amount + (entry.refunded_amount ?? 0)),
+          paidOn: entry.paid_on,
+          needsReview: Boolean(
+            entry.tourist_tax_stale ||
+            entry.refunded_amount ||
+            tracking.get(reservation.id)?.requires_review,
+          ),
+        })),
+      );
+      plan = { basis, allocation };
+      plans.set(first.id, plan);
+    }
+    const { basis, allocation } = plan;
     const noTaxDue = Boolean(tax && !tax.issues.length && tax.amount === 0);
     if (
       !collections.length &&
@@ -295,7 +337,10 @@ export async function buildNightRegister(
           "La part de taxe du règlement est à vérifier après une modification du séjour ou du barème.",
         );
       const collectedTaxCents =
-        entry && !crossesPeriod && !(entry.refunded_amount ?? 0)
+        entry &&
+        group.length === 1 &&
+        !crossesPeriod &&
+        !(entry.refunded_amount ?? 0)
           ? (entry.tourist_tax?.amountCents ??
             entry.ota?.grossCents ??
             cents(entry.amount))
@@ -320,8 +365,112 @@ export async function buildNightRegister(
         )
         .flatMap((row) => row.issues.map((issue) => issue.message));
       lineIssues.push(...operationIssues);
+      const proposed = allocation.allocations
+        .get(entry?.id ?? "")
+        ?.filter(
+          (slice) =>
+            slice.reservationId === reservation.id &&
+            slice.start >= period.start &&
+            slice.end <= period.end,
+        );
+      const proposedBase =
+        proposed?.reduce((total, slice) => total + slice.baseCents, 0) ?? 0;
+      const proposedAdditional =
+        proposed?.reduce((total, slice) => total + slice.additionalCents, 0) ??
+        0;
+      const variablePrices =
+        classified === false && crossesPeriod && nightlyPriceCents === null;
+      const otherCompletions = Object.entries(
+        config.nightRegisterCompletions ?? {},
+      ).filter(
+        ([key]) =>
+          key !== reportPeriodKey(report, month) &&
+          key.startsWith(`${report.id}:`) &&
+          key.endsWith(`:${report.cadence}`),
+      );
+      const legacyAllocation =
+        entry &&
+        otherCompletions.some(([, completion]) =>
+          group.some(
+            (row) =>
+              (completion.rows[`stay:${row.id}`]?.collectedTaxCents ?? 0) > 0,
+          ),
+        );
+      const elsewhere = entry
+        ? otherCompletions.reduce(
+            (total, [, completion]) =>
+              total +
+              Object.entries(completion.rows)
+                .filter(([key]) => isNightCollectionKey(key, entry.id))
+                .reduce(
+                  (sum, [, edit]) => sum + (edit.collectedTaxCents ?? 0),
+                  0,
+                ),
+            0,
+          )
+        : 0;
+      const currentProposedTotal =
+        allocation.allocations
+          .get(entry?.id ?? "")
+          ?.filter(
+            (slice) =>
+              ids.includes(slice.reservationId) &&
+              slice.start >= period.start &&
+              slice.end <= period.end,
+          )
+          .reduce(
+            (total, slice) => total + slice.baseCents + slice.additionalCents,
+            0,
+          ) ?? 0;
+      const allocationConflict =
+        legacyAllocation ||
+        (entry &&
+          elsewhere + currentProposedTotal >
+            (entry.tourist_tax?.amountCents ??
+              entry.ota?.grossCents ??
+              cents(entry.amount)));
+      const euro = (value: number) =>
+        (value / 100).toFixed(2).replace(".", ",");
       rows.push({
-        key: entry?.id ?? `stay:${reservation.id}`,
+        key: entry
+          ? group.length > 1
+            ? `${entry.id}:stay:${reservation.id}`
+            : entry.id
+          : `stay:${reservation.id}`,
+        ...(entry
+          ? {
+              collectionId: entry.id,
+              collectionReservationIds: group.map((row) => row.id),
+            }
+          : {}),
+        ...(entry &&
+        collectionDate &&
+        proposed?.length &&
+        !allocationConflict &&
+        !variablePrices &&
+        (group.length > 1 || crossesPeriod || basis.additionalPercentage > 0)
+          ? {
+              allocationProposal: {
+                collectionDate,
+                collectedTaxCents: proposedBase + proposedAdditional,
+                collectedBaseTaxCents: proposedBase,
+                additionalTaxes: basis.additionalPercentage
+                  ? `Taxes additionnelles au taux global enregistré (${basis.additionalPercentage} %) : ${euro(proposedAdditional)} €`
+                  : "Aucune selon le barème enregistré",
+                explanation:
+                  "Proposition calculée sur les nuits taxables de l’ensemble du séjour et la taxe confirmée de chaque règlement. Les centimes restants sont répartis sans dépasser la perception ; les taxes additionnelles utilisent le taux global du barème enregistré. Vérifiez les montants et précisez le nom des taxes sur justificatifs.",
+              },
+            }
+          : entry && (allocation.reason || allocationConflict || variablePrices)
+            ? {
+                allocationUnavailableReason:
+                  allocation.reason ??
+                  (variablePrices
+                    ? "Le prix exact de chaque nuit du séjour non classé est à vérifier ; aucune répartition fondée sur un prix moyen n’est proposée."
+                    : null) ??
+                  "Une ventilation différente est déjà enregistrée sur une autre période. Vérifiez-la avant de répartir à nouveau cette perception.",
+              }
+            : {}),
         reference: `Séjour ${index + 1}${collections.length > 1 ? ` / perception ${collectionIndex + 1}` : ""}`,
         reservationId: reservation.id,
         propertyId: reservation.gite_id!,
