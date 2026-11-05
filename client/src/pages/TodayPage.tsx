@@ -1279,6 +1279,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
           json: {
             checked,
             direct,
+            ...(!checked ? { expected_departure_id: item.departure_reservation_id, expected_checked_at: item.checked_at } : {}),
             ...(fullCleaningUserId !== undefined ? { full_cleaning_user_id: fullCleaningUserId } : {}),
           },
         }
@@ -1405,7 +1406,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
 
   useEffect(() => {
     if (!cleaningReadinessUndo) return;
-    const timeoutId = window.setTimeout(() => setCleaningReadinessUndo(null), 10_000);
+    const timeoutId = window.setTimeout(() => setCleaningReadinessUndo(null), 30_000);
     return () => window.clearTimeout(timeoutId);
   }, [cleaningReadinessUndo]);
 
@@ -1592,7 +1593,7 @@ const TodayPage = ({ currentUser }: { currentUser?: AppUser | null }) => {
               disabled={Boolean(cleaningReadinessBusyId)}
               onClick={() => void updateCleaningReadiness(cleaningReadinessUndo, false)}
             >
-              Annuler
+              ↶ Clic par erreur ?
             </button>
           </div>
         ) : null}

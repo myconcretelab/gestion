@@ -4,6 +4,7 @@ import { apiFetch } from "../utils/api";
 import type { AppUser } from "../utils/auth";
 import type { Gite, Intervenant } from "../utils/types";
 import { formatWorkMinutes, parseWorkHours } from "../utils/intervenantHours";
+import InterventionCancellationDialog from "./shared/InterventionCancellationDialog";
 import "./intervenantsPage.css";
 
 type HourEntry = {
@@ -72,6 +73,8 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [correction, setCorrection] = useState<CorrectionDraft | null>(null);
+  const [cancellation, setCancellation] = useState<InterventionEntry | null>(null);
+  const [cancellationNotice, setCancellationNotice] = useState<string | null>(null);
   const canCorrectHistory = !currentUser || currentUser.permissions.isOwner;
 
   const loadWorkers = useCallback(async () => {
@@ -187,16 +190,12 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
     } finally { setBusyId(null); }
   };
 
-  const removeIntervention = async (entry: InterventionEntry) => {
-    if (!confirm("Retirer cette intervention non payée ?")) return;
-    setBusyId(entry.id);
-    try {
-      await apiFetch(`/interventions/${entry.id}`, { method: "DELETE" });
-      await loadHistory();
-      setNotice("Intervention retirée.");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Impossible de retirer l'intervention.");
-    } finally { setBusyId(null); }
+  const interventionCancelled = (removedIds: string[], effects: string[]) => {
+    setCancellation(null);
+    setInterventions((rows) => rows.filter((entry) => !removedIds.includes(entry.id)));
+    setAllUnpaidInterventions((rows) => rows.filter((entry) => !removedIds.includes(entry.id)));
+    setCancellationNotice(`C’est remis en place. ${effects[0]} Annulation ajoutée au journal.`);
+    void loadHistory().catch(() => setError("L’annulation est enregistrée. Rechargez la page pour actualiser les montants."));
   };
 
   const openInterventionCorrection = (entry: InterventionEntry) => {
@@ -350,7 +349,7 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
           </select></label>
         </div>
       </div>
-      {canCorrectHistory ? <p className="intervenants-history__admin-note">Les administrateurs peuvent corriger une erreur. Chaque modification exige un motif et conserve l’ancienne valeur dans le journal d’audit.</p> : null}
+      {canCorrectHistory ? <p className="intervenants-history__admin-note">Un clic par erreur ? Utilisez « Annuler » pour remettre le gîte et les tâches liés dans leur état précédent. Les corrections et annulations sont conservées dans le journal d’audit.</p> : null}
       <h3>Contrôles, ménages et tâches au forfait</h3>
       {!interventions.length ? <p className="field-hint">Aucune intervention pour ce filtre.</p> : <div className="intervenants-history__table-wrap">
         <table className="table intervenants-history__table"><thead><tr><th>Date</th><th>Intervenant</th><th>Type</th><th>Gîte</th><th>Montant</th><th>État</th><th></th></tr></thead>
@@ -359,7 +358,9 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
             <td><span className={`intervenants-status intervenants-status--${entry.paid_at ? "paid" : "unpaid"}`}>{entry.paid_at ? "Payé" : "À payer"}</span></td>
             <td><div className="intervenants-history__actions">
               {canCorrectHistory ? <button className="table-action" disabled={Boolean(busyId)} onClick={() => openInterventionCorrection(entry)}>Corriger</button> : null}
-              {!entry.paid_at && entry.kind === "full_cleaning" ? <button className="table-action table-action--danger" disabled={busyId === entry.id} onClick={() => void removeIntervention(entry)}>Retirer</button> : null}
+              {canCorrectHistory && !entry.paid_at ? <button type="button" className="table-action intervenants-history__undo" disabled={Boolean(busyId)}
+                aria-label={`Annuler l’intervention de ${entry.gite_name ?? entry.user_name} du ${formatDate(entry.occurred_on)}`}
+                onClick={() => { setCancellationNotice(null); setCancellation(entry); }}><span aria-hidden="true">↶</span> Annuler</button> : null}
             </div></td>
           </tr>)}</tbody></table></div>}
       <h3>Heures saisies</h3>
@@ -372,6 +373,9 @@ export default function IntervenantsPage({ currentUser }: { currentUser: AppUser
               <td>{canCorrectHistory ? <button className="table-action" disabled={Boolean(busyId)} onClick={() => openHoursCorrection(entry)}>Corriger</button> : null}</td></tr>; })}</tbody>
         </table></div>}
     </section>
+    {cancellation ? <InterventionCancellationDialog key={cancellation.id} entry={cancellation} onClose={() => setCancellation(null)} onCancelled={interventionCancelled} /> : null}
+    {cancellationNotice ? <div className="intervenants-undo-notice" role="status"><span aria-hidden="true">↶</span><p>{cancellationNotice}</p>
+      <button type="button" className="intervenants-correction__close" aria-label="Fermer le message d’annulation" onClick={() => setCancellationNotice(null)}>×</button></div> : null}
     {correction ? <div className="intervenants-correction" role="dialog" aria-modal="true" aria-labelledby="intervenants-correction-title">
       <button type="button" className="intervenants-correction__backdrop" disabled={Boolean(busyId)} onClick={() => setCorrection(null)} aria-label="Fermer la correction" />
       <form className="intervenants-correction__panel" onSubmit={(event) => { event.preventDefault(); void saveCorrection(); }}>

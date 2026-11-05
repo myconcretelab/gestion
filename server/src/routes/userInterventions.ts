@@ -7,6 +7,7 @@ import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { isValidWorkDate } from "../utils/intervenantHours.js";
 import { recordFullCleaningIntervention } from "../services/userInterventions.js";
+import { cancelIntervention, previewInterventionCancellation } from "../services/interventionCancellation.js";
 
 const router = Router();
 const workDate = z.string().refine(isValidWorkDate, "Date invalide.");
@@ -31,6 +32,11 @@ const correctionSchema = z.object({
   reason: z.string().trim().min(3, "Indiquez le motif de la correction.").max(500),
   expectedUpdatedAt: z.string().datetime(),
 });
+const cancellationSchema = z.object({
+  reason: z.string().trim().min(3, "Indiquez le motif de l’annulation.").max(500),
+  expectedUpdatedAt: z.string().datetime(),
+  fingerprint: z.string().length(64),
+});
 
 const serialize = (entry: any) => ({
   id: entry.id,
@@ -50,7 +56,7 @@ const serialize = (entry: any) => ({
 const requireAdministrator = async (req: Parameters<typeof getAuthenticatedAppUser>[0]) => {
   const user = await getAuthenticatedAppUser(req);
   if (user && !user.permissions.isOwner) {
-    throw Object.assign(new Error("Seul un administrateur peut corriger cet historique."), {
+    throw Object.assign(new Error("Seul un administrateur peut modifier cet historique."), {
       status: 403,
       code: "ADMIN_REQUIRED",
     });
@@ -194,13 +200,21 @@ router.patch("/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.delete("/:id", async (req, res, next) => {
+router.get("/:id/cancellation", async (req, res, next) => {
   try {
-    const removed = await prisma.userIntervention.deleteMany({
-      where: { id: req.params.id, paid_at: null, kind: "full_cleaning" },
-    });
-    if (!removed.count) return res.status(409).json({ error: "Cette intervention est déjà payée ou automatique." });
-    res.status(204).end();
+    await requireAdministrator(req);
+    res.json(await previewInterventionCancellation(req.params.id));
+  } catch (error) { next(error); }
+});
+
+router.post("/:id/cancel", async (req, res, next) => {
+  try {
+    const administrator = await requireAdministrator(req);
+    const payload = cancellationSchema.parse(req.body ?? {});
+    res.json(await cancelIntervention(req.params.id, payload, {
+      userId: administrator?.id ?? null,
+      requestId: String(res.getHeader("X-Request-Id") ?? "") || null,
+    }));
   } catch (error) { next(error); }
 });
 

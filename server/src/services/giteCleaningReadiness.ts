@@ -1,5 +1,6 @@
 import prisma from "../db/prisma.js";
 import { fromJsonString } from "../utils/jsonFields.js";
+import { getOrganizationId } from "./organizationContext.js";
 import { recordCleaningCheckIntervention, recordFullCleaningIntervention, removeUnpaidAutomaticFullCleaningIntervention, removeUnpaidCleaningCheckIntervention } from "./userInterventions.js";
 
 export const CLEANING_CHECK_START_MINUTES = 0;
@@ -132,6 +133,10 @@ export const updateGiteCleaningReadiness = async (
   fullCleaningUserId: string | null = null,
 ) => {
   const value = checked ? readiness.checked_at ?? checkedAt : null;
+  const snapshot = checked && !readiness.checked_at ? await Promise.all([
+    prisma.cleaningTask.findFirst({ where: { departure_reservation_id: readiness.departure_reservation_id } }),
+    prisma.userIntervention.findMany({ where: { source_key: `full-cleaning:${readiness.departure_reservation_id}` }, select: { id: true } }),
+  ]) : null;
   await prisma.$transaction([
     prisma.reservation.update({
       where: { id: readiness.departure_reservation_id },
@@ -149,6 +154,18 @@ export const updateGiteCleaningReadiness = async (
         },
       }),
     ] : []),
+    ...(snapshot ? [prisma.auditLog.create({ data: {
+      organization_id: getOrganizationId(), user_id: checkedByUserId,
+      action: "gite_cleaning.checked", resource_type: "reservation", resource_id: readiness.departure_reservation_id,
+      metadata_json: JSON.stringify({
+        checked_at: value?.toISOString(),
+        task_before: snapshot[0] ? {
+          status: snapshot[0].status, completed_at: snapshot[0].completed_at,
+          completed_by_id: snapshot[0].completed_by_id, checked_at: snapshot[0].checked_at, checked_by_id: snapshot[0].checked_by_id,
+        } : null,
+        retained_intervention_ids: snapshot[1].map((entry) => entry.id),
+      }),
+    } })] : []),
   ]);
   if (checked) {
     await recordCleaningCheckIntervention(readiness.departure_reservation_id, checkedByUserId, value ?? checkedAt);

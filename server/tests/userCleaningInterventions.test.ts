@@ -20,6 +20,8 @@ test("la validation directe comptabilise le contrôle et le ménage optionnel un
     userFindUnique: prisma.appUser.findUnique,
     interventionUpsert: prisma.userIntervention.upsert,
     interventionDeleteMany: prisma.userIntervention.deleteMany,
+    interventionFindMany: prisma.userIntervention.findMany,
+    auditCreate: prisma.auditLog.create,
   };
   const upserts: any[] = [];
   const deletions: any[] = [];
@@ -33,6 +35,8 @@ test("la validation directe comptabilise le contrôle et le ménage optionnel un
   };
   try {
     prisma.cleaningTask.findFirst = (async () => null) as any;
+    prisma.userIntervention.findMany = (async () => []) as any;
+    prisma.auditLog.create = (async () => ({})) as any;
     prisma.$transaction = (async (queries: Promise<unknown>[]) => Promise.all(queries)) as any;
     prisma.reservation.update = (async () => ({})) as any;
     prisma.reservation.findUnique = (async () => ({
@@ -67,6 +71,8 @@ test("la validation directe comptabilise le contrôle et le ménage optionnel un
     prisma.appUser.findUnique = original.userFindUnique;
     prisma.userIntervention.upsert = original.interventionUpsert;
     prisma.userIntervention.deleteMany = original.interventionDeleteMany;
+    prisma.userIntervention.findMany = original.interventionFindMany;
+    prisma.auditLog.create = original.auditCreate;
   }
 });
 

@@ -32,6 +32,7 @@ import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, parisWallTime, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
 import { isModuleEnabled } from "../services/installationConfig.js";
 import { isActiveCleaningWorker } from "../services/userInterventions.js";
+import { cancelIntervention, previewInterventionCancellation } from "../services/interventionCancellation.js";
 import { fromJsonString } from "../utils/jsonFields.js";
 import { toNumber } from "../utils/money.js";
 import { extractAirbnbConfirmationCode } from "../utils/airbnbReservationIdentity.js";
@@ -604,10 +605,12 @@ router.get("/overview/primary", async (req, res, next) => {
 router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
   try {
     const currentUser = req.headers ? await getAuthenticatedAppUser(req) : null;
-    const { checked, direct, full_cleaning_user_id: requestedFullCleaningUserId } = z.object({
+    const { checked, direct, full_cleaning_user_id: requestedFullCleaningUserId, expected_departure_id: expectedDepartureId, expected_checked_at: expectedCheckedAt } = z.object({
       checked: z.boolean(),
       direct: z.boolean().default(false),
       full_cleaning_user_id: z.string().trim().min(1).nullable().optional(),
+      expected_departure_id: z.string().optional(),
+      expected_checked_at: z.string().datetime().nullable().optional(),
     }).parse(req.body ?? {});
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.giteId },
@@ -618,6 +621,10 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     const [readiness] = await loadGiteCleaningReadiness([gite]);
     if (!readiness) {
       return res.status(409).json({ error: "Aucun contrôle de préparation n’est disponible pour ce gîte." });
+    }
+    if (!checked && ((expectedDepartureId && expectedDepartureId !== readiness.departure_reservation_id)
+      || (expectedCheckedAt !== undefined && expectedCheckedAt !== (readiness.checked_at?.toISOString() ?? null)))) {
+      return res.status(409).json({ error: "Ce contrôle a changé. Rechargez la page avant de l’annuler." });
     }
     const currentTask = await getCleaningTaskForDeparture(readiness.departure_reservation_id);
     if (!canManageCleaning(currentUser) && (currentTask?.assignee_id !== currentUser?.id || (checked && currentTask?.status !== "done"))) {
@@ -647,8 +654,17 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
         return res.status(409).json({ error: "L’intervenant attribué à ce ménage est inactif ou introuvable." });
       }
     }
-    const checkedAt = await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null, new Date(), fullCleaningUserId);
-    const cleaningTask = await isModuleEnabled("worker_planning")
+    const interventionToCancel = !checked ? await prisma.userIntervention.findFirst({
+      where: { source_key: `cleaning-check:${readiness.departure_reservation_id}` },
+    }) : null;
+    if (interventionToCancel) {
+      const preview = await previewInterventionCancellation(interventionToCancel.id);
+      await cancelIntervention(interventionToCancel.id, {
+        reason: "Clic par erreur — annulation depuis Aujourd’hui", expectedUpdatedAt: interventionToCancel.updatedAt.toISOString(), fingerprint: preview.fingerprint,
+      }, { userId: currentUser?.id ?? null, requestId: String(res.getHeader("X-Request-Id") ?? "") || null });
+    }
+    const checkedAt = interventionToCancel ? null : await updateGiteCleaningReadiness(readiness, checked, currentUser?.id ?? null, new Date(), fullCleaningUserId);
+    const cleaningTask = interventionToCancel ? await getCleaningTaskForDeparture(readiness.departure_reservation_id) : await isModuleEnabled("worker_planning")
       ? await setCleaningTaskReadiness(readiness.departure_reservation_id, readiness.departure_date, checked, checkedAt, currentUser?.id ?? null, fullCleaningUserId)
       : null;
     let notificationWarning: string | null = null;

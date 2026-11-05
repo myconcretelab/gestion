@@ -42,6 +42,42 @@
 .intervenants-history__table { min-width: 720px; }
 .intervenants-history__admin-note { margin: 0; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border)); border-radius: 12px; background: var(--primary-soft); color: var(--ink); font-size: .78rem; line-height: 1.5; }
 .intervenants-history__actions { display: flex; justify-content: flex-end; gap: 7px; }
+.intervenants-history__undo { display: inline-flex; gap: 5px; align-items: center; color: var(--primary-ink); background: var(--primary-soft); white-space: nowrap; }
+.intervenants-history__undo > span { font-size: 1.1rem; transition: transform .2s ease; }
+.intervenants-history__undo:hover > span { transform: rotate(-35deg); }
+.intervention-undo { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; overflow-y: auto; border: 1px solid var(--border); border-radius: 24px; background: var(--card); color: var(--ink); box-shadow: 0 30px 80px #0f172a3d; }
+.intervention-undo::backdrop { background: #0f172a70; backdrop-filter: blur(3px); }
+.intervention-undo[open] { animation: intervention-undo-enter .2s ease-out; }
+.intervention-undo form { display: grid; gap: 18px; }
+.intervention-undo header { display: flex; align-items: flex-start; justify-content: space-between; }
+.intervention-undo__icon { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px; background: var(--primary-soft); color: var(--primary-ink); font-size: 2.3rem; line-height: 1; }
+.intervention-undo h2 { margin: 4px 0 7px; font-size: 1.7rem; letter-spacing: -.025em; }
+.intervention-undo p { margin: 0; color: var(--muted); line-height: 1.5; font-size: .86rem; }
+.intervention-undo__entry { display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; }
+.intervention-undo__entry span, .intervention-undo__entry small { color: var(--muted); font-size: .8rem; }
+.intervention-undo__effects { padding: 15px; border-radius: 14px; background: var(--primary-soft); font-size: .83rem; line-height: 1.5; }
+.intervention-undo__effects > strong { color: var(--primary-ink); }
+.intervention-undo__effects ul { margin: 8px 0 14px; padding-left: 18px; }
+.intervention-undo__effects li + li { margin-top: 5px; }
+.intervention-undo__amount { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--primary) 22%, transparent); }
+.intervention-undo__amount strong { white-space: nowrap; font-size: 1rem; }
+.intervention-undo__reasons { min-width: 0; padding: 0; border: 0; margin: 0; }
+.intervention-undo__reasons legend { margin-bottom: 9px; font-size: .82rem; font-weight: 700; }
+.intervention-undo__reasons > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.intervention-undo__reasons button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--muted); box-shadow: none; font-size: .76rem; }
+.intervention-undo__reasons button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-ink); }
+.intervention-undo .field { gap: 6px; }
+.intervention-undo__detail summary { color: var(--muted); font-size: .8rem; cursor: pointer; }
+.intervention-undo__detail .field { margin-top: 10px; }
+.intervention-undo .intervention-undo__audit { font-size: .74rem; }
+.intervention-undo footer { position: sticky; bottom: -24px; display: flex; justify-content: flex-end; gap: 9px; padding: 12px 0 0; background: var(--card); }
+.intervention-undo footer button { font-size: .8rem; }
+.intervenants-undo-notice { position: fixed; z-index: 150; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 12px; width: min(460px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--primary); border-radius: 18px; background: var(--card); color: var(--ink); box-shadow: 0 12px 40px #0f172a26; animation: intervention-undo-enter .2s ease-out; }
+.intervenants-undo-notice > span { color: var(--primary-ink); font-size: 2rem; }
+.intervenants-undo-notice p { margin: 0; font-size: .83rem; line-height: 1.5; }
+@keyframes intervention-undo-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .intervention-undo[open], .intervenants-undo-notice { animation: none; } .intervenants-history__undo > span { transition: none; } }
+@media (max-width: 640px) { .intervention-undo { padding: 20px; } .intervention-undo form { gap: 14px; } .intervention-undo footer { bottom: -20px; flex-direction: column-reverse; } .intervenants-undo-notice { right: 16px; bottom: 16px; } }
 .intervenants-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: .72rem; font-weight: 750; white-space: nowrap; }
 .intervenants-status--unpaid { color: #9a3412; background: #ffedd5; }
 .intervenants-status--paid { color: #166534; background: #dcfce7; }
