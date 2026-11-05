@@ -9,7 +9,7 @@ import { automaticPlatformReceiptThrough } from "../../reservationPayments/autom
 import { reportPaymentCheckDay } from "./paymentAlerts.js";
 
 // Bump when the calculation rules change, so saved data is rebuilt on the next visit.
-export const REPORT_CACHE_VERSION = 14;
+export const REPORT_CACHE_VERSION = 15;
 const monthFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Europe/Paris",
   year: "numeric",
@@ -34,10 +34,38 @@ export const reportCacheIsCurrent = (cache: CacheMetadata | null, now: Date) =>
       automaticPlatformReceiptThrough(now),
   );
 
+export async function readReportCalculation(
+  db: TenantTransactionClient,
+  now: Date,
+) {
+  const cache = await db.financeReportCache.findFirst({
+    select: {
+      source_revision: true,
+      calculated_revision: true,
+      engine_version: true,
+      calculated_at: true,
+      calculated_month: true,
+      workspace_json: true,
+      reminders_json: true,
+    },
+  });
+  return {
+    cache,
+    workspace:
+      reportCacheIsCurrent(cache, now) && cache?.workspace_json
+        ? (JSON.parse(cache.workspace_json) as ReportWorkspaceData)
+        : null,
+  };
+}
+
 export async function storeReportCalculation(
   db: TenantTransactionClient,
   state: ReportWorkspaceData,
   now: Date,
+  reuse?: {
+    remindersJson: string;
+    reportIds: string[];
+  },
 ): Promise<ReportWorkspaceData> {
   const organizationId = getOrganizationId();
   const source = await db.financeReportCache.findFirst({
@@ -66,8 +94,36 @@ export async function storeReportCalculation(
     (first, year) => Math.min(first, year),
     currentYear,
   );
-  for (let year = firstYear; year <= currentYear; year++)
-    summaries[year] = buildReportReminders(state, year, now);
+  const previous: typeof summaries = reuse
+    ? JSON.parse(reuse.remindersJson)
+    : {};
+  const changedReports = reuse ? new Set(reuse.reportIds) : null;
+  const reportOrder = new Map(state.reports.map((report, i) => [report.id, i]));
+  for (let year = firstYear; year <= currentYear; year++) {
+    if (!changedReports || !previous[year]) {
+      summaries[year] = buildReportReminders(state, year, now);
+      continue;
+    }
+    summaries[year] = [
+      ...previous[year].filter((row) => !changedReports.has(row.reportId)),
+      ...buildReportReminders(
+        {
+          ...state,
+          reports: state.reports.filter((report) =>
+            changedReports.has(report.id),
+          ),
+        },
+        year,
+        now,
+      ),
+    ].sort(
+      (a, b) =>
+        a.month.localeCompare(b.month) ||
+        a.name.localeCompare(b.name, "fr") ||
+        a.recipient.localeCompare(b.recipient, "fr") ||
+        (reportOrder.get(a.reportId) ?? 0) - (reportOrder.get(b.reportId) ?? 0),
+    );
+  }
   const workspace = { ...state, calculatedAt: now.toISOString() };
   const data = {
     calculated_revision: source?.source_revision ?? 0,

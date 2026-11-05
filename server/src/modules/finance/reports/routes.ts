@@ -9,6 +9,7 @@ import {
   nightDeclarationCsv,
   reportMonthSchema,
   reportMutationSchema,
+  reportWorkspaceChanges,
 } from "@contrats/shared";
 import { getNightRegister } from "./nightRegister.js";
 import { renderNightRegisterHtml } from "./nightRegisterRender.js";
@@ -25,11 +26,14 @@ router.post("/receipts", async (req, res, next) => {
     const input = reportMutationSchema.parse(req.body);
     if (input.command.type !== "remittance-receipt")
       return res.status(400).json({ error: "Justificatif attendu." });
+    const state = await mutateReportWorkspace(
+      input,
+      (await getAuthenticatedAppUser(req))?.id,
+    );
     res.json(
-      await mutateReportWorkspace(
-        input,
-        (await getAuthenticatedAppUser(req))?.id,
-      ),
+      req.query.response === "changes"
+        ? reportWorkspaceChanges(state, input.revision)
+        : state,
     );
   } catch (error) {
     next(error);
@@ -204,7 +208,13 @@ router.get("/:reportId/night-register", async (req, res, next) => {
 router.post("/commands", async (req, res, next) => {
   try {
     const user = await getAuthenticatedAppUser(req);
-    res.json(await mutateReportWorkspace(req.body, user?.id));
+    const input = reportMutationSchema.parse(req.body);
+    const state = await mutateReportWorkspace(input, user?.id);
+    res.json(
+      req.query.response === "changes"
+        ? reportWorkspaceChanges(state, input.revision)
+        : state,
+    );
   } catch (error) {
     next(error);
   }

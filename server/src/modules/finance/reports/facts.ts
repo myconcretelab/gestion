@@ -10,6 +10,7 @@ import {
   type ReportOperation,
   type ReportPaymentMethod,
   type ReportPaymentAlert,
+  type ReportWorkspaceData,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
@@ -87,7 +88,7 @@ export async function loadReportFacts(
         options: true,
         pricing_snapshot: true,
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     }),
     db.urssafDeclaration.findMany({
       include: { gestionnaire: true },
@@ -642,7 +643,7 @@ export async function loadReportFacts(
       }),
     )
     .digest("hex");
-  const legacyDeclarations = [
+  const legacyDeclarations: ReportWorkspaceData["legacyDeclarations"] = [
     ...socialHistory.map((row) => ({
       id: row.id,
       kind: "social" as const,
@@ -664,6 +665,39 @@ export async function loadReportFacts(
       propertyIds: [row.gite_id],
     })),
   ];
+  return {
+    properties,
+    operators,
+    managers,
+    operations,
+    stayPaymentAlerts,
+    propertyOperators,
+    propertyManagers,
+    propertyNightDeclarations,
+    operatorIssues,
+    socialIssues,
+    factsRevision,
+    legacyDeclarations,
+  };
+}
+
+export function reportFactsFromWorkspace(
+  state: ReportWorkspaceData,
+): Awaited<ReturnType<typeof loadReportFacts>> {
+  const {
+    properties,
+    operators,
+    managers = [],
+    operations,
+    stayPaymentAlerts = [],
+    propertyOperators,
+    propertyManagers = {},
+    propertyNightDeclarations = {},
+    operatorIssues = {},
+    socialIssues = {},
+    factsRevision,
+    legacyDeclarations,
+  } = state;
   return {
     properties,
     operators,

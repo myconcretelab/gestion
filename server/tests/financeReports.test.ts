@@ -19,6 +19,7 @@ import {
   nightRegisterCsv,
   reportPaymentAlertSignature,
   reportPaymentReviewRequired,
+  applyReportWorkspaceChanges,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -161,6 +162,200 @@ const mutate = (
     },
     "test-user",
   );
+
+test("prêt et confirmation réutilisent les sources contrôlées et les rappels incrémentaux restent identiques au calcul complet", async (t) =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 100);
+    await stay(gite, {
+      date_entree: new Date("2022-01-10"),
+      date_sortie: new Date("2022-01-14"),
+      prix_total: 0,
+    });
+    let state = await reports.getReportWorkspace();
+    const originalMethod = db.default.$transaction;
+    const original = originalMethod.bind(db.default);
+    t.after(() => {
+      db.default.$transaction = originalMethod;
+    });
+    let reservationReads = 0;
+    db.default.$transaction = async (work, options) =>
+      original(
+        async (tx) =>
+          work(
+            new Proxy(tx, {
+              get(target, model) {
+                if (model !== "reservation") return Reflect.get(target, model);
+                return new Proxy(target.reservation, {
+                  get(delegate, operation) {
+                    if (operation !== "findMany")
+                      return Reflect.get(delegate, operation);
+                    return (args) => {
+                      reservationReads++;
+                      return delegate.findMany(args);
+                    };
+                  },
+                });
+              },
+            }),
+          ),
+        options,
+      );
+    const assertReminders = async () => {
+      const cache = await db.default.financeReportCache.findFirstOrThrow();
+      const summaries = JSON.parse(cache.reminders_json!);
+      for (const [year, reminders] of Object.entries(summaries))
+        assert.deepEqual(
+          reminders,
+          buildReportReminders(state, Number(year), cache.calculated_at!),
+        );
+    };
+    const reportId = social(state).id;
+    state = await mutate(state, { type: "ready", reportId });
+    assert.equal(reservationReads, 0);
+    await assertReminders();
+    state = await mutate(state, { type: "confirm", reportId });
+    assert.equal(reservationReads, 0);
+    await assertReminders();
+    assert.equal(
+      state.progress[reportPeriodKey(social(state), "2026-10")].snapshot?.result
+        .total,
+      10000,
+    );
+    const nightReport = state.reports.find(
+      (report) => report.kind === "tourist",
+    )!;
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: nightReport.id,
+    });
+    assert.equal(
+      reservationReads,
+      0,
+      "un suivi d’occupation prêt ne reconstruit pas un registre qui ne sera pas archivé",
+    );
+    await assertReminders();
+
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: { nb_adultes: 3 },
+    });
+    await assert.rejects(
+      mutate(state, { type: "favorite", reportId, favorite: false }),
+      /Les données ont changé/,
+    );
+    assert.ok(reservationReads > 0);
+  }));
+
+test("les adresses, tarifs à la nuit et origines invalident le cache sans réagir aux mises à jour sans effet", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite);
+    let state = await reports.getReportWorkspace();
+    for (const update of [
+      () =>
+        db.default.gite.update({
+          where: { id: gite },
+          data: { adresse_ligne1: "Nouvelle adresse" },
+        }),
+      () =>
+        db.default.gite.update({
+          where: { id: gite },
+          data: { adresse_ligne2: "Bâtiment B" },
+        }),
+      () =>
+        db.default.reservation.update({
+          where: { id: reservation.id },
+          data: { prix_par_nuit: 30 },
+        }),
+      () =>
+        db.default.reservation.update({
+          where: { id: reservation.id },
+          data: { origin_system: "legacy" },
+        }),
+    ]) {
+      const before = await db.default.financeReportCache.findFirstOrThrow();
+      await update();
+      const changed = await db.default.financeReportCache.findFirstOrThrow();
+      assert.ok(changed.source_revision > before.source_revision);
+      assert.equal(
+        (await reportCache.getStoredReportReminders(2026)).stale,
+        true,
+      );
+      state = await reports.getReportWorkspace();
+      const refreshed = await db.default.financeReportCache.findFirstOrThrow();
+      await update();
+      assert.equal(
+        (await db.default.financeReportCache.findFirstOrThrow())
+          .source_revision,
+        refreshed.source_revision,
+      );
+    }
+    assert.ok(state.factsRevision);
+  }));
+
+test("les commandes HTTP peuvent répondre sans renvoyer les opérations, avec compatibilité et conflits conservés", () =>
+  fixture(async ({ gite, org }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 100);
+    const before = await reports.getReportWorkspace();
+    const { default: express } = await import("express");
+    const { default: router } =
+      await import("../src/modules/finance/reports/routes.js");
+    const app = express();
+    app.use(express.json());
+    app.use((_req, _res, next) => inOrg(org, next));
+    app.use("/reports", router);
+    app.use(((error, _req, res, _next) => {
+      res.status(error.statusCode ?? 500).json({ error: error.message });
+    }) as import("express").ErrorRequestHandler);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const url = `http://127.0.0.1:${address.port}/reports/commands`;
+    const payload = {
+      revision: before.revision,
+      factsRevision: before.factsRevision,
+      month: "2026-10",
+      command: { type: "ready", reportId: social(before).id },
+    };
+    const post = (suffix: string, body: unknown) =>
+      fetch(url + suffix, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      const response = await post("?response=changes", payload);
+      assert.equal(response.status, 200);
+      const changes = await response.json();
+      assert.equal(changes.type, "report-workspace-changes");
+      assert.equal("operations" in changes, false);
+      const state = await reports.getReportWorkspace();
+      assert.deepEqual(
+        JSON.parse(
+          JSON.stringify(applyReportWorkspaceChanges(before, changes)),
+        ),
+        JSON.parse(JSON.stringify(state)),
+      );
+      assert.equal((await post("?response=changes", payload)).status, 409);
+      const legacy = await post("", {
+        ...payload,
+        revision: state.revision,
+        command: {
+          type: "favorite",
+          reportId: social(state).id,
+          favorite: false,
+        },
+      });
+      assert.equal(legacy.status, 200);
+      assert.deepEqual((await legacy.json()).operations, state.operations);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  }));
 
 // Existing declaration scenarios explicitly acknowledge genuinely unpaid balances.
 // Tests for the new validation barrier use mutate directly.

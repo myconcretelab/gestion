@@ -2,7 +2,7 @@ import {
   BOOKING_SOURCES,
   createReport,
   type ReportDefinition,
-  type ReportState,
+  type ReportConfigurationData,
   type ReportWorkspaceData,
 } from "@contrats/shared";
 import type { TenantTransactionClient } from "../../../db/prisma.js";
@@ -12,19 +12,7 @@ import {
 } from "../../organizations/context.js";
 import { readDeclarationNightsSettings } from "../../../services/declarationNightsSettings.js";
 
-export type ReportConfiguration = Pick<
-  ReportState,
-  | "taxRemittances"
-  | "paymentReviews"
-  | "reports"
-  | "overrides"
-  | "progress"
-  | "worklistStartMonth"
-  | "nightSettingsVersion"
-  | "nightSettingsWarnings"
-  | "nightRegisterCompletions"
-  | "nightRegisterCompletionRevisions"
->;
+export type ReportConfiguration = ReportConfigurationData;
 type Configuration = ReportConfiguration;
 function initialConfiguration(
   facts: Pick<ReportWorkspaceData, "properties" | "operators">,

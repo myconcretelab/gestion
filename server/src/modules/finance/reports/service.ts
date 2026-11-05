@@ -19,8 +19,8 @@ import {
   readReportConfiguration as read,
   type ReportConfiguration as Configuration,
 } from "./configuration.js";
-import { loadReportFacts } from "./facts.js";
-import { reportCacheIsCurrent, storeReportCalculation } from "./cache.js";
+import { loadReportFacts, reportFactsFromWorkspace } from "./facts.js";
+import { readReportCalculation, storeReportCalculation } from "./cache.js";
 import {
   applyRemittanceCommand,
   removeUncommittedReceipt,
@@ -125,13 +125,8 @@ export function getReportWorkspace(
     prisma.$transaction(
       async (db) => {
         const now = options.now ?? new Date();
-        const cache = await db.financeReportCache.findFirst();
-        if (
-          !options.force &&
-          reportCacheIsCurrent(cache, now) &&
-          cache?.workspace_json
-        )
-          return JSON.parse(cache.workspace_json) as ReportWorkspaceData;
+        const { workspace } = await readReportCalculation(db, now);
+        if (!options.force && workspace) return workspace;
         const facts = await loadReportFacts(db, now);
         const { store, config } = await read(db, facts);
         return storeReportCalculation(
@@ -173,7 +168,17 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
   try {
     const result = await prisma.$transaction(
       async (db) => {
-        const facts = await loadReportFacts(db);
+        const now = new Date();
+        const calculation = await readReportCalculation(db, now);
+        const cached =
+          calculation.workspace?.revision === payload.revision
+            ? calculation.workspace
+            : null;
+        // Serializable transactions and database source revisions protect cached facts
+        // against concurrent edits; changed sources always take the full calculation path.
+        const facts = cached
+          ? reportFactsFromWorkspace(cached)
+          : await loadReportFacts(db, now);
         const { store, config } = await read(db, facts);
         if (
           (store?.revision ?? 0) !== payload.revision ||
@@ -478,7 +483,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 400,
               );
             const register =
-              report.kind === "tourist"
+              report.kind === "tourist" &&
+              (report.nightDeclaration || command.type !== "ready")
                 ? await buildNightRegister(db, report, month, config, facts)
                 : undefined;
             if (report.nightDeclaration && register?.incompleteCount)
@@ -601,7 +607,16 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
         return storeReportCalculation(
           db,
           response(config, facts, revision),
-          new Date(),
+          now,
+          cached &&
+            calculation.cache?.reminders_json &&
+            command.type !== "save" &&
+            command.type !== "worklist-start"
+            ? {
+                remindersJson: calculation.cache.reminders_json,
+                reportIds: "reportId" in command ? [command.reportId] : [],
+              }
+            : undefined,
         );
       },
       { isolationLevel: "Serializable", timeout: 30_000 },

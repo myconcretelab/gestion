@@ -12,6 +12,7 @@ import {
   evaluateReport,
   reportPeriodKey,
   reportMutationSchema,
+  reportWorkspaceChanges,
   buildReportReminders,
   parseAirbnbCsv,
   findOtaRoundingAdjustment,
@@ -911,7 +912,11 @@ try {
             }
           }
           state.revision++;
-          body = state;
+          assert.equal(
+            new URL(request.url()).searchParams.get("response"),
+            "changes",
+          );
+          body = reportWorkspaceChanges(state, payload.revision);
         }
       } else if (
         pathname === "/api/reservations/reservation-extra/reporting-allocation"

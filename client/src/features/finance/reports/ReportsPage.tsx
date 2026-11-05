@@ -8,9 +8,11 @@ import {
 } from "react-router-dom";
 import {
   reportDraftSchema,
+  applyReportWorkspaceChanges,
   type ReportCommand,
   type ReportDefinition,
   type ReportWorkspaceData,
+  type ReportWorkspaceChanges,
 } from "@contrats/shared";
 import {
   canCurrentUserWritePage,
@@ -145,10 +147,10 @@ export default function ReportsPage() {
     setSaving(true);
     setError("");
     try {
-      const data = await apiFetch<ReportWorkspaceData>(
+      const data = await apiFetch<ReportWorkspaceData | ReportWorkspaceChanges>(
         command.type === "remittance-receipt"
-          ? "/reports/receipts"
-          : "/reports/commands",
+          ? "/reports/receipts?response=changes"
+          : "/reports/commands?response=changes",
         {
           method: "POST",
           json: {
@@ -159,7 +161,11 @@ export default function ReportsPage() {
           },
         },
       );
-      setState((previous) => ({ ...data, drafts: previous?.drafts ?? {} }));
+      const next =
+        "type" in data && data.type === "report-workspace-changes"
+          ? applyReportWorkspaceChanges(current.current ?? before, data)
+          : (data as ReportWorkspaceData);
+      setState((previous) => ({ ...next, drafts: previous?.drafts ?? {} }));
       return true;
     } catch (failure) {
       if (isApiError(failure) && failure.status === 409) {
