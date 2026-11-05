@@ -28,6 +28,7 @@ export type ReportReminder = {
   kind: "social" | "tourist";
   total: number;
   canCopy: boolean;
+  stale?: boolean;
 };
 
 export type ReportRemindersResponse = {
@@ -51,7 +52,11 @@ export function buildReportReminders(
 ): ReportReminder[] {
   const today = todayFormatter.format(now);
   const currentYear = Number(today.slice(0, 4));
-  if (year > currentYear) return [];
+  if (
+    year > currentYear ||
+    (state.year !== undefined && state.year !== year && state.year !== year - 1)
+  )
+    return [];
   const reminders: ReportReminder[] = [];
   for (const report of state.reports) {
     if (report.kind !== "social" && report.kind !== "tourist") continue;
@@ -108,9 +113,12 @@ export function buildReportReminders(
     const periods = new Map<string, string>();
     // Keep December / Q4 / the previous year reachable after the year changes.
     const candidates = [
-      ...(year === currentYear ? [`${year - 1}-12`] : []),
+      ...(year === currentYear &&
+      (state.year === undefined || state.year === year - 1)
+        ? [`${year - 1}-12`]
+        : []),
       ...Array.from(
-        { length: 12 },
+        { length: state.year === undefined || state.year === year ? 12 : 0 },
         (_, index) => `${year}-${String(index + 1).padStart(2, "0")}`,
       ),
     ];

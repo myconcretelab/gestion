@@ -18,6 +18,7 @@ import { fromJsonString } from "../../../utils/jsonFields.js";
 import { buildReportScope } from "./scope.js";
 import { reportOptionsSignature, storedAllocation } from "./allocation.js";
 import type { OptionsInput } from "../../../services/contractCalculator.js";
+import { loadReportYearReservations } from "./yearScope.js";
 import { endedStayPaymentAlert } from "./paymentAlerts.js";
 
 const cents = (amount: number) => Math.round(amount * 100);
@@ -63,26 +64,29 @@ type SavedOptionDetail = {
 export async function loadReportFacts(
   db: TenantTransactionClient = prisma,
   now = new Date(),
+  year = Number(paymentDayFormatter.format(now).slice(0, 4)),
 ) {
+  const reservations = await loadReportYearReservations(db, year);
+  const reservationIds = reservations.map((row) => row.id);
   const [
     gites,
     managerRows,
-    reservations,
     quotes,
     socialHistory,
     nightHistory,
     cardModes,
+    unassigned,
   ] = await Promise.all([
     db.gite.findMany({
       orderBy: [{ ordre: "asc" }, { id: "asc" }],
       include: { fiscal_establishment: { include: { fiscal_entity: true } } },
     }),
     db.gestionnaire.findMany({ orderBy: [{ nom: "asc" }, { id: "asc" }] }),
-    db.reservation.findMany({
-      orderBy: [{ date_entree: "asc" }, { id: "asc" }],
-    }),
     db.bookingRequest.findMany({
-      where: { status: "approved", approved_reservation_id: { not: null } },
+      where: {
+        status: "approved",
+        approved_reservation_id: { in: reservationIds },
+      },
       select: {
         approved_reservation_id: true,
         options: true,
@@ -91,23 +95,42 @@ export async function loadReportFacts(
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     }),
     db.urssafDeclaration.findMany({
+      where: { year },
       include: { gestionnaire: true },
       orderBy: [{ year: "desc" }, { month: "desc" }],
     }),
     db.guestNightDeclaration.findMany({
+      where: { year },
       include: { gite: true },
       orderBy: [{ year: "desc" }, { month: "desc" }],
     }),
     db.bookingPayment.findMany({
-      where: { paid_at: { not: null } },
+      where: {
+        paid_at: { not: null },
+        OR: [
+          { reservation_id: { in: reservationIds } },
+          {
+            booking_request: {
+              is: {
+                approved_reservation_id: { in: reservationIds },
+                status: "approved",
+              },
+            },
+          },
+        ],
+      },
       select: { id: true, stripe_mode: true },
+    }),
+    db.reservation.findFirst({
+      where: { gite_id: null },
+      select: { id: true },
     }),
   ]);
   const { managers, operators, properties } = buildReportScope(
     gites,
     managerRows,
   );
-  if (reservations.some((row) => !row.gite_id))
+  if (unassigned)
     properties.push({
       id: "unassigned",
       name: "Sans logement",
@@ -130,7 +153,7 @@ export async function loadReportFacts(
       ...(groups.get(row.stay_group_id ?? row.id) ?? []),
       row,
     ]);
-  const operations: ReportOperation[] = [];
+  let operations: ReportOperation[] = [];
   const stayPaymentAlerts: ReportPaymentAlert[] = [];
   for (const rows of groups.values()) {
     const first = rows[0];
@@ -153,7 +176,15 @@ export async function loadReportFacts(
       testCardIds,
       now,
     );
-    if (paymentAlert) stayPaymentAlerts.push(paymentAlert);
+    if (
+      paymentAlert &&
+      rows.some(
+        (row) =>
+          day(row.date_entree) < `${year + 1}-01-01` &&
+          day(row.date_sortie) > `${year}-01-01`,
+      )
+    )
+      stayPaymentAlerts.push(paymentAlert);
     const options = fromJsonString<OptionsInput>(first.options, {});
     const nights = sum(rows.map((row) => row.nb_nuits));
     const base = rows.map((row) => Math.max(0, cents(Number(row.prix_total))));
@@ -588,6 +619,12 @@ export async function loadReportFacts(
         });
     }
   }
+  operations = operations.filter((row) =>
+    (row.basis === "payment"
+      ? (row.paymentDate ?? row.stayDate)
+      : row.stayDate
+    ).startsWith(`${year}-`),
+  );
   operations.sort((a, b) => a.id.localeCompare(b.id));
   const operatorIssues = Object.fromEntries(
     gites
@@ -633,6 +670,7 @@ export async function loadReportFacts(
   const factsRevision = createHash("sha256")
     .update(
       JSON.stringify({
+        year,
         properties,
         operators,
         managers,
@@ -666,6 +704,7 @@ export async function loadReportFacts(
     })),
   ];
   return {
+    year,
     properties,
     operators,
     managers,
@@ -685,6 +724,7 @@ export function reportFactsFromWorkspace(
   state: ReportWorkspaceData,
 ): Awaited<ReturnType<typeof loadReportFacts>> {
   const {
+    year = Number(paymentDayFormatter.format(new Date()).slice(0, 4)),
     properties,
     operators,
     managers = [],
@@ -699,6 +739,7 @@ export function reportFactsFromWorkspace(
     legacyDeclarations,
   } = state;
   return {
+    year,
     properties,
     operators,
     managers,

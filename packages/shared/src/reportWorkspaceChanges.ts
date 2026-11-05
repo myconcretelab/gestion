@@ -21,6 +21,7 @@ export type ReportConfigurationData = Pick<
 export type ReportWorkspaceChanges = {
   type: "report-workspace-changes";
   organizationId: string;
+  year?: number;
   baseRevision: number;
   revision: number;
   factsRevision: string;
@@ -37,6 +38,7 @@ export function reportWorkspaceChanges(
   return {
     type: "report-workspace-changes",
     organizationId: state.organizationId,
+    year: state.year,
     baseRevision,
     revision: state.revision,
     factsRevision: state.factsRevision,
@@ -54,6 +56,7 @@ export function applyReportWorkspaceChanges(
 ): ReportWorkspaceData {
   if (
     state.organizationId !== changes.organizationId ||
+    state.year !== changes.year ||
     state.revision !== changes.baseRevision ||
     state.factsRevision !== changes.factsRevision
   )

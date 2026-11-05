@@ -9,21 +9,28 @@ import {
 
 /** First run after a month boundary (or restart) catches up all closed periods. */
 export async function runMonthlyReportCalculation(now = new Date()) {
-  const cache = await prisma.financeReportCache.findFirst({
-    select: {
-      calculated_at: true,
-      calculated_month: true,
-      engine_version: true,
-    },
-  });
-  if (
-    cache?.calculated_at &&
-    cache.calculated_month === reportCalculationMonth(now) &&
-    cache.engine_version === REPORT_CACHE_VERSION
-  )
-    return { calculated: false };
-  await getReportWorkspace({ force: true, now });
-  return { calculated: true };
+  const year = Number(reportCalculationMonth(now).slice(0, 4));
+  let calculated = false;
+  // Previous-year closing periods remain available after New Year, in a separate cache.
+  for (const scopeYear of [year - 1, year]) {
+    const cache = await prisma.financeReportYearCache.findFirst({
+      where: { year: scopeYear },
+      select: {
+        calculated_at: true,
+        calculated_month: true,
+        engine_version: true,
+      },
+    });
+    if (
+      cache?.calculated_at &&
+      cache.calculated_month === reportCalculationMonth(now) &&
+      cache.engine_version === REPORT_CACHE_VERSION
+    )
+      continue;
+    await getReportWorkspace({ force: true, now, year: scopeYear });
+    calculated = true;
+  }
+  return { calculated };
 }
 
 export const runReportAutomationTick = (now = new Date()) =>

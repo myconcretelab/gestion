@@ -87,8 +87,9 @@ export default function ReportsToDo({
             <span className="rp-todo-count">{filtered.length}</span>
           </h2>
           <p>
-            Retrouvez chaque gestionnaire dans son mois. Les rapports confirmés
-            et les écarts résolus quittent automatiquement la liste.
+            Retrouvez les rapports de l’année sélectionnée, regroupés par mois
+            et gestionnaire. Les rapports confirmés et les écarts résolus
+            quittent automatiquement la liste.
           </p>
         </div>
         <label className="rp-search">
@@ -103,6 +104,25 @@ export default function ReportsToDo({
         </label>
       </div>
       <div className="rp-todo-filters">
+        <label>
+          <span>Année</span>
+          <select
+            aria-label="Année des rapports"
+            value={state.year ?? workspace.month.slice(0, 4)}
+            disabled={workspace.saving || workspace.loading}
+            onChange={(event) =>
+              workspace.setMonth(
+                `${event.target.value}-${workspace.month.slice(5)}`,
+              )
+            }
+          >
+            {Array.from({ length: 100 }, (_, i) => 2000 + i).map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           <span>Mois</span>
           <select

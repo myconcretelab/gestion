@@ -82,34 +82,38 @@ export default function ReportsPage() {
   }).format(new Date());
   const candidate = params.get("periode") ?? now;
   const month = /^20\d{2}-(0[1-9]|1[0-2])$/.test(candidate) ? candidate : now;
+  const year = Number(month.slice(0, 4));
   const notify = useCallback((message: string) => setNotice(message), []);
-  const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await apiFetch<ReportWorkspaceData>(
-        force ? "/reports?refresh=1" : "/reports",
-        { signal },
-      );
-      if (!signal?.aborted)
-        setState((previous) => ({
-          ...data,
-          drafts:
-            previous?.organizationId === data.organizationId
-              ? previous.drafts
-              : readDrafts(data.organizationId),
-        }));
-    } catch (failure) {
-      if (!signal?.aborted)
-        setError(
-          failure instanceof Error
-            ? failure.message
-            : "Chargement des rapports impossible.",
+  const refresh = useCallback(
+    async (signal?: AbortSignal, force = false) => {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await apiFetch<ReportWorkspaceData>(
+          `/reports?year=${year}${force ? "&refresh=1" : ""}`,
+          { signal },
         );
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+        if (!signal?.aborted)
+          setState((previous) => ({
+            ...data,
+            drafts:
+              previous?.organizationId === data.organizationId
+                ? previous.drafts
+                : readDrafts(data.organizationId),
+          }));
+      } catch (failure) {
+        if (!signal?.aborted)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Chargement des rapports impossible.",
+          );
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [year],
+  );
   useEffect(() => {
     const controller = new AbortController();
     void refresh(controller.signal);
@@ -138,6 +142,8 @@ export default function ReportsPage() {
     const before = current.current;
     if (
       !before ||
+      before.year !== year ||
+      Number(period.slice(0, 4)) !== year ||
       loading ||
       lock.current ||
       !canCurrentUserWritePage("statistics")
@@ -182,43 +188,46 @@ export default function ReportsPage() {
       setSaving(false);
     }
   };
-  const workspace: ReportWorkspace | null = state
-    ? {
-        state,
-        error,
-        month,
-        mutate,
-        saving,
-        loading,
-        refresh: () => refresh(undefined, true),
-        setDraft: (key, definition) =>
-          setState((previous) => {
-            if (!previous) return previous;
-            const drafts = { ...previous.drafts };
-            if (definition) drafts[key] = definition;
-            else delete drafts[key];
-            return { ...previous, drafts };
-          }),
-        setMonth: (value) => {
-          if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(value))
-            setParams((previous) => {
-              const next = new URLSearchParams(previous);
-              next.set("periode", value);
-              return next;
-            });
-        },
-        href: (path = "", period = month) => {
-          const next = new URLSearchParams(params);
-          next.set("periode", period);
-          return `/rapports${path}?${next}`;
-        },
-        canEdit: canCurrentUserWritePage("statistics"),
-        notify,
-        storageError,
-        propertyName: (id) =>
-          state.properties.find((property) => property.id === id)?.name ?? id,
-      }
-    : null;
+  const workspace: ReportWorkspace | null =
+    state && state.year === year
+      ? {
+          state,
+          error,
+          month,
+          mutate,
+          saving,
+          loading,
+          refresh: () => refresh(undefined, true),
+          setDraft: (key, definition) =>
+            setState((previous) => {
+              if (!previous) return previous;
+              const drafts = { ...previous.drafts };
+              if (definition) drafts[key] = definition;
+              else delete drafts[key];
+              return { ...previous, drafts };
+            }),
+          setMonth: (value) => {
+            if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(value))
+              setParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("periode", value);
+                if (value.slice(0, 4) !== month.slice(0, 4))
+                  next.delete("mois");
+                return next;
+              });
+          },
+          href: (path = "", period = month) => {
+            const next = new URLSearchParams(params);
+            next.set("periode", period);
+            return `/rapports${path}?${next}`;
+          },
+          canEdit: canCurrentUserWritePage("statistics"),
+          notify,
+          storageError,
+          propertyName: (id) =>
+            state.properties.find((property) => property.id === id)?.name ?? id,
+        }
+      : null;
   return (
     <div className="reports-workspace" aria-busy={loading || saving}>
       {error && (

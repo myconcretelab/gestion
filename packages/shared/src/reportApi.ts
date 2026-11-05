@@ -289,6 +289,8 @@ export type LegacyReportDeclaration = {
   propertyIds?: string[];
 };
 export type ReportWorkspaceData = ReportState & {
+  /** Source operations are limited to this calendar year. */
+  year?: number;
   calculatedAt?: string;
   organizationId: string;
   revision: number;

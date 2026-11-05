@@ -149,7 +149,9 @@ export default function ReservationDeclarationReminders({
         </h2>
         <Link
           className="reservation-declarations__all"
-          to={visible[0] ? `/rapports?periode=${visible[0].month}` : "/rapports"}
+          to={
+            visible[0] ? `/rapports?periode=${visible[0].month}` : "/rapports"
+          }
         >
           Tous les rapports <ReportIcon name="arrow" />
         </Link>
@@ -179,13 +181,15 @@ export default function ReservationDeclarationReminders({
             <span
               className={`reservation-declarations__status${item.status === "review" || item.status === "changed" ? " is-review" : ""}`}
             >
-              {item.status === "changed"
-                ? "Écart à examiner"
-                : item.status === "review"
-                  ? `${item.reviewCount} à vérifier`
-                  : item.status === "ready"
-                    ? "Prêt à déclarer"
-                    : "À préparer"}
+              {item.stale
+                ? "À actualiser"
+                : item.status === "changed"
+                  ? "Écart à examiner"
+                  : item.status === "review"
+                    ? `${item.reviewCount} à vérifier`
+                    : item.status === "ready"
+                      ? "Prêt à déclarer"
+                      : "À préparer"}
             </span>
             <div className="reservation-declarations__actions">
               {!stale && item.canCopy && (

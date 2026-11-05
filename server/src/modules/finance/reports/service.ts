@@ -20,7 +20,11 @@ import {
   type ReportConfiguration as Configuration,
 } from "./configuration.js";
 import { loadReportFacts, reportFactsFromWorkspace } from "./facts.js";
-import { readReportCalculation, storeReportCalculation } from "./cache.js";
+import {
+  readReportCalculation,
+  storeReportCalculation,
+  reportCalculationMonth,
+} from "./cache.js";
 import {
   applyRemittanceCommand,
   removeUncommittedReceipt,
@@ -82,6 +86,7 @@ function response(
       const report = config.reports.find((row) => key.startsWith(`${row.id}:`));
       if (!report || !value.ready || value.snapshot) return [key, value];
       const month = key.slice(report.id.length + 1, report.id.length + 8);
+      if (!month.startsWith(`${facts.year}-`)) return [key, value];
       const result = evaluate(config, facts, report, month);
       return [
         key,
@@ -112,10 +117,13 @@ const workspaceReads = new Map<
   { promise: Promise<ReportWorkspaceData>; forced: boolean }
 >();
 export function getReportWorkspace(
-  options: { force?: boolean; now?: Date } = {},
+  options: { force?: boolean; now?: Date; year?: number } = {},
 ): Promise<ReportWorkspaceData> {
   const organizationId = getOrganizationId();
-  const pending = workspaceReads.get(organizationId);
+  const now = options.now ?? new Date();
+  const year = options.year ?? Number(reportCalculationMonth(now).slice(0, 4));
+  const scopeKey = `${organizationId}:${year}`;
+  const pending = workspaceReads.get(scopeKey);
   if (pending) {
     if (options.force && !pending.forced)
       return pending.promise.then(() => getReportWorkspace(options));
@@ -124,10 +132,9 @@ export function getReportWorkspace(
   const calculate = () =>
     prisma.$transaction(
       async (db) => {
-        const now = options.now ?? new Date();
-        const { workspace } = await readReportCalculation(db, now);
+        const { workspace } = await readReportCalculation(db, now, year);
         if (!options.force && workspace) return workspace;
-        const facts = await loadReportFacts(db, now);
+        const facts = await loadReportFacts(db, now, year);
         const { store, config } = await read(db, facts);
         return storeReportCalculation(
           db,
@@ -153,10 +160,10 @@ export function getReportWorkspace(
     }
   };
   const request = run().finally(() => {
-    if (workspaceReads.get(organizationId)?.promise === request)
-      workspaceReads.delete(organizationId);
+    if (workspaceReads.get(scopeKey)?.promise === request)
+      workspaceReads.delete(scopeKey);
   });
-  workspaceReads.set(organizationId, {
+  workspaceReads.set(scopeKey, {
     promise: request,
     forced: Boolean(options.force),
   });
@@ -169,7 +176,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
     const result = await prisma.$transaction(
       async (db) => {
         const now = new Date();
-        const calculation = await readReportCalculation(db, now);
+        const year = Number(payload.month.slice(0, 4));
+        const calculation = await readReportCalculation(db, now, year);
         const cached =
           calculation.workspace?.revision === payload.revision
             ? calculation.workspace
@@ -178,7 +186,7 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
         // against concurrent edits; changed sources always take the full calculation path.
         const facts = cached
           ? reportFactsFromWorkspace(cached)
-          : await loadReportFacts(db, now);
+          : await loadReportFacts(db, now, year);
         const { store, config } = await read(db, facts);
         if (
           (store?.revision ?? 0) !== payload.revision ||
@@ -621,7 +629,8 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
       },
       { isolationLevel: "Serializable", timeout: 30_000 },
     );
-    workspaceReads.delete(getOrganizationId());
+    for (const key of workspaceReads.keys())
+      if (key.startsWith(`${getOrganizationId()}:`)) workspaceReads.delete(key);
     return result;
   } catch (error) {
     if (uploadedReceipt)

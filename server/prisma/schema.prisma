@@ -26,6 +26,7 @@ model Organization {
   ota_transactions OtaTransaction[]
   finance_report_store  FinanceReportStore?
   finance_report_cache  FinanceReportCache?
+  finance_report_year_caches FinanceReportYearCache[]
   jobs                  OrganizationJob[]
   job_attempts          OrganizationJobAttempt[]
   audit_logs            AuditLog[]
@@ -1201,6 +1202,7 @@ model Contrat {
 
   @@unique([organization_id, numero_contrat], map: "contrats_org_numero_key")
   @@index([reservation_id], map: "contrats_reservation_id_idx")
+  @@index([organization_id, date_paiement_arrhes], map: "contrats_org_date_paiement_arrhes_idx")
   @@map("contrats")
 }
 
@@ -1754,6 +1756,7 @@ model BookingPayment {
   booking_request       BookingRequest? @relation(fields: [booking_request_id], references: [id], onDelete: Restrict)
 
   @@index([organization_id, status, createdAt])
+  @@index([organization_id, paid_at], map: "booking_payments_org_paid_at_idx")
   @@map("booking_payments")
 }
 
@@ -1833,6 +1836,7 @@ model ReservationRecordedPayment {
   reservation Reservation @relation(fields: [reservation_id], references: [id], onDelete: Restrict)
 
   @@index([organization_id, reservation_id], map: "reservation_recorded_payments_org_reservation_idx")
+  @@index([organization_id, paid_on], map: "reservation_recorded_payments_org_paid_on_idx")
   @@map("reservation_recorded_payments")
 }
 
@@ -1862,6 +1866,22 @@ model FinanceReportCache {
   organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
   @@map("finance_report_caches")
+}
+
+// Annual source windows are stored separately, without reading other years' operations.
+model FinanceReportYearCache {
+  organization_id     String
+  year                Int
+  calculated_revision Int
+  engine_version      Int
+  calculated_at       DateTime
+  calculated_month    String
+  workspace_json      String
+  reminders_json      String
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@id([organization_id, year])
+  @@map("finance_report_year_caches")
 }
 
 // Immutable source amounts from an OTA statement. Import never rewrites reservation prices.

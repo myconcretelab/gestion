@@ -9,7 +9,7 @@ import { automaticPlatformReceiptThrough } from "../../reservationPayments/autom
 import { reportPaymentCheckDay } from "./paymentAlerts.js";
 
 // Bump when the calculation rules change, so saved data is rebuilt on the next visit.
-export const REPORT_CACHE_VERSION = 15;
+export const REPORT_CACHE_VERSION = 16;
 const monthFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Europe/Paris",
   year: "numeric",
@@ -37,18 +37,15 @@ export const reportCacheIsCurrent = (cache: CacheMetadata | null, now: Date) =>
 export async function readReportCalculation(
   db: TenantTransactionClient,
   now: Date,
+  year: number,
 ) {
-  const cache = await db.financeReportCache.findFirst({
-    select: {
-      source_revision: true,
-      calculated_revision: true,
-      engine_version: true,
-      calculated_at: true,
-      calculated_month: true,
-      workspace_json: true,
-      reminders_json: true,
-    },
-  });
+  const [source, annual] = await Promise.all([
+    db.financeReportCache.findFirst({ select: { source_revision: true } }),
+    db.financeReportYearCache.findFirst({ where: { year } }),
+  ]);
+  const cache = annual
+    ? { ...annual, source_revision: source?.source_revision ?? 0 }
+    : null;
   return {
     cache,
     workspace:
@@ -71,41 +68,24 @@ export async function storeReportCalculation(
   const source = await db.financeReportCache.findFirst({
     select: { source_revision: true },
   });
-  const currentYear = Number(reportCalculationMonth(now).slice(0, 4));
-  const years = [
-    currentYear,
-    ...state.operations
-      .flatMap((row) => [row.stayDate, row.paymentDate])
-      .filter((date): date is string => Boolean(date))
-      .map((date) => Number(date.slice(0, 4))),
-    ...state.legacyDeclarations.map((row) => Number(row.period.slice(0, 4))),
-    ...state.reports.flatMap((report) =>
-      Object.keys(state.progress)
-        .filter((key) => key.startsWith(`${report.id}:`))
-        .map((key) =>
-          Number(key.slice(report.id.length + 1, report.id.length + 5)),
-        ),
-    ),
-  ].filter(
-    (year) => Number.isInteger(year) && year >= 2000 && year <= currentYear,
-  );
+  const year = state.year!;
   const summaries: Record<string, ReturnType<typeof buildReportReminders>> = {};
-  const firstYear = years.reduce(
-    (first, year) => Math.min(first, year),
-    currentYear,
-  );
   const previous: typeof summaries = reuse
     ? JSON.parse(reuse.remindersJson)
     : {};
   const changedReports = reuse ? new Set(reuse.reportIds) : null;
   const reportOrder = new Map(state.reports.map((report, i) => [report.id, i]));
-  for (let year = firstYear; year <= currentYear; year++) {
-    if (!changedReports || !previous[year]) {
-      summaries[year] = buildReportReminders(state, year, now);
+  // The next year's small reminder projection keeps December / Q4 / annual closings
+  // reachable in January, without mixing two years of source operations.
+  for (const summaryYear of [year, year + 1]) {
+    if (!changedReports || !previous[summaryYear]) {
+      summaries[summaryYear] = buildReportReminders(state, summaryYear, now);
       continue;
     }
-    summaries[year] = [
-      ...previous[year].filter((row) => !changedReports.has(row.reportId)),
+    summaries[summaryYear] = [
+      ...previous[summaryYear].filter(
+        (row) => !changedReports.has(row.reportId),
+      ),
       ...buildReportReminders(
         {
           ...state,
@@ -113,7 +93,7 @@ export async function storeReportCalculation(
             changedReports.has(report.id),
           ),
         },
-        year,
+        summaryYear,
         now,
       ),
     ].sort(
@@ -133,9 +113,9 @@ export async function storeReportCalculation(
     workspace_json: JSON.stringify(workspace),
     reminders_json: JSON.stringify(summaries),
   };
-  await db.financeReportCache.upsert({
-    where: { organization_id: organizationId },
-    create: { organization_id: organizationId, ...data },
+  await db.financeReportYearCache.upsert({
+    where: { organization_id_year: { organization_id: organizationId, year } },
+    create: { organization_id: organizationId, year, ...data },
     update: data,
   });
   return workspace;
@@ -146,29 +126,51 @@ export async function getStoredReportReminders(
   year: number,
   now = new Date(),
 ): Promise<ReportRemindersResponse> {
-  const cache = await prisma.financeReportCache.findFirst({
-    select: {
-      source_revision: true,
-      calculated_revision: true,
-      engine_version: true,
-      calculated_at: true,
-      calculated_month: true,
-      reminders_json: true,
-    },
-  });
-  const stale = !reportCacheIsCurrent(cache, now) || !cache?.reminders_json;
-  const summaries = cache?.reminders_json
-    ? (JSON.parse(cache.reminders_json) as Record<
-        string,
-        ReportRemindersResponse["reminders"]
-      >)
-    : {};
+  const [source, caches] = await Promise.all([
+    prisma.financeReportCache.findFirst({ select: { source_revision: true } }),
+    prisma.financeReportYearCache.findMany({
+      where: { year: { in: [year - 1, year] } },
+      select: {
+        year: true,
+        calculated_revision: true,
+        engine_version: true,
+        calculated_at: true,
+        calculated_month: true,
+        reminders_json: true,
+      },
+      orderBy: { year: "asc" },
+    }),
+  ]);
+  const isStale = (cache: (typeof caches)[number]) =>
+    !reportCacheIsCurrent(
+      {
+        ...cache,
+        source_revision: source?.source_revision ?? 0,
+      },
+      now,
+    );
+  const current = caches.find((cache) => cache.year === year);
+  const stale = !current || isStale(current);
   return {
-    reminders: (summaries[year] ?? []).map((reminder) => ({
-      ...reminder,
-      canCopy: !stale && reminder.canCopy,
-    })),
+    reminders: caches
+      .flatMap((cache) => {
+        const summaries = JSON.parse(cache.reminders_json) as Record<
+          string,
+          ReportRemindersResponse["reminders"]
+        >;
+        return (summaries[year] ?? []).map((reminder) => ({
+          ...reminder,
+          canCopy: !stale && !isStale(cache) && reminder.canCopy,
+          ...(cache.year !== year && isStale(cache) ? { stale: true } : {}),
+        }));
+      })
+      .sort(
+        (a, b) =>
+          a.month.localeCompare(b.month) ||
+          a.name.localeCompare(b.name, "fr") ||
+          a.recipient.localeCompare(b.recipient, "fr"),
+      ),
     stale,
-    calculatedAt: cache?.calculated_at?.toISOString() ?? null,
+    calculatedAt: current?.calculated_at.toISOString() ?? null,
   };
 }

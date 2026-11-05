@@ -126,10 +126,17 @@ export function buildReportWorklist(
   now = new Date(),
 ): ReportWorkItem[] {
   const today = parisDay(now);
-  const firstDay = firstReportingDay(state, today);
+  const firstDay =
+    state.year === undefined
+      ? firstReportingDay(state, today)
+      : [firstReportingDay(state, today), `${state.year}-01-01`].sort().at(-1)!;
+  const end =
+    state.year === undefined
+      ? today
+      : [today, `${state.year + 1}-01-01`].sort()[0];
   const cursor = new Date(`${firstDay.slice(0, 7)}-01T00:00:00Z`);
   const periods = new Map<string, string>();
-  while (cursor.toISOString().slice(0, 10) < today) {
+  while (cursor.toISOString().slice(0, 10) < end) {
     const month = cursor.toISOString().slice(0, 7);
     periods.set(month, month);
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);

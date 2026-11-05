@@ -81,7 +81,7 @@ export async function buildNightRegister(
   config: Pick<ReportState, "overrides" | "nightRegisterCompletions">,
   facts?: Awaited<ReturnType<typeof loadReportFacts>>,
 ): Promise<NightRegister> {
-  facts ??= await loadReportFacts(db);
+  facts ??= await loadReportFacts(db, new Date(), Number(month.slice(0, 4)));
   if (
     report.propertyIds.some(
       (id) => !facts.properties.some((property) => property.id === id),

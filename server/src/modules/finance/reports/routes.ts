@@ -144,10 +144,13 @@ router.get("/night-summaries", async (req, res, next) => {
 });
 router.get("/", async (req, res, next) => {
   try {
-    const { refresh } = z
-      .object({ refresh: z.literal("1").optional() })
+    const { refresh, year } = z
+      .object({
+        refresh: z.literal("1").optional(),
+        year: z.coerce.number().int().min(2000).max(2099).optional(),
+      })
       .parse(req.query);
-    res.json(await getReportWorkspace({ force: refresh === "1" }));
+    res.json(await getReportWorkspace({ force: refresh === "1", year }));
   } catch (error) {
     next(error);
   }

@@ -163,6 +163,142 @@ const mutate = (
     "test-user",
   );
 
+test("le périmètre annuel exclut l’historique sans perdre les règlements de séjours d’autres années", () =>
+  fixture(async ({ gite }) => {
+    const old = await stay(gite, {
+      date_entree: new Date("2017-01-06"),
+      date_sortie: new Date("2017-01-10"),
+    });
+    const past = await stay(gite, {
+      date_entree: new Date("2025-10-06"),
+      date_sortie: new Date("2025-10-10"),
+    });
+    const future = await stay(gite, {
+      date_entree: new Date("2027-10-06"),
+      date_sortie: new Date("2027-10-10"),
+    });
+    await pay(old.id, 100, { paid_on: "2017-01-07" });
+    // Allocation must still account for payments in preceding years.
+    await pay(past.id, 40, { paid_on: "2025-10-07" });
+    await pay(past.id, 60);
+    await pay(future.id, 30);
+    const state = await reports.getReportWorkspace({ year: 2026 });
+    assert.equal(state.year, 2026);
+    assert.equal(
+      state.operations.some((row) => row.reservationId === old.id),
+      false,
+    );
+    assert.deepEqual(
+      new Set(state.operations.map((row) => row.reservationId)),
+      new Set([past.id, future.id]),
+    );
+    assert.equal(result(state).total, 9000);
+    assert.ok(
+      state.operations.every(
+        (row) =>
+          row.basis === "payment" && row.paymentDate?.startsWith("2026-"),
+      ),
+    );
+    assert.equal(state.stayPaymentAlerts?.length, 0);
+    const nights = state.reports.find((row) => row.kind === "tourist")!;
+    assert.equal(result(state, "2026-10", nights).total, 0);
+    const next = await reports.getReportWorkspace({ year: 2027 });
+    assert.equal(result(next, "2027-10", nights).total, 8);
+    assert.equal(result(next, "2027-10").total, 0);
+    const previous = await reports.getReportWorkspace({ year: 2025 });
+    assert.equal(result(previous, "2025-10").total, 4000);
+  }));
+
+test("la limite de l’année suit le jour français des paiements Stripe, même pour un séjour ancien", () =>
+  fixture(async ({ gite }) => {
+    const r = await stay(gite, {
+      date_entree: new Date("2020-10-06"),
+      date_sortie: new Date("2020-10-10"),
+    });
+    await db.default.bookingPayment.create({
+      data: {
+        reservation_id: r.id,
+        stripe_mode: "live",
+        purpose: "full",
+        amount_cents: 10000,
+        total_cents: 10000,
+        paid_amount_cents: 10000,
+        status: "paid",
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2026-01-10"),
+        paid_at: new Date("2025-12-31T23:30:00Z"),
+      },
+    });
+    const state = await reports.getReportWorkspace({ year: 2026 });
+    assert.equal(result(state, "2026-01").total, 10000);
+    assert.equal(state.operations[0].paymentDate, "2026-01-01");
+    assert.equal(
+      (await reports.getReportWorkspace({ year: 2025 })).operations.length,
+      0,
+    );
+  }));
+
+test("les caches d’années et leurs calculs simultanés restent distincts et les anciennes préparations sont préservées", () =>
+  fixture(async ({ gite }) => {
+    const r = await stay(gite);
+    await pay(r.id, 100);
+    let state = await reports.getReportWorkspace({ year: 2026 });
+    state = await mutate(state, { type: "ready", reportId: social(state).id });
+    const key = reportPeriodKey(social(state), "2026-10");
+    const [current, previous] = await Promise.all([
+      reports.getReportWorkspace({ year: 2026 }),
+      reports.getReportWorkspace({ year: 2025 }),
+    ]);
+    assert.equal(current.year, 2026);
+    assert.equal(previous.year, 2025);
+    assert.equal(previous.operations.length, 0);
+    assert.equal(previous.progress[key].ready, true);
+    assert.deepEqual(await reports.getReportWorkspace({ year: 2026 }), current);
+    assert.equal(await db.default.financeReportYearCache.count(), 2);
+    assert.deepEqual(previous.progress[key], state.progress[key]);
+    await assert.rejects(
+      mutate(previous, { type: "confirm", reportId: social(state).id }),
+      /données ont changé/,
+    );
+    assert.ok(
+      buildReportWorklist(previous).every((row) =>
+        row.month.startsWith("2025-"),
+      ),
+    );
+    assert.ok(
+      buildReportWorklist(current).every((row) =>
+        row.month.startsWith("2026-"),
+      ),
+    );
+  }));
+
+test("un rappel périmé de décembre ne bloque pas la copie des rappels actualisés de l’année courante", () =>
+  fixture(async ({ gite }) => {
+    const past = await stay(gite, {
+      date_entree: new Date("2025-12-05"),
+      date_sortie: new Date("2025-12-09"),
+    });
+    await pay(past.id, 100, { paid_on: "2025-12-06" });
+    const r = await stay(gite);
+    await pay(r.id, 100);
+    await reports.getReportWorkspace({ year: 2025 });
+    let state = await reports.getReportWorkspace({ year: 2026 });
+    state = await mutate(state, { type: "ready", reportId: social(state).id });
+    const reminders = await reportCache.getStoredReportReminders(2026);
+    assert.equal(reminders.stale, false);
+    const previous = reminders.reminders.find(
+      (row) => row.month === "2025-12" && row.kind === "social",
+    )!;
+    assert.equal(previous.stale, true);
+    assert.equal(previous.canCopy, false);
+    assert.equal(
+      reminders.reminders.find(
+        (row) => row.month === "2026-10" && row.kind === "social",
+      )?.canCopy,
+      true,
+    );
+  }));
+
 test("prêt et confirmation réutilisent les sources contrôlées et les rappels incrémentaux restent identiques au calcul complet", async (t) =>
   fixture(async ({ gite }) => {
     const reservation = await stay(gite);
@@ -202,7 +338,9 @@ test("prêt et confirmation réutilisent les sources contrôlées et les rappels
         options,
       );
     const assertReminders = async () => {
-      const cache = await db.default.financeReportCache.findFirstOrThrow();
+      const cache = await db.default.financeReportYearCache.findFirstOrThrow({
+        where: { year: state.year },
+      });
       const summaries = JSON.parse(cache.reminders_json!);
       for (const [year, reminders] of Object.entries(summaries))
         assert.deepEqual(
@@ -326,6 +464,11 @@ test("les commandes HTTP peuvent répondre sans renvoyer les opérations, avec c
         body: JSON.stringify(body),
       });
     try {
+      const annual = await fetch(url.replace("/commands", "?year=2027"));
+      assert.equal(annual.status, 200);
+      assert.equal((await annual.json()).year, 2027);
+      const invalid = await fetch(url.replace("/commands", "?year=1999"));
+      assert.notEqual(invalid.status, 200);
       const response = await post("?response=changes", payload);
       assert.equal(response.status, 200);
       const changes = await response.json();
@@ -1071,7 +1214,11 @@ test("les versements OTA arrivés sont inclus à J+1, y compris les changements 
       now: new Date("2028-03-01T12:00:00Z"),
     });
     for (const [index, [, , date]] of cases.entries()) {
-      const period = result(state, date.slice(0, 7));
+      const annual = await reports.getReportWorkspace({
+        year: Number(date.slice(0, 4)),
+        now: new Date("2028-03-01T12:00:00Z"),
+      });
+      const period = result(annual, date.slice(0, 7));
       const payment = period.rows.find(
         (row) => row.reservationId === ids[index],
       )!;
@@ -1088,6 +1235,7 @@ test("les versements OTA arrivés sont inclus à J+1, y compris les changements 
       data: { date_entree: new Date("2026-10-31") },
     });
     const changed = await reports.getReportWorkspace({
+      year: 2026,
       now: new Date("2028-03-01T12:00:00Z"),
     });
     assert.equal(result(changed).total, 0);
@@ -1189,7 +1337,7 @@ test("les anciennes déclarations sont reprises sans reconstruction de leurs op�
     await db.default.guestNightDeclaration.create({
       data: { year: 2025, month: 12, gite_id: gite, guest_nights: 12 },
     });
-    const state = await reports.getReportWorkspace();
+    const state = await reports.getReportWorkspace({ year: 2025 });
     assert.equal(
       state.legacyDeclarations.find((row) => row.kind === "social")?.value,
       12345,
@@ -2944,6 +3092,9 @@ test("ventilation proposée : perception confirmée répartie entre années, tau
     };
     state = await mutate(state, { type: "save", definition }, "2026-12");
     for (const month of ["2026-12", "2027-01"]) {
+      state = await reports.getReportWorkspace({
+        year: Number(month.slice(0, 4)),
+      });
       let register = await nightRegister.getNightRegister(definition.id, month);
       const row = register.rows[0],
         proposal = row.allocationProposal!;
@@ -4827,7 +4978,7 @@ test("séjour sans règlement : alerte visible, barrière serveur, justification
       date_sortie: new Date("2020-10-11"),
       nb_nuits: 2,
     });
-    let state = await reports.getReportWorkspace();
+    let state = await reports.getReportWorkspace({ year: 2020 });
     const reportId = social(state).id;
     assert.equal(result(state, month).total, 0);
     assert.equal(result(state, month).rows.length, 0);
@@ -4866,7 +5017,7 @@ test("séjour sans règlement : alerte visible, barrière serveur, justification
     assert.equal(frozen.result.total, 0);
     assert.equal(frozen.result.paymentReview?.note, note);
     await pay(r.id, 100, { paid_on: "2020-10-10" });
-    state = await reports.getReportWorkspace();
+    state = await reports.getReportWorkspace({ year: 2020 });
     assert.equal(result(state, month).paymentAlerts, undefined);
     assert.equal(result(state, month).total, 10000);
     assert.deepEqual(state.progress[key].snapshot, frozen);
@@ -4878,7 +5029,8 @@ test("séjour sans règlement : alerte visible, barrière serveur, justification
     );
     await fixture(async () =>
       assert.equal(
-        (await reports.getReportWorkspace()).stayPaymentAlerts?.length,
+        (await reports.getReportWorkspace({ year: 2020 })).stayPaymentAlerts
+          ?.length,
         0,
       ),
     );
@@ -4891,7 +5043,7 @@ test("la justification d’un impayé et la préparation deviennent caduques si 
       date_entree: new Date("2020-10-09"),
       date_sortie: new Date("2020-10-11"),
     });
-    let state = await reports.getReportWorkspace();
+    let state = await reports.getReportWorkspace({ year: 2020 });
     const reportId = social(state).id;
     const signature = reportPaymentAlertSignature(result(state, month));
     state = await mutate(
@@ -4906,7 +5058,7 @@ test("la justification d’un impayé et la préparation deviennent caduques si 
     );
     state = await mutate(state, { type: "ready", reportId }, month);
     await pay(r.id, 30, { paid_on: "2020-10-10" });
-    state = await reports.getReportWorkspace();
+    state = await reports.getReportWorkspace({ year: 2020 });
     assert.equal(result(state, month).paymentAlerts?.[0].remainingCents, 7000);
     assert.equal(result(state, month).paymentReview, undefined);
     assert.equal(
@@ -4961,7 +5113,7 @@ test("un séjour terminé réglé par Stripe live ou versement automatique ne de
       date_entree: new Date("2020-10-09"),
       date_sortie: new Date("2020-10-11"),
     });
-    const state = await reports.getReportWorkspace();
+    const state = await reports.getReportWorkspace({ year: 2020 });
     assert.deepEqual(
       state.stayPaymentAlerts?.map((row) => row.guest),
       ["test"],

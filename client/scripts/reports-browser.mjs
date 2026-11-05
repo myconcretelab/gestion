@@ -61,6 +61,7 @@ function data() {
   return {
     version: 3,
     organizationId: "org_browser_test",
+    year: 2026,
     revision: 0,
     factsRevision: "facts-v1",
     properties: [
@@ -727,6 +728,13 @@ try {
         } else body = fixture.nightRegister;
       } else if (pathname === "/api/reports" && method === "GET") {
         fixture.reads++;
+        const requestedYear = Number(
+          new URL(request.url()).searchParams.get("year"),
+        );
+        assert.ok(requestedYear >= 2000 && requestedYear <= 2099);
+        fixture.reportYearQueries ??= [];
+        fixture.reportYearQueries.push(requestedYear);
+        fixture.state.year = requestedYear;
         fixture.reportRefreshQueries.push(
           new URL(request.url()).searchParams.get("refresh"),
         );
@@ -1945,6 +1953,24 @@ try {
     3,
   );
   assert.equal(await worklist.locator(".rp-overview-top").count(), 0);
+  const readsBeforeYearChange = worklistFixture.reads;
+  await worklist
+    .getByLabel("Année des rapports", { exact: true })
+    .selectOption("2025");
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(
+    await worklist
+      .getByLabel("Année des rapports", { exact: true })
+      .inputValue(),
+    "2025",
+  );
+  assert.equal(worklistFixture.reportYearQueries.at(-1), 2025);
+  await worklist
+    .getByLabel("Année des rapports", { exact: true })
+    .selectOption("2026");
+  await worklist.getByRole("heading", { name: /Rapports à traiter/ }).waitFor();
+  assert.equal(worklistFixture.reportYearQueries.at(-1), 2026);
+  assert.equal(worklistFixture.reads, readsBeforeYearChange + 2);
   await capture(worklist, "reports-todo-desktop.png");
   await noOverflow(worklist);
   await worklist.setViewportSize({ width: 390, height: 844 });
@@ -3413,8 +3439,10 @@ try {
     missingFixture.reportRefreshQueries.every((query) => query === null),
   );
   await Promise.all([
-    missingCalculation.waitForResponse((response) =>
-      response.url().includes("/api/reports?refresh=1"),
+    missingCalculation.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/reports" &&
+        new URL(response.url()).searchParams.get("refresh") === "1",
     ),
     missingCalculation
       .getByRole("button", { name: "Actualiser les données", exact: true })
