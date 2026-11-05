@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { reportReviewCount } from "@contrats/shared";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ReportWorkspace } from "./ReportsPage";
 import { cadenceLabel, formatReportValue } from "./reportModel";
@@ -230,7 +231,7 @@ export default function ReportGroupedList({
                           <ReportBadge
                             tone={
                               status === "Écart à examiner" ||
-                              result.reviewCount
+                              reportReviewCount(result)
                                 ? "attention"
                                 : confirmed
                                   ? "complete"

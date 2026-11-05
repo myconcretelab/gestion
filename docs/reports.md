@@ -154,6 +154,14 @@ Le serveur contrôle une fois par minute les organisations actives ayant le modu
 
 ## Migration et validation
 
+### Contrôle des règlements des séjours terminés
+
+Les rapports sociaux et de nuitées signalent les séjours terminés avant la date du jour à Paris dont le règlement est absent, partiel, daté à venir ou à vérifier. Le contrôle utilise le registre complet des paiements (manuels, historiques, Stripe et plateformes), ignore les cartes de test et règlements annulés, et compte un séjour partagé une seule fois. Il respecte les gîtes, les sources et les nuits de la période du rapport. Les gratuités et séjours encore en cours ne sont pas signalés.
+
+Les alertes restent séparées des opérations : aucun montant non reçu n’est ajouté au chiffre d’affaires et les nuitées continuent de représenter les nuits occupées. Avant de préparer ou finaliser un rapport, enregistrer les paiements effectivement reçus ou consigner la situation des sommes encore impayées. La commande `payment-review` conserve une justification datée, auditée et rattachée aux sources exactes. Un changement de paiement, de montant ou de périmètre rend ce contrôle caduc ; les copies déjà confirmées restent figées. Les rappels et la liste des rapports tiennent compte de ce contrôle même lorsqu’aucune ligne d’encaissement n’existe.
+
+L’application traite un règlement enregistré comme un encaissement à sa date `paid_on`. Elle ne suit pas séparément la remise d’un chèque et son crédit bancaire. Le cache est désormais renouvelé aussi au changement de jour à Paris afin que les séjours terminés deviennent visibles sans attendre une modification de réservation. Cette évolution ne nécessite pas de migration de base de données.
+
 La migration additive `20261031210000_finance_report_cache` ajoute le cache et les déclencheurs de révision, sans modifier les réservations, montants, règles ou copies confirmées. Elle fournit le suivi SQLite et PostgreSQL. Le cache est une donnée dérivée : après une migration SQLite vers PostgreSQL, il est reconstruit à partir des sources au lieu d’être recopié. Un déploiement complet avec sauvegarde préalable est requis.
 
 La migration additive `20261030100000_ota_transactions` ajoute les métadonnées OTA aux règlements et leur journal source, sans conversion des anciens prix. La migration `20261029120000_finance_reports` ajoute la table de rapports et la ventilation facultative des prestations. Elle ne réécrit ni les anciens paiements ni les déclarations. Les schémas et migrations SQLite/PostgreSQL sont fournis. En production, sauvegarde récupérable et déploiement complet sont nécessaires conformément à `AGENTS.md`.

@@ -17,6 +17,8 @@ import {
   buildReportWorklist,
   createReport,
   nightRegisterCsv,
+  reportPaymentAlertSignature,
+  reportPaymentReviewRequired,
   type ReportCommand,
   type ReportWorkspaceData,
 } from "@contrats/shared";
@@ -160,6 +162,29 @@ const mutate = (
     "test-user",
   );
 
+// Existing declaration scenarios explicitly acknowledge genuinely unpaid balances.
+// Tests for the new validation barrier use mutate directly.
+async function mutateAfterPaymentReview(
+  state: ReportWorkspaceData,
+  command: ReportCommand & { reportId: string },
+  month = "2026-10",
+) {
+  const report = state.reports.find((row) => row.id === command.reportId)!;
+  const current = result(state, month, report);
+  if (reportPaymentReviewRequired(current))
+    state = await mutate(
+      state,
+      {
+        type: "payment-review",
+        reportId: report.id,
+        signature: reportPaymentAlertSignature(current),
+        note: "Solde impayé vérifié pour ce scénario de déclaration.",
+      },
+      month,
+    );
+  return mutate(state, command, month);
+}
+
 test("le début du suivi est conservé sans créer de fausses déclarations et reste isolé par organisation", () =>
   fixture(async ({ gite }) => {
     await stay(gite, {
@@ -247,7 +272,7 @@ test("le début du suivi propre à un rapport est enregistré, audité et permet
         definition: { ...report, worklistStartMonth: "2026-13" },
       }),
     );
-    state = await mutate(
+    state = await mutateAfterPaymentReview(
       state,
       { type: "ready", reportId: report.id },
       "2026-07",
@@ -288,7 +313,7 @@ test("Réservations lit des résumés persistés, sans calcul initial ni recalcu
     );
     assert.equal(
       stored.reminders.find((row) => row.kind === "social")?.canCopy,
-      true,
+      false,
     );
     const cached = await reports.getReportWorkspace({
       now: new Date("2026-11-05T16:59:59Z"),
@@ -353,7 +378,11 @@ test("les rapports recalculent les versements de plateforme au passage de 18 h s
     const nextMorning = await reports.getReportWorkspace({
       now: new Date("2026-12-12T08:00:00Z"),
     });
-    assert.equal(nextMorning.calculatedAt, after.calculatedAt);
+    assert.equal(nextMorning.calculatedAt, "2026-12-12T08:00:00.000Z");
+    assert.equal(
+      result(nextMorning, "2026-12").total,
+      result(after, "2026-12").total,
+    );
   }));
 
 test("un échec de calcul conserve le dernier résumé et la tentative suivante peut reprendre", () =>
@@ -701,7 +730,10 @@ test("les filtres de gestionnaire et de source sont persistés pour chaque modè
       const total = kind === "tourist" ? 4 : 10000;
       assert.equal(result(state, "2026-10", definition).total, total);
       assert.equal(result(state, "2026-10", definition).reviewCount, 0);
-      state = await mutate(state, { type: "ready", reportId: definition.id });
+      state = await mutateAfterPaymentReview(state, {
+        type: "ready",
+        reportId: definition.id,
+      });
       state = await mutate(state, { type: "confirm", reportId: definition.id });
       const key = reportPeriodKey(definition, "2026-10");
       assert.equal(state.progress[key].snapshot?.result.total, total);
@@ -903,7 +935,10 @@ test("un règlement annulé est retiré et les changements de source invalident 
     const r = await stay(gite);
     const tracking = await pay(r.id, 100);
     let state = await reports.getReportWorkspace();
-    state = await mutate(state, { type: "ready", reportId: social(state).id });
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: social(state).id,
+    });
     await ledger.voidReservationPayment(r.id, tracking.entries[0].id);
     state = await reports.getReportWorkspace();
     assert.equal(result(state).total, 0);
@@ -922,7 +957,7 @@ test("les confirmations sont calculées côté serveur, immuables et conservées
     let state = await reports.getReportWorkspace();
     const reportId = social(state).id;
     await assert.rejects(mutate(state, { type: "confirm", reportId }));
-    state = await mutate(state, { type: "ready", reportId });
+    state = await mutateAfterPaymentReview(state, { type: "ready", reportId });
     state = await mutate(state, { type: "confirm", reportId });
     const key = reportPeriodKey(social(state), "2026-10");
     const frozen = state.progress[key].snapshot!;
@@ -1242,7 +1277,7 @@ test("un rapport sans recettes peut être confirmé à zéro", () =>
   fixture(async () => {
     let state = await reports.getReportWorkspace();
     const reportId = social(state).id;
-    state = await mutate(state, { type: "ready", reportId });
+    state = await mutateAfterPaymentReview(state, { type: "ready", reportId });
     state = await mutate(state, { type: "confirm", reportId });
     assert.equal(
       state.progress[reportPeriodKey(social(state), "2026-10")].snapshot?.result
@@ -1266,7 +1301,10 @@ for (const outcome of ["corrected", "kept"] as const) {
         note: "Correction vérifiée auprès du destinataire",
       };
       await assert.rejects(mutate(state, resolve), /Aucun écart/);
-      state = await mutate(state, { type: "ready", reportId });
+      state = await mutateAfterPaymentReview(state, {
+        type: "ready",
+        reportId,
+      });
       state = await mutate(state, { type: "confirm", reportId });
       const original = structuredClone(state.progress[key].snapshot);
       await assert.rejects(mutate(state, resolve), /Aucun écart/);
@@ -1278,7 +1316,7 @@ for (const outcome of ["corrected", "kept"] as const) {
       assert.ok(
         buildReportWorklist(state, now).some((item) => item.key === key),
       );
-      state = await mutate(state, resolve);
+      state = await mutateAfterPaymentReview(state, resolve);
       assert.deepEqual(state.progress[key].snapshot, original);
       const resolution = state.progress[key].resolutions![0];
       assert.equal(resolution.outcome, outcome);
@@ -1320,7 +1358,7 @@ for (const outcome of ["corrected", "kept"] as const) {
         )?.status,
         "changed",
       );
-      state = await mutate(state, resolve);
+      state = await mutateAfterPaymentReview(state, resolve);
       assert.equal(state.progress[key].resolutions!.length, 2);
       assert.deepEqual(state.progress[key].resolutions![0], resolution);
       assert.equal(state.progress[key].resolutions![1].result.total, 4500);
@@ -1350,7 +1388,7 @@ test("la résolution refuse les motifs vides, les chiffres fournis par le naviga
     await pay(reservation.id, 25);
     let state = await reports.getReportWorkspace();
     const reportId = social(state).id;
-    state = await mutate(state, { type: "ready", reportId });
+    state = await mutateAfterPaymentReview(state, { type: "ready", reportId });
     state = await mutate(state, { type: "confirm", reportId });
     await pay(reservation.id, 15);
     state = await reports.getReportWorkspace();
@@ -1439,7 +1477,7 @@ test("les favoris ne remettent pas en cause un rapport déjà vérifié", () =>
     await pay(r.id, 100);
     let state = await reports.getReportWorkspace();
     const reportId = social(state).id;
-    state = await mutate(state, { type: "ready", reportId });
+    state = await mutateAfterPaymentReview(state, { type: "ready", reportId });
     state = await mutate(state, {
       type: "favorite",
       reportId,
@@ -1640,7 +1678,10 @@ test("import OTA : aperçu sans écriture, rattachement exact, brut/net/options,
       0,
     );
     assert.equal(await db.default.reservationRecordedPayment.count(), 2);
-    state = await mutate(state, { type: "ready", reportId: social(state).id });
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: social(state).id,
+    });
     state = await mutate(state, {
       type: "confirm",
       reportId: social(state).id,
@@ -2352,7 +2393,10 @@ test("les macarons partagent le calcul et les filtres du rapport sans charger l�
     let state = await reports.getReportWorkspace();
     const report = state.reports.find((row) => row.kind === "tourist")!;
     assert.equal(result(state, "2026-10", report).total, october.included);
-    state = await mutate(state, { type: "ready", reportId: report.id });
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: report.id,
+    });
     state = await mutate(state, { type: "confirm", reportId: report.id });
     const confirmed = structuredClone(
       state.progress[reportPeriodKey(report, "2026-10")].snapshot,
@@ -2567,7 +2611,7 @@ test("un règlement global confirme sa taxe sans doubler l’encaissement ni ré
     assert.equal(register.rows[0].collectedTaxCents, 400);
     assert.equal(register.rows[0].observedCollectionCents, 400);
     assert.equal(register.rows[0].collectionDate, "2026-09-12");
-    state = await mutate(
+    state = await mutateAfterPaymentReview(
       state,
       { type: "ready", reportId: definition.id },
       "2026-09",
@@ -2668,7 +2712,7 @@ test("ventilation proposée : perception confirmée répartie entre années, tau
       assert.equal(register.summary[0].hostCollectedCents, 72);
       assert.equal(register.summary[0].baseCollectedCents, 66);
       assert.equal(register.summary[0].additionalCollectedCents, 6);
-      state = await mutate(
+      state = await mutateAfterPaymentReview(
         state,
         { type: "ready", reportId: definition.id },
         month,
@@ -2815,7 +2859,10 @@ test("ventilation proposée : logements successifs, conservation par perception 
         .incompleteCount,
       0,
     );
-    await mutate(state, { type: "ready", reportId: definition.id });
+    await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: definition.id,
+    });
     const filtered = {
       ...definition,
       id: "allocation-filtered",
@@ -3133,7 +3180,7 @@ test("déclaration : contrôles de complétude, compléments justifiés, copie f
     );
     assert.equal(register.summary[0].hostCollectedCents, 300);
     assert.equal(register.summary[0].additionalCollectedCents, 0);
-    state = await mutate(
+    state = await mutateAfterPaymentReview(
       state,
       { type: "ready", reportId: definition.id },
       "2026-09",
@@ -3281,7 +3328,7 @@ test("enregistrement central : reprise par les rapports, concurrence et copies c
       renderNightRegisterHtml(register),
       /Récépissé de déclaration en mairie : RCP-MAIRIE/,
     );
-    state = await mutate(
+    state = await mutateAfterPaymentReview(
       state,
       { type: "ready", reportId: definition.id },
       "2026-09",
@@ -3605,7 +3652,7 @@ test("déclaration : une modification des exonérations après préparation exig
       nightRegistrations: { [gite]: { number: "", notApplicable: true } },
     };
     state = await mutate(state, { type: "save", definition }, "2026-09");
-    state = await mutate(
+    state = await mutateAfterPaymentReview(
       state,
       { type: "ready", reportId: definition.id },
       "2026-09",
@@ -3700,7 +3747,11 @@ test("déclaration : tarifs variables détaillés et exonération totale sans pe
       nightRegisterCsv(register),
       /2026-09-10 : 40,00 ; 2026-09-11 : 50,00/,
     );
-    await mutate(state, { type: "ready", reportId: definition.id }, "2026-09");
+    await mutateAfterPaymentReview(
+      state,
+      { type: "ready", reportId: definition.id },
+      "2026-09",
+    );
   });
 });
 
@@ -4053,7 +4104,10 @@ async function remittanceFixture(
       nightRegistrations: { [gite]: { number: "", notApplicable: true } },
     };
     state = await mutate(state, { type: "save", definition });
-    state = await mutate(state, { type: "ready", reportId: definition.id });
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: definition.id,
+    });
     state = await mutate(state, { type: "confirm", reportId: definition.id });
     await work({
       state,
@@ -4216,7 +4270,7 @@ test("reversements : copies confirmées, paiements partiels, corrections et isol
       taxRemittanceSourcesChanged(state, state.taxRemittances![0]),
       false,
     );
-    state = await mutate(state, {
+    state = await mutateAfterPaymentReview(state, {
       type: "resolve",
       reportId,
       outcome: "corrected",
@@ -4263,7 +4317,10 @@ test("reversements : les saisies non confirmées, les inconnues et les périodes
       id: "duplicate-declaration",
     };
     let state = await mutate(initial, { type: "save", definition: duplicate });
-    state = await mutate(state, { type: "ready", reportId: duplicate.id });
+    state = await mutateAfterPaymentReview(state, {
+      type: "ready",
+      reportId: duplicate.id,
+    });
     state = await mutate(state, { type: "confirm", reportId: duplicate.id });
     await assert.rejects(
       mutate(state, {
@@ -4453,7 +4510,7 @@ test("reversements : un rapport commun et plusieurs mois restent séparés par p
     };
     state = await mutate(state, { type: "save", definition });
     for (const month of ["2026-09", "2026-10"]) {
-      state = await mutate(
+      state = await mutateAfterPaymentReview(
         state,
         { type: "ready", reportId: definition.id },
         month,
@@ -4502,4 +4559,174 @@ test("reversements : un rapport commun et plusieurs mois restent séparés par p
       [second.id, second.id],
     );
     assert.equal(initial.taxRemittances, undefined);
+  }));
+
+test("séjour sans règlement : alerte visible, barrière serveur, justification et copie confirmée sans fausse recette", () =>
+  fixture(async ({ gite }) => {
+    const month = "2020-10";
+    const r = await stay(gite, {
+      date_entree: new Date("2020-10-09"),
+      date_sortie: new Date("2020-10-11"),
+      nb_nuits: 2,
+    });
+    let state = await reports.getReportWorkspace();
+    const reportId = social(state).id;
+    assert.equal(result(state, month).total, 0);
+    assert.equal(result(state, month).rows.length, 0);
+    assert.equal(result(state, month).paymentAlerts?.[0].reservationId, r.id);
+    const nights = state.reports.find((row) => row.kind === "tourist")!;
+    assert.equal(result(state, month, nights).paymentAlerts?.length, 1);
+    const reminder = buildReportReminders(state, 2020).find(
+      (row) => row.reportId === reportId && row.month === month,
+    )!;
+    assert.equal(reminder.canCopy, false);
+    await assert.rejects(
+      mutate(state, { type: "ready", reportId }, month),
+      /séjours terminés/,
+    );
+    await assert.rejects(
+      mutate(state, { type: "confirm", reportId }, month),
+      /séjours terminés|marqué comme prêt/,
+    );
+    const note =
+      "Client encore débiteur, solde relancé et attendu après cette période.";
+    state = await mutate(
+      state,
+      {
+        type: "payment-review",
+        reportId,
+        signature: reportPaymentAlertSignature(result(state, month)),
+        note,
+      },
+      month,
+    );
+    assert.equal(result(state, month).paymentReview?.note, note);
+    state = await mutate(state, { type: "ready", reportId }, month);
+    state = await mutate(state, { type: "confirm", reportId }, month);
+    const key = reportPeriodKey(social(state), month);
+    const frozen = structuredClone(state.progress[key].snapshot!);
+    assert.equal(frozen.result.total, 0);
+    assert.equal(frozen.result.paymentReview?.note, note);
+    await pay(r.id, 100, { paid_on: "2020-10-10" });
+    state = await reports.getReportWorkspace();
+    assert.equal(result(state, month).paymentAlerts, undefined);
+    assert.equal(result(state, month).total, 10000);
+    assert.deepEqual(state.progress[key].snapshot, frozen);
+    assert.equal(snapshotDiffers(frozen, result(state, month)), true);
+    assert.ok(
+      await db.default.auditLog.findFirst({
+        where: { action: "report.payment-review", resource_id: reportId },
+      }),
+    );
+    await fixture(async () =>
+      assert.equal(
+        (await reports.getReportWorkspace()).stayPaymentAlerts?.length,
+        0,
+      ),
+    );
+  }));
+
+test("la justification d’un impayé et la préparation deviennent caduques si un acompte arrive", () =>
+  fixture(async ({ gite }) => {
+    const month = "2020-10";
+    const r = await stay(gite, {
+      date_entree: new Date("2020-10-09"),
+      date_sortie: new Date("2020-10-11"),
+    });
+    let state = await reports.getReportWorkspace();
+    const reportId = social(state).id;
+    const signature = reportPaymentAlertSignature(result(state, month));
+    state = await mutate(
+      state,
+      {
+        type: "payment-review",
+        reportId,
+        signature,
+        note: "Solde encore impayé.",
+      },
+      month,
+    );
+    state = await mutate(state, { type: "ready", reportId }, month);
+    await pay(r.id, 30, { paid_on: "2020-10-10" });
+    state = await reports.getReportWorkspace();
+    assert.equal(result(state, month).paymentAlerts?.[0].remainingCents, 7000);
+    assert.equal(result(state, month).paymentReview, undefined);
+    assert.equal(
+      state.progress[reportPeriodKey(social(state), month)].ready,
+      false,
+    );
+    await assert.rejects(
+      mutate(
+        state,
+        {
+          type: "payment-review",
+          reportId,
+          signature,
+          note: "Ancien contrôle",
+        },
+        month,
+      ),
+      /règlements ont changé/,
+    );
+    await assert.rejects(
+      mutate(state, { type: "confirm", reportId }, month),
+      /séjours terminés|marqué comme prêt/,
+    );
+  }));
+
+test("un séjour terminé réglé par Stripe live ou versement automatique ne devient pas un faux impayé", () =>
+  fixture(async ({ gite }) => {
+    for (const stripe_mode of ["test", "live"]) {
+      const r = await stay(gite, {
+        hote_nom: stripe_mode,
+        date_entree: new Date("2020-10-09"),
+        date_sortie: new Date("2020-10-11"),
+      });
+      await db.default.bookingPayment.create({
+        data: {
+          reservation_id: r.id,
+          stripe_mode,
+          purpose: "full",
+          amount_cents: 10000,
+          total_cents: 10000,
+          paid_amount_cents: 10000,
+          status: "paid",
+          access_token_hash: randomUUID(),
+          expires_at: new Date("2020-10-20"),
+          paid_at: new Date("2020-10-10"),
+        },
+      });
+    }
+    await stay(gite, {
+      hote_nom: "Platform",
+      booking_source: "Airbnb",
+      date_entree: new Date("2020-10-09"),
+      date_sortie: new Date("2020-10-11"),
+    });
+    const state = await reports.getReportWorkspace();
+    assert.deepEqual(
+      state.stayPaymentAlerts?.map((row) => row.guest),
+      ["test"],
+    );
+    assert.equal(result(state, "2020-10").paymentAlerts?.length, 1);
+  }));
+
+test("le passage de minuit à Paris renouvelle les alertes sans modification de réservation", () =>
+  fixture(async ({ gite }) => {
+    const r = await stay(gite, {
+      date_entree: new Date("2026-11-03"),
+      date_sortie: new Date("2026-11-05"),
+    });
+    const beforeTime = new Date("2026-11-05T22:59:59Z");
+    const afterTime = new Date("2026-11-05T23:00:01Z");
+    const before = await reports.getReportWorkspace({ now: beforeTime });
+    assert.equal(before.stayPaymentAlerts?.length, 0);
+    assert.equal(
+      (await reportCache.getStoredReportReminders(2026, afterTime)).stale,
+      true,
+    );
+    const after = await reports.getReportWorkspace({ now: afterTime });
+    assert.equal(after.stayPaymentAlerts?.[0].reservationId, r.id);
+    assert.notEqual(after.factsRevision, before.factsRevision);
+    assert.equal(after.calculatedAt, afterTime.toISOString());
   }));

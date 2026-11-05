@@ -8,6 +8,7 @@ import ReportPageHeader from "./ReportPageHeader";
 import ReportProgressActions from "./ReportProgressActions";
 import ReportNightRegister from "./ReportNightRegister";
 import ReportDiscrepancy, { resolutionLabel } from "./ReportDiscrepancy";
+import ReportPaymentAlerts from "./ReportPaymentAlerts";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
 import { canCurrentUserAccessPage } from "../../../utils/auth";
 import { reservationPaymentsHref } from "../../../utils/reservationNavigation";
@@ -15,6 +16,8 @@ import {
   nightGuestGroupsLabel,
   reportHasPendingChanges,
   reportReference,
+  reportPaymentReviewRequired,
+  reportReviewCount,
 } from "@contrats/shared";
 import useReportPaymentReservations from "./useReportPaymentReservations";
 import { canAccessReportSource, sourceCorrectionHref } from "./reportSources";
@@ -241,7 +244,7 @@ export default function ReportDetail({
             tone={
               snapshot
                 ? "complete"
-                : differs || result.reviewCount
+                : differs || reportReviewCount(result)
                   ? "attention"
                   : progress?.ready
                     ? "primary"
@@ -446,7 +449,10 @@ export default function ReportDetail({
             {formatReportValue(displayedReport, displayedResult.total)}
           </strong>
           {displayedReport.kind !== "tourist" && (
-            <ReportCopyAmount totalCents={displayedResult.total} />
+            <ReportCopyAmount
+              totalCents={displayedResult.total}
+              disabled={!snapshot && reportPaymentReviewRequired(result)}
+            />
           )}
           <ReportPlatformAmounts
             report={displayedReport}
@@ -492,8 +498,8 @@ export default function ReportDetail({
               ? "Copie enregistrée"
               : differs
                 ? "Écart à résoudre"
-                : result.reviewCount
-                  ? "Opérations à corriger"
+                : reportReviewCount(result)
+                  ? "Vérifications nécessaires"
                   : progress?.snapshot
                     ? lastResolution
                       ? "Écart résolu"
@@ -509,16 +515,24 @@ export default function ReportDetail({
                 : "Cette copie et son export reprennent les opérations au moment de votre confirmation."
               : differs
                 ? "Comparez les opérations modifiées, puis enregistrez la manière dont vous avez traité cet écart."
-                : result.reviewCount
-                  ? `${result.reviewCount} opération${result.reviewCount > 1 ? "s demandent" : " demande"} une vérification avant de préparer votre copie.`
-                  : progress?.snapshot
-                    ? lastResolution
-                      ? "La résolution est enregistrée. Une nouvelle modification des données fera réapparaître ce rapport dans les rapports à traiter."
-                      : "Votre confirmation et les chiffres correspondants sont disponibles dans l’historique."
-                    : progress?.ready
-                      ? "Après votre démarche sur le service concerné, vous pourrez en confirmer la transmission ici."
-                      : "Examinez les opérations incluses, puis marquez ce rapport comme prêt."}
+                : reportPaymentReviewRequired(result)
+                  ? "Vérifiez les règlements des séjours terminés ou justifiez les sommes encore impayées avant de préparer votre copie."
+                  : result.reviewCount
+                    ? `${result.reviewCount} opération${result.reviewCount > 1 ? "s demandent" : " demande"} une vérification avant de préparer votre copie.`
+                    : progress?.snapshot
+                      ? lastResolution
+                        ? "La résolution est enregistrée. Une nouvelle modification des données fera réapparaître ce rapport dans les rapports à traiter."
+                        : "Votre confirmation et les chiffres correspondants sont disponibles dans l’historique."
+                      : progress?.ready
+                        ? "Après votre démarche sur le service concerné, vous pourrez en confirmer la transmission ici."
+                        : "Examinez les opérations incluses, puis marquez ce rapport comme prêt."}
           </p>
+          {!snapshot && reportPaymentReviewRequired(result) && (
+            <a className="rp-button" href="#rp-payment-alerts">
+              Examiner les règlements des séjours terminés
+              <ReportIcon name="arrow" />
+            </a>
+          )}
           {!snapshot && result.reviewCount > 0 && (
             <button
               type="button"
@@ -567,6 +581,14 @@ export default function ReportDetail({
           )}
         </div>
       </section>
+      <ReportPaymentAlerts
+        key={`payment-alerts:${report.id}:${displayedMonth}:${snapshotKey}:${resolutionIndex}`}
+        workspace={workspace}
+        reportId={report.id}
+        month={displayedMonth}
+        result={displayedResult}
+        archived={Boolean(snapshot)}
+      />
       {displayedReport.kind === "tourist" &&
         (!snapshot || snapshot.nightRegister) && (
           <ReportNightRegister

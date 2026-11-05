@@ -9,6 +9,7 @@ import {
   type ReportCategory,
   type ReportOperation,
   type ReportPaymentMethod,
+  type ReportPaymentAlert,
 } from "@contrats/shared";
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { loadReservationPaymentTracking } from "../../reservationPayments/ledger.js";
@@ -16,6 +17,7 @@ import { fromJsonString } from "../../../utils/jsonFields.js";
 import { buildReportScope } from "./scope.js";
 import { reportOptionsSignature, storedAllocation } from "./allocation.js";
 import type { OptionsInput } from "../../../services/contractCalculator.js";
+import { endedStayPaymentAlert } from "./paymentAlerts.js";
 
 const cents = (amount: number) => Math.round(amount * 100);
 const day = (date: Date) => date.toISOString().slice(0, 10);
@@ -128,9 +130,29 @@ export async function loadReportFacts(
       row,
     ]);
   const operations: ReportOperation[] = [];
+  const stayPaymentAlerts: ReportPaymentAlert[] = [];
   for (const rows of groups.values()) {
     const first = rows[0];
     const ledger = tracking.get(first.id)!;
+    const paymentAlert = endedStayPaymentAlert(
+      {
+        reservationId: first.id,
+        guest: first.hote_nom,
+        bookingSource: getBookingSource(first),
+        stays: rows.map((row) => ({
+          propertyId: row.gite_id ?? "unassigned",
+          propertyLabel:
+            properties.find((property) => property.id === row.gite_id)?.name ??
+            "Sans logement",
+          arrival: day(row.date_entree),
+          departure: day(row.date_sortie),
+        })),
+      },
+      ledger,
+      testCardIds,
+      now,
+    );
+    if (paymentAlert) stayPaymentAlerts.push(paymentAlert);
     const options = fromJsonString<OptionsInput>(first.options, {});
     const nights = sum(rows.map((row) => row.nb_nuits));
     const base = rows.map((row) => Math.max(0, cents(Number(row.prix_total))));
@@ -596,6 +618,7 @@ export async function loadReportFacts(
         operators,
         managers,
         operations,
+        stayPaymentAlerts,
         operatorIssues,
         socialIssues,
       }),
@@ -628,6 +651,7 @@ export async function loadReportFacts(
     operators,
     managers,
     operations,
+    stayPaymentAlerts,
     propertyOperators,
     propertyManagers,
     propertyNightDeclarations,

@@ -21,6 +21,7 @@ import {
   nightRegisterCsv,
   nightDeclarationCsv,
   summarizeNightRegister,
+  reportPaymentAlertSignature,
 } from "@contrats/shared";
 import { airbnbFixture } from "../../packages/shared/dist/tests/fixtures/airbnb.js";
 
@@ -848,6 +849,26 @@ try {
               fixture.nightRegister.summary = summarizeNightRegister(
                 fixture.nightRegister,
               );
+            } else if (command.type === "payment-review") {
+              const current = evaluateReport(
+                report,
+                payload.month,
+                state.overrides[key],
+                state.operations,
+                state,
+              );
+              assert.equal(
+                command.signature,
+                reportPaymentAlertSignature(current),
+              );
+              state.paymentReviews ??= {};
+              state.paymentReviews[key] = {
+                signature: command.signature,
+                note: command.note,
+                reviewedAt: "2026-11-05T12:00:00Z",
+                reviewedBy: "browser-user",
+              };
+              state.progress[key] = { ...state.progress[key], ready: false };
             } else if (command.type === "ready")
               state.progress[key] = { ready: true };
             else if (command.type === "confirm")
@@ -982,6 +1003,119 @@ try {
     );
     await save.click({ trial: true });
   };
+
+  const { page: unpaidPage, fixture: unpaidFixture } = await createPage();
+  unpaidFixture.state.operations = [];
+  unpaidFixture.state.reports[0].propertyIds = ["g1"];
+  unpaidFixture.state.stayPaymentAlerts = [
+    {
+      reservationId: "reservation-unpaid",
+      guest: "Client sans règlement",
+      bookingSource: "Direct",
+      stays: [
+        {
+          propertyId: "g1",
+          propertyLabel: "La Maison du verger",
+          arrival: "2026-10-09",
+          departure: "2026-10-11",
+        },
+      ],
+      totalCents: 10000,
+      receivedCents: 0,
+      remainingCents: 10000,
+      reason: "missing",
+      sourceRevision: "a".repeat(64),
+    },
+  ];
+  await open(unpaidPage, "/social");
+  const unpaidPanel = unpaidPage.getByRole("region", {
+    name: "Paiements des séjours terminés",
+  });
+  await unpaidPanel
+    .getByRole("heading", { name: /Séjours terminés/ })
+    .waitFor();
+  assert.equal(
+    await unpaidPage
+      .getByRole("button", { name: "Copier le montant sans centimes" })
+      .isDisabled(),
+    true,
+  );
+  assert.equal((await total(unpaidPage)).replace(/\s/g, ""), "0,00€");
+  assert.equal(
+    await unpaidPage
+      .getByRole("button", { name: "Marquer comme prêt", exact: true })
+      .count(),
+    0,
+  );
+  assert.match(await unpaidPanel.innerText(), /100,00\s*€/);
+  assert.match(
+    await unpaidPanel
+      .getByRole("link", { name: "Voir les règlements" })
+      .getAttribute("href"),
+    /reservation-unpaid/,
+  );
+  await noOverflow(unpaidPage);
+  await capture(unpaidPage, "reports-ended-stay-unpaid-desktop.png");
+  await unpaidPage.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(unpaidPage);
+  await capture(unpaidPage, "reports-ended-stay-unpaid-mobile.png");
+  await unpaidPanel
+    .getByLabel("Situation des règlements après vérification")
+    .fill("Solde encore impayé, relance envoyée au client.");
+  unpaidFixture.failMutation = 1;
+  await unpaidPanel
+    .getByRole("button", { name: "Confirmer la vérification des règlements" })
+    .click();
+  await unpaidPanel.getByRole("alert").waitFor();
+  assert.equal(
+    await unpaidPanel
+      .getByLabel("Situation des règlements après vérification")
+      .inputValue(),
+    "Solde encore impayé, relance envoyée au client.",
+  );
+  await unpaidPanel
+    .getByRole("button", { name: "Confirmer la vérification des règlements" })
+    .click();
+  await unpaidPanel.getByText(/Situation vérifiée le/).waitFor();
+  assert.equal(
+    await unpaidPage
+      .getByRole("button", { name: "Copier le montant sans centimes" })
+      .isDisabled(),
+    false,
+  );
+  assert.equal((await total(unpaidPage)).replace(/\s/g, ""), "0,00€");
+  await unpaidPage
+    .getByRole("button", { name: "Marquer comme prêt", exact: true })
+    .click();
+  await unpaidPage
+    .getByRole("button", { name: "Confirmer la transmission", exact: true })
+    .waitFor();
+  unpaidFixture.state.stayPaymentAlerts[0] = {
+    ...unpaidFixture.state.stayPaymentAlerts[0],
+    receivedCents: 3000,
+    remainingCents: 7000,
+    reason: "partial",
+    sourceRevision: "b".repeat(64),
+  };
+  await unpaidPage
+    .getByRole("button", { name: "Actualiser les données" })
+    .click();
+  await unpaidPanel
+    .getByLabel("Situation des règlements après vérification")
+    .waitFor();
+  assert.match(await unpaidPanel.innerText(), /Règlement partiel/);
+  assert.equal(
+    await unpaidPage
+      .getByRole("button", { name: "Confirmer la transmission", exact: true })
+      .count(),
+    0,
+  );
+  unpaidFixture.state.stayPaymentAlerts = [];
+  await unpaidPage
+    .getByRole("button", { name: "Actualiser les données" })
+    .click();
+  await unpaidPanel.waitFor({ state: "detached" });
+  await unpaidPage.context().close();
 
   const { page: taxPage, fixture: taxFixture } = await createPage();
   taxFixture.state.managers[0].name = "Sébastien";

@@ -3,6 +3,7 @@ import {
   getReportPeriod,
   reportDefinitionSchema,
   formatReportValue,
+  reportPaymentReviewRequired,
   type ReportDefinition,
   type ReportProgress,
   type ReportResult,
@@ -58,6 +59,7 @@ export default function ReportProgressActions({
     canEdit &&
     !progress?.snapshot &&
     !result.reviewCount &&
+    !reportPaymentReviewRequired(result) &&
     reportDefinitionSchema.safeParse(report).success &&
     scopeValid &&
     managerValid &&

@@ -164,6 +164,14 @@ export type ReportAllocation = {
 export const reportCommandSchema = z.discriminatedUnion("type", [
   z
     .object({
+      type: z.literal("payment-review"),
+      reportId: z.string().min(1).max(100),
+      signature: z.string().min(1).max(1_000_000),
+      note: z.string().trim().min(3).max(1000),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("remittance-save"),
       remittance: taxRemittanceInputSchema,
     })

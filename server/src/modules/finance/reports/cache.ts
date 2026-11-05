@@ -6,9 +6,10 @@ import {
 import prisma, { type TenantTransactionClient } from "../../../db/prisma.js";
 import { getOrganizationId } from "../../organizations/context.js";
 import { automaticPlatformReceiptThrough } from "../../reservationPayments/automaticReceipt.js";
+import { reportPaymentCheckDay } from "./paymentAlerts.js";
 
 // Bump when the calculation rules change, so saved data is rebuilt on the next visit.
-export const REPORT_CACHE_VERSION = 12;
+export const REPORT_CACHE_VERSION = 13;
 const monthFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Europe/Paris",
   year: "numeric",
@@ -28,6 +29,7 @@ export const reportCacheIsCurrent = (cache: CacheMetadata | null, now: Date) =>
     cache.engine_version === REPORT_CACHE_VERSION &&
     cache.source_revision === cache.calculated_revision &&
     cache.calculated_month === reportCalculationMonth(now) &&
+    reportPaymentCheckDay(cache.calculated_at) === reportPaymentCheckDay(now) &&
     automaticPlatformReceiptThrough(cache.calculated_at) ===
       automaticPlatformReceiptThrough(now),
   );

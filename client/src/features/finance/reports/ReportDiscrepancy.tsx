@@ -7,6 +7,7 @@ import {
   paymentMethodLabel,
   reportChanges,
   reportHasPendingChanges,
+  reportPaymentReviewRequired,
   reportReference,
   type EvaluatedOperation,
   type ReportDefinition,
@@ -64,7 +65,12 @@ export default function ReportDiscrepancy({
       opened.factsRevision !== state.factsRevision),
   );
   const blocked =
-    stale || !pending || result.reviewCount > 0 || saving || loading;
+    stale ||
+    !pending ||
+    result.reviewCount > 0 ||
+    reportPaymentReviewRequired(result) ||
+    saving ||
+    loading;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (blocked || !canEdit || !outcome || note.trim().length < 3) return;
@@ -228,6 +234,12 @@ export default function ReportDiscrepancy({
             <p className="rp-notice" role="alert">
               Corrigez les opérations à vérifier avant d’enregistrer la
               résolution.
+            </p>
+          )}
+          {reportPaymentReviewRequired(result) && (
+            <p className="rp-notice" role="alert">
+              Vérifiez les règlements des séjours terminés dans le rapport avant
+              d’enregistrer cette résolution.
             </p>
           )}
           {canEdit ? (

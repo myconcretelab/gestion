@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { reportWorkItem } from "@contrats/shared";
+import { reportWorkItem, reportReviewCount } from "@contrats/shared";
 import ReportPageHeader from "./ReportPageHeader";
 import ReportsToDo from "./ReportsToDo";
 import ReportGroupedList from "./ReportGroupedList";
@@ -27,7 +27,7 @@ export default function ReportsOverview({
     ({ report, result, status }) =>
       (filter !== "favorites" || report.favorite) &&
       (filter !== "attention" ||
-        result.reviewCount ||
+        reportReviewCount(result) ||
         status === "Écart à examiner") &&
       `${report.name} ${report.recipient} ${reportManagerGroup(report, state).name}`
         .toLocaleLowerCase("fr")

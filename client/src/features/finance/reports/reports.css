@@ -3131,8 +3131,18 @@
   }
 }
 /* Allocation proposals remain visibly separate from confirmed register amounts. */
-.rp-allocation-proposal { margin: 12px 0; padding: 12px; border: 1px solid var(--primary-strong); border-radius: 10px; background: var(--primary-soft); color: var(--ink); }
-.rp-allocation-proposal p { margin: 0 0 10px; line-height: 1.5; }
+.rp-allocation-proposal {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--primary-strong);
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+.rp-allocation-proposal p {
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
 
 .rp-remittance-totals {
   display: grid;
@@ -3141,7 +3151,7 @@
 }
 .rp-remittance-totals dt {
   color: var(--muted);
-  font-size: .85rem;
+  font-size: 0.85rem;
 }
 .rp-remittance-totals dd {
   margin: 6px 0 0;
@@ -3210,5 +3220,58 @@
   .rp-remittance,
   .rp-remittance-owner {
     padding: 18px;
+  }
+}
+.rp-payment-alerts {
+  margin-block: 20px;
+  padding: 24px;
+}
+.rp-payment-alerts > p {
+  margin-block: 8px 16px;
+}
+.rp-payment-alerts__list {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.rp-payment-alerts__list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border, #e0e3e8);
+}
+.rp-payment-alerts__list li > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rp-payment-alerts__list li > a {
+  flex-shrink: 0;
+}
+.rp-payment-alerts form {
+  display: grid;
+  gap: 10px;
+}
+.rp-payment-alerts form > button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+.rp-payment-alerts form > .rp-muted {
+  margin: 0;
+}
+.rp-next-step > a.rp-button {
+  white-space: normal;
+}
+@media (max-width: 640px) {
+  .rp-payment-alerts {
+    padding: 16px;
+  }
+  .rp-payment-alerts__list li {
+    flex-direction: column;
+    gap: 8px;
   }
 }

@@ -3,6 +3,7 @@ import type {
   ReportWorkItem,
   ReportWorkspaceData,
 } from "@contrats/shared";
+import { reportReviewCount } from "@contrats/shared";
 
 export type ReportManagerGroup = {
   id: string;
@@ -95,7 +96,7 @@ export function groupReportWorkItems(
     manager.items.push(item);
     group.managers.set(identity.id, manager);
     group.count++;
-    if (item.result.reviewCount || item.status === "Écart à examiner")
+    if (reportReviewCount(item.result) || item.status === "Écart à examiner")
       group.attentionCount++;
     months.set(month, group);
   }

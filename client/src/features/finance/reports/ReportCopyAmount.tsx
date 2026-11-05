@@ -4,8 +4,10 @@ import { dispatchAppNotice } from "../../../utils/appNotices";
 
 export default function ReportCopyAmount({
   totalCents,
+  disabled = false,
 }: {
   totalCents: number;
+  disabled?: boolean;
 }) {
   const value = String(
     Math.sign(totalCents) * Math.floor((Math.abs(totalCents) + 50) / 100),
@@ -13,7 +15,7 @@ export default function ReportCopyAmount({
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const copy = async () => {
-    if (pending) return;
+    if (pending || disabled) return;
     setPending(true);
     setCopiedValue(null);
     try {
@@ -41,9 +43,13 @@ export default function ReportCopyAmount({
       className="rp-button rp-total-copy"
       type="button"
       onClick={() => void copy()}
-      disabled={pending}
+      disabled={pending || disabled}
       aria-label="Copier le montant sans centimes"
-      title={"Copier " + value + " · arrondi à l’euro"}
+      title={
+        disabled
+          ? "Vérifiez les règlements des séjours terminés avant de copier le montant."
+          : "Copier " + value + " · arrondi à l’euro"
+      }
     >
       <ReportIcon name="copy" />
       {pending

@@ -15,6 +15,7 @@ import { readDeclarationNightsSettings } from "../../../services/declarationNigh
 export type ReportConfiguration = Pick<
   ReportState,
   | "taxRemittances"
+  | "paymentReviews"
   | "reports"
   | "overrides"
   | "progress"

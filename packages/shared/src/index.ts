@@ -6,6 +6,7 @@ export * from "./documentOccupancy.js";
 export * from "./nightRegister.js";
 export * from "./nightTaxAllocation.js";
 export * from "./paymentTouristTax.js";
+export * from "./reportPaymentAlerts.js";
 
 export const organizationIdSchema = z
   .string()

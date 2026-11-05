@@ -10,6 +10,10 @@ import {
   reportIncludesBookingSource,
 } from "./reports.js";
 import { legacyReportPeriodConfirmed } from "./reportWorklist.js";
+import {
+  reportReviewCount,
+  scopedReportPaymentAlerts,
+} from "./reportPaymentAlerts.js";
 
 export type ReportReminder = {
   id: string;
@@ -68,6 +72,20 @@ export function buildReportReminders(
       )
       .filter((date): date is string => Boolean(date))
       .sort();
+    const unpaidDates = scopedReportPaymentAlerts(
+      report,
+      { start: "2000-01-01", end: today },
+      state.stayPaymentAlerts ?? [],
+      (source) =>
+        reportIncludesBookingSource(report, {
+          bookingSource: source,
+          channel: source,
+        }),
+    ).flatMap((alert) =>
+      alert.stays
+        .filter((stay) => scope.has(stay.propertyId))
+        .map((stay) => stay.arrival),
+    );
     const history = state.legacyDeclarations.filter(
       (row) => row.kind === report.kind,
     );
@@ -82,6 +100,7 @@ export function buildReportReminders(
     // No activity and no declaration history: do not invent a reporting start date.
     const firstDate = [
       ...dates,
+      ...unpaidDates,
       ...historyDates,
       ...confirmationDates,
     ].sort()[0];
@@ -158,19 +177,19 @@ export function buildReportReminders(
         month,
         period: period.label,
         propertyIds: [...scope],
-        reviewCount: result.reviewCount,
+        reviewCount: reportReviewCount(result),
         kind: report.kind,
         total: result.total,
         canCopy:
           !progress?.snapshot &&
-          result.reviewCount === 0 &&
+          reportReviewCount(result) === 0 &&
           reportDefinitionSchema.safeParse(report).success &&
           scopeValid &&
           Boolean(managerValid) &&
           operatorValid,
         status: progress?.snapshot
           ? "changed"
-          : result.reviewCount
+          : reportReviewCount(result)
             ? "review"
             : progress?.ready
               ? "ready"

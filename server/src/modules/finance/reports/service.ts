@@ -7,6 +7,8 @@ import {
   reportMutationSchema,
   operationSourceSignature,
   reportHasPendingChanges,
+  reportPaymentAlertSignature,
+  reportPaymentReviewRequired,
   type ReportDefinition,
   type ReportWorkspaceData,
   type ReportResult,
@@ -30,6 +32,13 @@ import { buildNightRegister } from "./nightRegister.js";
 type Facts = Awaited<ReturnType<typeof loadReportFacts>>;
 const fail = (message: string, status = 409) =>
   Object.assign(new Error(message), { status, statusCode: status });
+const requirePaymentReview = (result: ReportResult) => {
+  if (reportPaymentReviewRequired(result))
+    throw fail(
+      "Des séjours terminés ont un règlement absent, incomplet ou à vérifier. Enregistrez les paiements reçus ou justifiez leur situation avant de finaliser le rapport.",
+      400,
+    );
+};
 const fingerprint = (definition: ReportDefinition, result: ReportResult) => {
   const { favorite: _favorite, ...rules } = definition;
   return createHash("sha256")
@@ -54,6 +63,8 @@ const evaluate = (
       propertyManagers: facts.propertyManagers,
       operatorIssues: facts.operatorIssues,
       socialIssues: facts.socialIssues,
+      stayPaymentAlerts: facts.stayPaymentAlerts,
+      paymentReviews: config.paymentReviews,
       operationEdits: {},
       nightRegisterCompletions: config.nightRegisterCompletions,
       nightRegisterCompletionRevisions: config.nightRegisterCompletionRevisions,
@@ -263,7 +274,24 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
           if (!report) throw fail("Rapport introuvable.", 404);
           const key = reportPeriodKey(report, month);
           const result = evaluate(config, facts, report, month);
-          if (command.type === "night-register-completion") {
+          if (command.type === "payment-review") {
+            if (!result.paymentAlerts?.length)
+              throw fail("Aucun paiement de séjour terminé à vérifier.", 400);
+            if (command.signature !== reportPaymentAlertSignature(result))
+              throw fail(
+                "Les règlements ont changé. Rechargez les séjours à vérifier.",
+              );
+            config.paymentReviews = {
+              ...config.paymentReviews,
+              [key]: {
+                signature: command.signature,
+                note: command.note,
+                reviewedAt: new Date().toISOString(),
+                reviewedBy: userId ?? null,
+              },
+            };
+            config.progress[key] = { ...config.progress[key], ready: false };
+          } else if (command.type === "night-register-completion") {
             if (report.kind !== "tourist")
               throw fail(
                 "Ce complément concerne les rapports de nuitées.",
@@ -466,6 +494,7 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 !reportHasPendingChanges(current, result)
               )
                 throw fail("Aucun écart à résoudre pour cette période.");
+              requirePaymentReview(result);
               config.progress[key] = {
                 ...current,
                 resolutions: [
@@ -499,6 +528,7 @@ export async function mutateReportWorkspace(input: unknown, userId?: string) {
                 throw fail(
                   "Le rapport doit être vérifié et marqué comme prêt après la dernière modification.",
                 );
+              requirePaymentReview(result);
               config.progress[key] =
                 command.type === "ready"
                   ? {

@@ -1,5 +1,12 @@
 import { reportNightValue, type NightGuestGroup } from "./nightOperations.js";
 import {
+  reportPaymentAlertSignature,
+  reportReviewCount,
+  scopedReportPaymentAlerts,
+  type ReportPaymentAlert,
+  type ReportPaymentReview,
+} from "./reportPaymentAlerts.js";
+import {
   resolveTouristTaxRegistration,
   type TouristTaxDeclarationDetails,
 } from "./touristTax.js";
@@ -91,6 +98,8 @@ export type ReportIssue = {
   actionLabel: string;
 };
 export type ReportSources = {
+  stayPaymentAlerts?: ReportPaymentAlert[];
+  paymentReviews?: Record<string, ReportPaymentReview>;
   propertyNightDeclarations?: Record<
     string,
     TouristTaxDeclarationDetails | undefined
@@ -117,6 +126,8 @@ export type EvaluatedOperation = ReportOperation & {
   effectiveDate: string | null;
 };
 export type ReportResult = {
+  paymentAlerts?: ReportPaymentAlert[];
+  paymentReview?: ReportPaymentReview;
   rows: EvaluatedOperation[];
   total: number;
   includedCount: number;
@@ -542,7 +553,25 @@ export function evaluateReport(
         a.effectiveDate ?? a.stayDate,
       ) || a.id.localeCompare(b.id),
   );
+  const paymentAlerts = scopedReportPaymentAlerts(
+    report,
+    period,
+    sources.stayPaymentAlerts ?? [],
+    (source) =>
+      reportIncludesBookingSource(report, {
+        bookingSource: source,
+        channel: source,
+      }),
+  );
+  const review = sources.paymentReviews?.[reportPeriodKey(report, month)];
+  const paymentReview =
+    paymentAlerts.length &&
+    review?.signature === reportPaymentAlertSignature({ paymentAlerts })
+      ? review
+      : undefined;
   return {
+    ...(paymentAlerts.length ? { paymentAlerts } : {}),
+    ...(paymentReview ? { paymentReview } : {}),
     rows,
     total: rows.reduce(
       (total, row) => total + (row.status === "included" ? row.value : 0),
@@ -673,7 +702,11 @@ export function snapshotDiffers<T extends Pick<ReportSnapshot, "result">>(
   snapshot: T,
   result: ReportResult,
 ) {
-  return reportChanges(snapshot, result).length > 0;
+  return (
+    reportChanges(snapshot, result).length > 0 ||
+    reportPaymentAlertSignature(snapshot.result) !==
+      reportPaymentAlertSignature(result)
+  );
 }
 
 export function reportHasPendingChanges(
@@ -694,7 +727,8 @@ export function reportStatus(
       : progress.resolutions?.length
         ? "Écart résolu"
         : "Transmission confirmée";
-  if (result.reviewCount) return `${result.reviewCount} à vérifier`;
+  if (reportReviewCount(result))
+    return `${reportReviewCount(result)} à vérifier`;
   if (progress?.ready) return "Prêt";
   return "À préparer";
 }
