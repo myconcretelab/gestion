@@ -314,7 +314,25 @@ export async function loadReportFacts(
     const declarationSourceSignature = createHash("sha256")
       .update(
         JSON.stringify({
-          stays: rows,
+          // Operational edits (cleaning, energy, timestamps) do not change a declaration.
+          // Keep this signature limited to the stay data used by reports and registers.
+          stays: rows.map((row) => ({
+            id: row.id,
+            gite_id: row.gite_id,
+            stay_group_id: row.stay_group_id,
+            hote_nom: row.hote_nom,
+            date_entree: row.date_entree,
+            date_sortie: row.date_sortie,
+            nb_nuits: row.nb_nuits,
+            nb_adultes: row.nb_adultes,
+            nb_enfants_2_17: row.nb_enfants_2_17,
+            prix_par_nuit: row.prix_par_nuit,
+            prix_total: row.prix_total,
+            remise_montant: row.remise_montant,
+            booking_source: row.booking_source,
+            frais_optionnels_montant: row.frais_optionnels_montant,
+            options: row.options,
+          })),
           properties: gites
             .filter((gite) => rows.some((row) => row.gite_id === gite.id))
             .map((gite) => ({

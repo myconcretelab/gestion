@@ -267,6 +267,7 @@ try {
       failRead: 0,
       failMutation: 0,
       conflict: false,
+      cachedState: null,
       reads: 0,
       reminderReads: 0,
       failReminders: false,
@@ -734,7 +735,11 @@ try {
         if (fixture.failRead-- > 0) {
           status = 503;
           body = { error: "Rapports indisponibles" };
-        } else body = fixture.state;
+        } else {
+          if (new URL(request.url()).searchParams.get("refresh") === "1")
+            fixture.cachedState = null;
+          body = fixture.cachedState ?? fixture.state;
+        }
       } else if (
         ["/api/reports/commands", "/api/reports/receipts"].includes(pathname) &&
         method === "POST"
@@ -749,6 +754,7 @@ try {
           body = { error: "Enregistrement indisponible" };
         } else if (fixture.conflict) {
           fixture.conflict = false;
+          fixture.cachedState = structuredClone(fixture.state);
           fixture.state.revision++;
           status = 409;
           body = {
@@ -1431,6 +1437,11 @@ try {
       await dialog
         .getByText(/Les données ont changé pendant l’examen/)
         .waitFor();
+      assert.equal(resolutionFixture.reportRefreshQueries.at(-1), "1");
+      assert.equal(
+        await dialog.getByLabel("Justification de la résolution").inputValue(),
+        note,
+      );
       assert.equal(await save().isDisabled(), true);
       await dialog
         .getByRole("button", { name: "Revenir au rapport", exact: true })

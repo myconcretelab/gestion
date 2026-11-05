@@ -1286,6 +1286,69 @@ test("un rapport sans recettes peut être confirmé à zéro", () =>
     );
   }));
 
+test("une modification de ménage ou d’énergie ne bloque pas la résolution depuis le cache", () =>
+  fixture(async ({ gite }) => {
+    const reservation = await stay(gite);
+    await pay(reservation.id, 25);
+    let state = await reports.getReportWorkspace();
+    const reportId = social(state).id;
+    state = await mutateAfterPaymentReview(state, { type: "ready", reportId });
+    state = await mutate(state, { type: "confirm", reportId });
+    const key = reportPeriodKey(social(state), "2026-10");
+    const original = structuredClone(state.progress[key].snapshot);
+    await pay(reservation.id, 75);
+    state = await reports.getReportWorkspace();
+    const cache = await db.default.financeReportCache.findFirstOrThrow();
+    const declaration = {
+      ...state.reports.find((row) => row.kind === "tourist")!,
+      nightDeclaration: true,
+    };
+    const before = result(state, "2026-10", declaration);
+
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        arrival_cleaning_checked_at: new Date(),
+        departure_cleaning_checked_at: new Date(),
+        energy_consumption_kwh: 8,
+        energy_cost_eur: 2,
+        commentaire: "Ménage vérifié",
+        updatedAt: new Date(+reservation.updatedAt + 60_000),
+      },
+    });
+    assert.equal(
+      (await db.default.financeReportCache.findFirstOrThrow()).source_revision,
+      cache.source_revision,
+    );
+    const fresh = await factsModule.loadReportFacts();
+    assert.equal(fresh.factsRevision, state.factsRevision);
+    assert.deepEqual(
+      result({ ...state, ...fresh }, "2026-10", declaration),
+      before,
+    );
+    state = await mutate(state, {
+      type: "resolve",
+      reportId,
+      outcome: "kept",
+      note: "Pas d’écart de chiffre",
+    });
+    assert.deepEqual(state.progress[key].snapshot, original);
+    assert.equal(state.progress[key].resolutions?.length, 1);
+
+    await db.default.reservation.update({
+      where: { id: reservation.id },
+      data: { nb_adultes: 3 },
+    });
+    await assert.rejects(
+      mutate(state, { type: "ready", reportId }),
+      /Les données ont changé/,
+    );
+    assert.notEqual(
+      (await factsModule.loadReportFacts()).factsRevision,
+      state.factsRevision,
+    );
+  }));
+
 for (const outcome of ["corrected", "kept"] as const) {
   test(`résolution ${outcome} : copie d’origine conservée, retrait de la file et des rappels, historique cumulatif`, () =>
     fixture(async ({ gite }) => {

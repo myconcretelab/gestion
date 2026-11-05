@@ -163,7 +163,7 @@ export default function ReportsPage() {
       return true;
     } catch (failure) {
       if (isApiError(failure) && failure.status === 409) {
-        await refresh();
+        await refresh(undefined, true);
       }
       setError(
         failure instanceof Error
