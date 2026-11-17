@@ -158,6 +158,8 @@
       }
       .band-table td:last-child {
         text-align: right;
+        white-space: nowrap;
+        padding-left: 2mm;
       }
       .band-option td {
         font-size: 9.6pt;
@@ -867,9 +869,9 @@
             <td>{{locationLabel}}</td>
             <td>{{montantBase}}</td>
           </tr>
+          {{{touristTaxRowsHtml}}}
           {{{remiseRowHtml}}}
           {{{optionsBandRowsHtml}}}
-          {{{touristTaxRowsHtml}}}
           <tr class="band-total">
             <td>TOTAL</td>
             <td>{{totalGlobal}}</td>

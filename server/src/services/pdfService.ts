@@ -1089,7 +1089,8 @@ const buildTouristTaxRows = (taxes: TouristTaxResult[] = [], sign = 1, documentT
     collector,
     tax.collector === "platform" ? formatEuro(tax.amount) : "",
   ].filter(Boolean).join(" · ");
-  return `<tr class="invoice-tourist-tax"><td>Taxe de séjour${tax.stay_label ? ` · ${escapeHtml(tax.stay_label)}` : ""}<div class="invoice-item-meta">${escapeHtml(detail)}</div></td><td>${tax.host_amount ? formatEuro(sign * tax.host_amount) : "—"}</td></tr>`;
+  const amount = tax.host_amount ? (isContract ? formatSignedEuro(tax.host_amount, "+") : formatEuro(sign * tax.host_amount)) : "—";
+  return `<tr class="invoice-tourist-tax"><td>Taxe de séjour${tax.stay_label ? ` · ${escapeHtml(tax.stay_label)}` : ""}<div class="invoice-item-meta">${escapeHtml(detail)}</div></td><td>${amount}</td></tr>`;
 }).join("");
 
 const buildContractHtml = async (params: {
@@ -1104,7 +1105,7 @@ const buildContractHtml = async (params: {
   const remiseMontantValue = toNumber(params.contract.remise_montant);
   const remiseRowHtml =
     remiseMontantValue > 0
-      ? `<tr><td>Remise exceptionnelle</td><td>${escapeHtml(formatEuro(remiseMontantValue))}</td></tr>`
+      ? `<tr><td>Remise exceptionnelle</td><td>${escapeHtml(formatSignedEuro(remiseMontantValue, "-"))}</td></tr>`
       : "";
 
   return renderTemplate(contractHtml, {

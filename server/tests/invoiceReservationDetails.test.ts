@@ -471,6 +471,8 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
     assert.match(contractPreview.html, /hors taxe de séjour/);
     assert.match(contractPreview.html, /Hébergement · 1 nuit, hors taxe de séjour/);
     assert.match(contractPreview.html, /2 personnes taxables × 1 nuit × 1,50/);
+    assert.match(contractPreview.html, /<td>Hébergement[^<]*<\/td>\s*<td>[^<]*<\/td>\s*<\/tr>\s*<tr class="invoice-tourist-tax">/);
+    assert.match(contractPreview.html, /class="invoice-tourist-tax">[\s\S]*?<td>\+ 3,00(?:\s|&nbsp;)*€<\/td>/);
     assert.doesNotMatch(contractPreview.html, /Collectivité &lt;test&gt;|comprise dans le prix annoncé|personne\(s\) taxable\(s\)/);
     assert.match(
       contractPreview.html,
