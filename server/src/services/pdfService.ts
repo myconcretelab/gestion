@@ -1074,12 +1074,22 @@ const prepareContractPage = async (page: Page, html: string) => {
   return applyCompactionIfOverflow(page);
 };
 
-const buildTouristTaxRows = (taxes: TouristTaxResult[] = [], sign = 1) => taxes.map(tax => {
-  const collector = tax.collector === "host" ? (tax.included ? "comprise dans le prix annoncé" : "en supplément")
+const buildTouristTaxRows = (taxes: TouristTaxResult[] = [], sign = 1, documentType: "contract" | "invoice" = "invoice") => taxes.map(tax => {
+  const isContract = documentType === "contract";
+  const collector = tax.collector === "host" ? (tax.included ? (isContract ? "" : "comprise dans le prix annoncé") : "en supplément")
     : tax.collector === "platform" ? `collectée par ${tax.platform || "la plateforme"}, non due au loueur`
     : tax.collector === "not_applicable" ? `non applicable : ${tax.exemption_reason}` : "collecteur à préciser";
-  const detail = `${tax.taxable_adults} personne(s) taxable(s) × ${tax.nights} nuit(s) × ${formatEuro(tax.unit_amount)}${tax.exempt_people ? ` · ${tax.exempt_people} personne(s) exonérée(s)` : ""}${tax.authority ? ` · ${tax.authority}` : ""}`;
-  return `<tr class="invoice-tourist-tax"><td>Taxe de séjour${tax.stay_label ? ` · ${escapeHtml(tax.stay_label)}` : ""}<div class="invoice-item-meta">${escapeHtml(detail)} · ${escapeHtml(collector)}${tax.collector === "platform" ? ` · ${formatEuro(tax.amount)}` : ""}</div></td><td>${tax.host_amount ? formatEuro(sign * tax.host_amount) : "—"}</td></tr>`;
+  const taxablePeople = isContract ? formatCountLabel(tax.taxable_adults, "personne taxable", "personnes taxables") : `${tax.taxable_adults} personne(s) taxable(s)`;
+  const nights = isContract ? formatCountLabel(tax.nights, "nuit") : `${tax.nights} nuit(s)`;
+  const exemptPeople = isContract ? formatCountLabel(tax.exempt_people, "personne exonérée", "personnes exonérées") : `${tax.exempt_people} personne(s) exonérée(s)`;
+  const detail = [
+    `${taxablePeople} × ${nights} × ${formatEuro(tax.unit_amount)}`,
+    tax.exempt_people ? exemptPeople : "",
+    !isContract ? tax.authority : "",
+    collector,
+    tax.collector === "platform" ? formatEuro(tax.amount) : "",
+  ].filter(Boolean).join(" · ");
+  return `<tr class="invoice-tourist-tax"><td>Taxe de séjour${tax.stay_label ? ` · ${escapeHtml(tax.stay_label)}` : ""}<div class="invoice-item-meta">${escapeHtml(detail)}</div></td><td>${tax.host_amount ? formatEuro(sign * tax.host_amount) : "—"}</td></tr>`;
 }).join("");
 
 const buildContractHtml = async (params: {
@@ -1121,9 +1131,9 @@ const buildContractHtml = async (params: {
     heureDepart: params.contract.heure_depart,
     nbNuits: String(params.totals.nbNuits),
     prixParNuit: formatEuro(toNumber(params.contract.prix_par_nuit)),
-    locationLabel: params.totals.touristTaxes?.length ? `Hébergement · ${params.totals.nbNuits} nuit(s), hors taxe de séjour` : `${params.totals.nbNuits} nuits x ${formatEuro(toNumber(params.contract.prix_par_nuit))}`,
+    locationLabel: params.totals.touristTaxes?.length ? `Hébergement · ${formatCountLabel(params.totals.nbNuits, "nuit")}, hors taxe de séjour` : `${formatCountLabel(params.totals.nbNuits, "nuit")} x ${formatEuro(toNumber(params.contract.prix_par_nuit))}`,
     montantBase: formatEuro(params.totals.touristTaxes?.[0] ? params.totals.touristTaxes[0].accommodation_amount + reservationIncludedOptionCents(params.contract.options, Math.round(params.totals.totalSansOptions * 100)) / 100 + toNumber(params.contract.remise_montant) : params.totals.montantBase),
-    touristTaxRowsHtml: buildTouristTaxRows(params.totals.touristTaxes),
+    touristTaxRowsHtml: buildTouristTaxRows(params.totals.touristTaxes, 1, "contract"),
     touristTaxDescription: params.totals.touristTaxes?.length ? "La taxe de séjour est détaillée séparément ci-dessus. Les sommes collectées par une plateforme ne sont pas à régler au loueur." : "Le prix comprend toutes les charges ainsi que la taxe de séjour :",
     remiseMontant: formatEuro(toNumber(params.contract.remise_montant)),
     remiseRowHtml,

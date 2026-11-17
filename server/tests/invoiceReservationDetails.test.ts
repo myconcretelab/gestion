@@ -469,6 +469,9 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
     assert.match(paidPreview.html, /séjour est déjà réglé en totalité/);
     assert.doesNotMatch(paidPreview.html, /Le montant restant de la location/);
     assert.match(contractPreview.html, /hors taxe de séjour/);
+    assert.match(contractPreview.html, /Hébergement · 1 nuit, hors taxe de séjour/);
+    assert.match(contractPreview.html, /2 personnes taxables × 1 nuit × 1,50/);
+    assert.doesNotMatch(contractPreview.html, /Collectivité &lt;test&gt;|comprise dans le prix annoncé|personne\(s\) taxable\(s\)/);
     assert.match(
       contractPreview.html,
       /La taxe de séjour est détaillée séparément/,
