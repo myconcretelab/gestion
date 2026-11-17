@@ -20,6 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export type QuickReservationDraft = {
   hote_nom: string;
   telephone: string;
+  email: string;
   date_entree: string;
   date_sortie: string;
   nb_adultes: number;
@@ -132,6 +133,7 @@ export const buildNewQuickReservationDraft = (params: {
 }): QuickReservationDraft => ({
   hote_nom: "",
   telephone: "",
+  email: "",
   date_entree: params.startIso,
   date_sortie: params.exitIso,
   nb_adultes: clampQuickReservationAdults(params.defaultAdults, params.gite),
@@ -156,6 +158,7 @@ export const buildQuickReservationDraftFromReservation = (params: {
   return {
     hote_nom: reservation.hote_nom,
     telephone: formatQuickReservationPhone(reservation.telephone ?? ""),
+    email: reservation.email ?? "",
     date_entree: normalizeIsoDate(reservation.date_entree),
     date_sortie: normalizeIsoDate(reservation.date_sortie),
     nb_adultes: clampQuickReservationAdults(reservation.nb_adultes, gite),
@@ -446,6 +449,7 @@ export const buildQuickReservationSavePayload = (params: {
 }) => {
   const { draft, gite, baseOptions } = params;
   const hostName = draft.hote_nom.trim();
+  const email = draft.email.trim();
   const nightly = Number.parseFloat(String(draft.prix_par_nuit).replace(",", "."));
   const adults = Math.max(0, Math.trunc(Number(draft.nb_adultes) || 0));
   const entryDate = parseOptionalIsoDate(draft.date_entree);
@@ -457,6 +461,14 @@ export const buildQuickReservationSavePayload = (params: {
       ok: false as const,
       error: "Renseigne le nom de l'hôte.",
       errorField: "hote_nom" as QuickReservationErrorField,
+    };
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return {
+      ok: false as const,
+      error: "Renseigne une adresse email valide.",
+      errorField: "email" as QuickReservationErrorField,
     };
   }
 
@@ -504,6 +516,7 @@ export const buildQuickReservationSavePayload = (params: {
     payload: {
       hote_nom: hostName,
       telephone: draft.telephone.trim() || undefined,
+      email: email || null,
       date_entree: draft.date_entree,
       date_sortie: draft.date_sortie,
       nb_adultes: adults,

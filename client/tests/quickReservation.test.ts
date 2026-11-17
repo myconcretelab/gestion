@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildNewQuickReservationDraft,
+  buildQuickReservationDraftFromReservation,
+  buildQuickReservationSavePayload,
   computeQuickReservationDerivedState,
   formatQuickReservationPhone,
   getQuickReservationSmsPhoneDigits,
+  updateQuickReservationDraftField,
   type QuickReservationDraft,
 } from "../src/pages/shared/quickReservation";
-import type { Gite } from "../src/utils/types";
+import type { Gite, Reservation } from "../src/utils/types";
 
 const gite = {
   id: "g1",
@@ -26,6 +30,7 @@ const gite = {
 const draft: QuickReservationDraft = {
   hote_nom: "Client",
   telephone: "06 00 00 00 00",
+  email: "",
   date_entree: "2026-07-10",
   date_sortie: "2026-07-12",
   nb_adultes: 2,
@@ -38,6 +43,55 @@ const draft: QuickReservationDraft = {
   option_serviettes: 2,
   option_chiens: 0,
 };
+
+test("la création mobile permet un email facultatif et supprime les espaces avant envoi", () => {
+  const initial = buildNewQuickReservationDraft({
+    startIso: draft.date_entree,
+    exitIso: draft.date_sortie,
+    defaultAdults: 2,
+    nightlySuggestion: 100,
+    gite,
+  });
+  assert.equal(initial.email, "");
+  const withoutEmail = buildQuickReservationSavePayload({
+    draft: { ...initial, hote_nom: "Client" }, gite, baseOptions: null,
+  });
+  assert.ok(withoutEmail.ok);
+  assert.equal(withoutEmail.payload.email, null);
+
+  const withEmail = updateQuickReservationDraftField({
+    current: { ...initial, hote_nom: "Client" },
+    field: "email", value: "  client+sejour@example.com  ", gite,
+  });
+  const saved = buildQuickReservationSavePayload({ draft: withEmail, gite, baseOptions: null });
+  assert.ok(saved.ok);
+  assert.equal(saved.payload.email, "client+sejour@example.com");
+});
+
+test("l'édition mobile préremplit l'email et permet de le modifier ou de l'effacer", () => {
+  const reservation = { ...draft, id: "r1", email: "client@example.com" } as Reservation;
+  const initial = buildQuickReservationDraftFromReservation({ reservation, gite });
+  assert.equal(initial.email, "client@example.com");
+  const unchanged = buildQuickReservationSavePayload({ draft: initial, gite, baseOptions: null });
+  assert.ok(unchanged.ok);
+  assert.equal(unchanged.payload.email, reservation.email);
+
+  for (const [value, expected] of [["nouveau@example.com", "nouveau@example.com"], ["", null], ["   ", null]] as const) {
+    const edited = updateQuickReservationDraftField({ current: initial, field: "email", value, gite });
+    const saved = buildQuickReservationSavePayload({ draft: edited, gite, baseOptions: null });
+    assert.ok(saved.ok);
+    assert.equal(saved.payload.email, expected);
+  }
+  assert.equal(buildQuickReservationDraftFromReservation({ reservation: { ...reservation, email: null }, gite }).email, "");
+});
+
+test("la sauvegarde mobile signale une adresse email invalide", () => {
+  for (const email of ["invalide", "client@", "client@example", "client @example.com"]) {
+    const result = buildQuickReservationSavePayload({ draft: { ...draft, email }, gite, baseOptions: null });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.errorField, "email");
+  }
+});
 
 test("computeQuickReservationDerivedState formule les options du SMS en français naturel", () => {
   const result = computeQuickReservationDerivedState({

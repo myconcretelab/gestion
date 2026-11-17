@@ -369,6 +369,22 @@ const MobileReservationSheet = ({
                 />
               </label>
 
+              <label className="field field--small calendar-quick-create-sheet__host-field">
+                Email
+                <input
+                  data-reservation-field="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-invalid={errorField === "email"}
+                  value={draft.email}
+                  placeholder="voyageur@exemple.fr"
+                  onChange={(event) => onFieldChange("email", event.target.value)}
+                />
+              </label>
+
               <div className="calendar-quick-create-sheet__dates-band">
                 <label className="field field--small calendar-quick-create-sheet__host-field">
                   Entrée
