@@ -4836,6 +4836,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                                 <TouristTaxStayEditor source={getBookingSource(draft)} value={optionDraft.tourist_tax} settings={optionGite.taxe_sejour_config}
                                   onChange={tourist_tax => updateReservationOptionsSelection(reservation, draft, previous => ({ ...previous, tourist_tax }))}
                                   nights={draft.nb_nuits} adults={draft.nb_adultes} children={draft.nb_enfants_2_17 ?? 0}
+                                  onAdultsChange={nb_adultes => updateExistingField(reservation, previous => ({ ...previous, nb_adultes }), { autosave: false })}
                                   onChildrenChange={nb_enfants_2_17 => updateExistingField(reservation, previous => ({ ...previous, nb_enfants_2_17 }), { autosave: false })}
                                   accommodation={draft.prix_total} start={draft.date_entree} />
                                 <ReservationOptionsEditor
