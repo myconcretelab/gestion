@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import ActionMenu from "./shared/ActionMenu";
 import { apiFetch, buildApiUrl, isAbortError } from "../utils/api";
 import type { Contrat, Gite } from "../utils/types";
@@ -17,6 +17,7 @@ import ContractReturnDrawer from "./shared/ContractReturnDrawer";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import SignedDocumentLightbox from "./shared/SignedDocumentLightbox";
 import { useDebouncedValue } from "./shared/useDebouncedValue";
+import { getContractRemainingDueAmount } from "../utils/contractBalance";
 
 const toLocalDateKey = (value: Date) => {
   const year = value.getFullYear();
@@ -170,9 +171,12 @@ const ArrowDownIcon = () => (
 );
 
 const ContratsListPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedEmailContractId = searchParams.get("email");
+  const handledEmailContractId = useRef<string | null>(null);
   const [contrats, setContrats] = useState<Contrat[]>([]);
   const [gites, setGites] = useState<Gite[]>([]);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "");
   const [giteId, setGiteId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -317,7 +321,7 @@ const ContratsListPage = () => {
     }
   };
 
-  const openEmailComposer = async (contrat: Contrat) => {
+  const openEmailComposer = useCallback(async (contrat: Contrat) => {
     if (!contrat.locataire_email) return;
     try {
       const documentUrl = new URL(
@@ -373,7 +377,20 @@ const ContratsListPage = () => {
       setError((err as Error).message);
       setNotice(null);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!requestedEmailContractId || handledEmailContractId.current === requestedEmailContractId) return;
+    const contrat = contrats.find((item) => item.id === requestedEmailContractId);
+    if (!contrat?.locataire_email?.trim()) return;
+    handledEmailContractId.current = requestedEmailContractId;
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.delete("email");
+      return next;
+    }, { replace: true });
+    void openEmailComposer(contrat);
+  }, [contrats, requestedEmailContractId, openEmailComposer, setSearchParams]);
 
   const saveInternalComment = async (contrat: Contrat) => {
     const draft = commentDrafts[contrat.id] ?? "";
@@ -818,7 +835,7 @@ const ContratsListPage = () => {
                     </div>
                   </td>
                   <td>
-                    <strong>{formatEuro(contrat.solde_montant)}</strong>
+                    <strong>{formatEuro(getContractRemainingDueAmount(contrat))}</strong>
                   </td>
                   <td className="table-actions-cell">
                     <div className="table-actions table-actions--menu">

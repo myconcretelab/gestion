@@ -3,7 +3,7 @@ import CleaningBillingControl from "./shared/CleaningBillingControl";
 import { createAutomaticTouristTaxStay as createTouristTaxStay } from "@contrats/shared";
 import TouristTaxStayEditor from "./shared/TouristTaxStayEditor";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiFetch, isAbortError } from "../utils/api";
 import type { Contrat, ContratOptions, Reservation } from "../utils/types";
 import { formatEuro } from "../utils/format";
@@ -1267,9 +1267,19 @@ const ContratFormPage = () => {
             {saving ? (isEdit ? "Mise à jour..." : "Création...") : isEdit ? "Mettre à jour le contrat" : "Créer le contrat"}
           </button>
           {createdContract && (
-            <button className="secondary" onClick={downloadPdf}>
-              Télécharger le PDF
-            </button>
+            <>
+              <button className="secondary" onClick={downloadPdf}>
+                Télécharger le PDF
+              </button>
+              {createdContract.locataire_email?.trim() && (
+                <Link to={`/contrats?${new URLSearchParams({ q: createdContract.numero_contrat, email: createdContract.id })}`}>
+                  Envoyer par email
+                </Link>
+              )}
+              <Link to={`/contrats?${new URLSearchParams({ q: createdContract.numero_contrat })}`}>
+                Voir dans la liste des contrats
+              </Link>
+            </>
           )}
         </div>
         {createdContract && (
