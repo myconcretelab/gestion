@@ -50,9 +50,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     tabs: [
       { label: "E-mails", path: "emails", navId: "nav-settings-email-texts" },
       { label: "SMS", path: "sms", navId: "nav-settings-sms" },
-      { label: "Telegram", path: "telegram", navId: "nav-settings-telegram" },
       { label: "Notifications", path: "notifications", navId: "nav-settings-notifications" },
-      { label: "E-mail quotidien", path: "email-quotidien", navId: "nav-settings-daily-reservation-email" },
     ],
   },
   {
@@ -99,8 +97,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   },
 ];
 
-const categoryForPath = (pathname: string) => {
-  const segment = pathname.split("/")[2] ?? "";
+const categoryForSegment = (segment: string) => {
   return SETTINGS_CATEGORIES.find((category) =>
     category.tabs.some((tab) => tab.path === segment),
   ) ?? SETTINGS_CATEGORIES[0];
@@ -108,8 +105,9 @@ const categoryForPath = (pathname: string) => {
 
 export default function SettingsShell({ children }: { children: ReactNode }) {
   const location = useLocation();
-  const activeCategory = categoryForPath(location.pathname);
-  const activeSegment = location.pathname.split("/")[2] ?? "";
+  const segment = location.pathname.split("/")[2] ?? "";
+  const activeSegment = segment === "email-quotidien" ? "notifications" : segment;
+  const activeCategory = categoryForSegment(activeSegment);
   const activeCategoryLinkRef = useRef<HTMLAnchorElement>(null);
   const activeTabLinkRef = useRef<HTMLAnchorElement>(null);
 
@@ -153,9 +151,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
                   key={tab.path}
                   ref={tab.path === activeSegment ? activeTabLinkRef : undefined}
                   to={`/parametres/${tab.path}`}
-                  className={({ isActive }) =>
-                    `settings-theme-tabs__link${isActive ? " settings-theme-tabs__link--active" : ""}`
-                  }
+                  className={`settings-theme-tabs__link${tab.path === activeSegment ? " settings-theme-tabs__link--active" : ""}`}
                 >
                   {tab.label}
                 </NavLink>

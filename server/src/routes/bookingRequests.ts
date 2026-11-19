@@ -20,7 +20,7 @@ import {
 import { buildBookingRequestApprovedSms, sendBookingRequestApprovedEmail, sendBookingRequestRejectedEmail } from "../services/bookingRequestEmail.js";
 import { fromJsonString, encodeJsonField } from "../utils/jsonFields.js";
 import { sendOvhSms } from "../services/ovhSms.js";
-import { notifyBookingRequestApprovedOnTelegram } from "../services/telegramNotifications.js";
+import { notifyBookingRequestApproved } from "../services/ownerNotificationEvents.js";
 import type { OptionsInput } from "../services/contractCalculator.js";
 import { optionsSchema } from "./shared/rentalDocument.js";
 
@@ -455,11 +455,7 @@ router.post("/:id/approve", async (req, res, next) => {
       }
     }
 
-    try {
-      await notifyBookingRequestApprovedOnTelegram(approvedPayload);
-    } catch (telegramError) {
-      console.error("[booked] booking request approval Telegram notification failed:", telegramError);
-    }
+    await notifyBookingRequestApproved(approvedPayload);
 
     return res.json(approvedPayload);
   } catch (error) {

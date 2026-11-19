@@ -7,7 +7,7 @@ import { fromJsonString } from "../../utils/jsonFields.js";
 import { getAuthenticatedAppUser } from "../../services/serverAuth.js";
 import { canManageCleaning, DEFAULT_CLEANING_RULE, parisWallTime, serializeCleaningTask, syncCleaningTasks } from "../../services/cleaningTasks.js";
 import { getParisClock, isCleaningCheckAvailable, loadGiteCleaningReadiness, updateGiteCleaningReadiness } from "../../services/giteCleaningReadiness.js";
-import { notifyCleaningCompletedOnTelegram, notifyGiteCheckedOnTelegram } from "../../services/telegramNotifications.js";
+import { notifyCleaningCompleted, notifyGiteChecked } from "../../services/ownerNotificationEvents.js";
 import { parseRotationAssignees, validateAssignees } from "../../services/assignmentRules.js";
 
 const router = Router();
@@ -235,7 +235,7 @@ router.patch("/:id/status", async (req, res, next) => {
     }
     const now = new Date();
     if (!manager && status === "done" && now < task.starts_at) return res.status(409).json({ error: "Le ménage n’est pas encore disponible." });
-    const gite = await prisma.gite.findUnique({ where: { id: task.gite_id }, select: { id: true, nom: true, prefixe_contrat: true, ordre: true } });
+    const gite = await prisma.gite.findUnique({ where: { id: task.gite_id }, select: { id: true, nom: true, email: true, prefixe_contrat: true, ordre: true } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
     const shouldVerify = status === "verified" || (status === "done" && rule?.requires_check === false);
     if (shouldVerify || task.checked_at) {
@@ -263,10 +263,19 @@ router.patch("/:id/status", async (req, res, next) => {
     } });
     let notificationWarning: string | null = null;
     if (task.status !== nextStatus) {
-      try {
-        if (status === "done" && rule?.notify_on_complete) await notifyCleaningCompletedOnTelegram(gite.nom, now, user?.firstName);
-        if (nextStatus === "verified") await notifyGiteCheckedOnTelegram(gite.nom, now, user?.firstName);
-      } catch { notificationWarning = "État enregistré, mais la notification Telegram a échoué."; }
+      const notifications = [];
+      if (status === "done") {
+        notifications.push(notifyCleaningCompleted({
+          taskId: task.id, propertyId: gite.id, propertyEmail: gite.email, name: gite.nom, completedAt: updated.completed_at ?? now,
+          completedBy: user?.firstName, selected: rule?.notify_on_complete ?? false,
+        }));
+      }
+      if (nextStatus === "verified") {
+        notifications.push(notifyGiteChecked(gite.nom, now, user?.firstName, task.departure_reservation_id, gite.email));
+      }
+      if ((await Promise.all(notifications)).includes(false)) {
+        notificationWarning = "État enregistré, mais la notification propriétaire a échoué.";
+      }
     }
     return res.json({ ...(await taskResponse(updated.id)), notification_warning: notificationWarning });
   } catch (error) { next(error); }

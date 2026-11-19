@@ -1,20 +1,278 @@
-.notification-delivery-status {
-  margin: 16px 0;
-  padding: 16px;
-  border: 1px solid var(--primary);
-  border-radius: 12px;
-  background: var(--primary-soft);
+.owner-notifications {
+  min-width: 0;
+  container-type: inline-size;
 }
-.notification-delivery-status__channels {
+
+.owner-notifications__header h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.owner-notifications__header p,
+.owner-notifications__hint,
+.owner-notification-digest p {
+  color: var(--muted);
+  margin: 0.4rem 0 0;
+}
+
+.owner-notifications__tabs {
+  display: flex;
+  gap: 1rem;
+  margin: 1.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.owner-notifications__tabs a {
+  padding: 0.6rem 0.3rem 0.75rem;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.owner-notifications__tabs a[aria-current="page"] {
+  border-bottom-color: var(--primary);
+  color: var(--ink);
+}
+
+.owner-notifications__hint {
+  margin-bottom: 1rem;
+  max-width: 72ch;
+}
+
+.owner-notification-matrix,
+.owner-notification-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.owner-notification-matrix {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--card);
+}
+
+.owner-notification-matrix__columns,
+.owner-notification-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(4.5rem, 0.23fr) minmax(
+      7rem,
+      0.38fr
+    ) minmax(7.5rem, 0.35fr);
+  gap: 0.55rem 0.8rem;
+  align-items: center;
+  padding: 0.8rem 1rem;
+}
+
+.owner-notification-matrix__columns {
+  font-size: 0.81rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.owner-notification-matrix__columns > :not(:first-child) {
+  text-align: center;
+}
+
+.owner-notification-group h2 {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.owner-notification-rule + .owner-notification-rule {
+  border-top: 1px solid var(--border);
+}
+
+.owner-notification-rule__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.owner-notification-rule__label small {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.owner-notification-rule select {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.83rem;
+}
+
+.owner-notification-rule__check,
+.owner-notification-rule__telegram {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.owner-notification-rule__check > span,
+.owner-notification-rule__telegram > span {
+  display: none;
+}
+
+.owner-notifications input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.owner-notification-rule__details {
+  grid-column: 1 / -1;
+  font-size: 0.88rem;
+}
+
+.owner-notification-rule__details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.owner-notification-rule__details .field {
+  min-width: 0;
+  width: min(100%, 19rem);
+  margin: 0.65rem 0;
+}
+
+.owner-notification-rule--exception {
+  padding-inline: 0;
+}
+
+.owner-notification-rule--exception > label:first-child,
+.owner-notification-choice,
+.owner-notification-choice-list label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.owner-notification-choice-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 24px;
+  gap: 0.5rem 1rem;
 }
-.notification-delivery-status p {
-  margin: 10px 0;
+
+.owner-notification-save,
+.owner-notification-digest,
+.owner-notification-channel__heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
 }
-.notification-delivery-status a {
+
+.owner-notification-save {
+  margin: 1rem 0;
+}
+
+.owner-notification-digest {
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+
+.owner-notification-digest a {
   color: var(--ink);
+  text-underline-offset: 0.2em;
+}
+
+.owner-notification-digest h2,
+.owner-notification-channel h3 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.owner-notification-channels {
+  display: grid;
+  gap: 1rem;
+}
+
+.owner-notification-channel__heading {
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.owner-notification-status {
+  padding: 0.2rem 0.55rem;
+  border-radius: 1rem;
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: 0.8rem;
   font-weight: 600;
-  text-underline-offset: 3px;
+}
+
+.owner-notification-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.owner-notification-fields legend {
+  margin-bottom: 0.35rem;
+}
+
+.owner-notification-fields .field {
+  min-width: 0;
+}
+
+.owner-notification-devices {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.15rem;
+}
+
+.owner-notification-devices button {
+  margin-inline-start: 0.45rem;
+}
+
+@container (max-width: 620px) {
+  .owner-notification-matrix__columns {
+    display: none;
+  }
+
+  .owner-notification-rule {
+    grid-template-columns: minmax(0, 0.85fr) minmax(5.9rem, 1.2fr) minmax(
+        5.9rem,
+        1.15fr
+      );
+    align-items: start;
+    gap: 0.55rem 0.5rem;
+  }
+
+  .owner-notification-rule__label {
+    grid-column: 1 / -1;
+  }
+
+  .owner-notification-rule__check,
+  .owner-notification-rule__telegram {
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.3rem;
+    align-items: flex-start;
+  }
+
+  .owner-notification-rule__check > span,
+  .owner-notification-rule__telegram > span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .owner-notification-rule__check input {
+    margin-top: 0.35rem !important;
+  }
 }

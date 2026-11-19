@@ -27,7 +27,7 @@ import {
   loadGiteCleaningReadiness,
   updateGiteCleaningReadiness,
 } from "../services/giteCleaningReadiness.js";
-import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
+import { notifyGiteChecked } from "../services/ownerNotificationEvents.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { canManageCleaning, doesCleaningRequireCheck, getCleaningTaskForDeparture, listCleaningTasksForDepartures, parisWallTime, setCleaningTaskReadiness, syncCleaningTasks } from "../services/cleaningTasks.js";
 import { isModuleEnabled } from "../services/installationConfig.js";
@@ -614,7 +614,7 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
     }).parse(req.body ?? {});
     const gite = await prisma.gite.findUnique({
       where: { id: req.params.giteId },
-      select: todayGiteSelect,
+      select: { ...todayGiteSelect, email: true },
     });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable." });
 
@@ -669,15 +669,8 @@ router.put("/cleaning-readiness/:giteId", async (req, res, next) => {
       : null;
     let notificationWarning: string | null = null;
     if (checked && !wasChecked && checkedAt) {
-      try {
-        const firstName = currentUser?.firstName ?? null;
-        const result = await notifyGiteCheckedOnTelegram(gite.nom, checkedAt, firstName);
-        if (!result.sent_count) {
-          notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
-        }
-      } catch {
-        notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
-      }
+      const queued = await notifyGiteChecked(gite.nom, checkedAt, currentUser?.firstName, readiness.departure_reservation_id, gite.email);
+      if (!queued) notificationWarning = "Contrôle enregistré, mais la notification propriétaire a échoué.";
     }
 
     return res.json({

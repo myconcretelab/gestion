@@ -9,6 +9,14 @@ import {
   resolveTelegramNotificationRecipients,
   sendTelegramMessage,
 } from "../../services/telegramNotifications.js";
+import {
+  bookingPaymentOwnerEvent,
+  readOwnerNotificationSettings,
+} from "../../services/ownerNotificationSettings.js";
+import {
+  enqueueOwnerNotification,
+  paymentNotificationState,
+} from "../../services/ownerNotifications.js";
 import { getOrganizationId } from "../organizations/context.js";
 import {
   enqueueOrganizationJob,
@@ -26,27 +34,49 @@ const jobPayload = z.object({
 });
 type PaymentEvent = {
   id: string;
+  reservation_id?: string | null;
   status: string;
   paid_amount_cents: number;
   refunded_amount_cents: number;
 };
-const eventState = (payment: PaymentEvent) =>
-  `${payment.status}:${payment.paid_amount_cents}:${payment.refunded_amount_cents}`;
-
 // Each recipient has an independent retry record. An unavailable bot does not
 // resend successful emails or notifications to other recipients.
 export const queueBookingPaymentTelegram = async (payment: PaymentEvent) => {
+  if (
+    !["paid", "requires_review", "refunded", "partially_refunded"].includes(
+      payment.status,
+    )
+  )
+    return;
+  const settings = await readOwnerNotificationSettings();
+  const event = bookingPaymentOwnerEvent(
+    payment,
+    Boolean(payment.reservation_id),
+  );
+  const override = settings.rules[event];
+  if (override?.push !== undefined || override?.telegram !== undefined) {
+    const row = await loadPayment(payment.id);
+    const content = row && (await getPaymentContent(row));
+    if (!content || !row) return;
+    const state = paymentNotificationState(payment);
+    await enqueueOwnerNotification({
+      event,
+      key: `payment:${payment.id}:${state}`,
+      message: buildBookingPaymentTelegramMessage(
+        content.payload,
+        content.paymentInfo,
+        Boolean(row.reservation_id),
+      ),
+      emailManagedByBooking: true,
+      payment: { id: payment.id, state },
+    });
+    return;
+  }
   const config = readTelegramNotificationConfig();
   if (
     !config.enabled ||
     !config.notify_booking_request_approved ||
     !config.bot_token
-  )
-    return;
-  if (
-    !["paid", "requires_review", "refunded", "partially_refunded"].includes(
-      payment.status,
-    )
   )
     return;
   for (const chatId of await resolveTelegramNotificationRecipients(config)) {
@@ -57,10 +87,40 @@ export const queueBookingPaymentTelegram = async (payment: PaymentEvent) => {
     await enqueueOrganizationJob({
       organizationId: getOrganizationId(),
       type: JOB_TYPE,
-      payload: { paymentId: payment.id, chatId, state: eventState(payment) },
-      idempotencyKey: `${JOB_TYPE}:${payment.id}:${eventState(payment)}:${recipientKey}`,
+      payload: {
+        paymentId: payment.id,
+        chatId,
+        state: paymentNotificationState(payment),
+      },
+      idempotencyKey: `${JOB_TYPE}:${payment.id}:${paymentNotificationState(payment)}:${recipientKey}`,
     });
   }
+};
+
+const loadPayment = (id: string) =>
+  prisma.bookingPayment.findUnique({
+    where: { id },
+    include: {
+      booking_request: { include: { gite: true } },
+      reservation: { include: { gite: true } },
+      payment_link: true,
+    },
+  });
+
+const getPaymentContent = async (
+  payment: NonNullable<Awaited<ReturnType<typeof loadPayment>>>,
+) => {
+  if (payment.reservation_id) return buildReservationLinkReceipt(payment);
+  if (
+    !payment.booking_request ||
+    (payment.status === "paid" && payment.booking_request.status !== "approved")
+  ) {
+    return null;
+  }
+  return {
+    payload: hydrateBookingRequest(payment.booking_request),
+    paymentInfo: payment,
+  };
 };
 
 const deliver: OrganizationJobHandler = async (job) => {
@@ -82,34 +142,16 @@ const deliver: OrganizationJobHandler = async (job) => {
     )
   )
     return { skipped: "recipient_removed" };
-  const payment = await prisma.bookingPayment.findUnique({
-    where: { id: input.paymentId },
-    include: {
-      booking_request: { include: { gite: true } },
-      reservation: { include: { gite: true } },
-      payment_link: true,
-    },
-  });
+  const payment = await loadPayment(input.paymentId);
   if (
     !payment ||
     payment.stripe_mode !== bookingStripeConfig()?.mode ||
-    eventState(payment) !== input.state
+    paymentNotificationState(payment) !== input.state
   )
     return { skipped: "superseded" };
   const existing = Boolean(payment.reservation_id);
-  if (
-    !existing &&
-    (!payment.booking_request ||
-      (payment.status === "paid" &&
-        payment.booking_request.status !== "approved"))
-  )
-    return { skipped: "not_confirmed" };
-  const content = existing
-    ? await buildReservationLinkReceipt(payment)
-    : {
-        payload: hydrateBookingRequest(payment.booking_request!),
-        paymentInfo: payment,
-      };
+  const content = await getPaymentContent(payment);
+  if (!content) return { skipped: "not_confirmed" };
   const message = buildBookingPaymentTelegramMessage(
     content.payload,
     content.paymentInfo,

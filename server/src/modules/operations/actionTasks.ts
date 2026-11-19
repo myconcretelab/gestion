@@ -1,3 +1,4 @@
+import { escapeNotificationText, notifyOwner } from "../../services/ownerNotifications.js";
 import { Router } from "express";
 import crypto from "node:crypto";
 import { z } from "zod";
@@ -413,6 +414,22 @@ router.patch("/tasks/:id/status", async (req, res, next) => {
       spent_minutes: status === "done" ? spentMinutes : task.spent_minutes,
       ...(task.status === "done" && status !== "done" ? taskUrgencyData(0) : {}),
     } });
+    if (status === "done" && task.status !== "done") {
+      const gite = await prisma.gite.findUnique({ where: { id: task.gite_id }, select: { nom: true, email: true } });
+      await notifyOwner({
+        event: "task_completed",
+        key: `${task.id}:${task.updatedAt.toISOString()}`,
+        message: [
+          "<b>Tâche terminée</b>",
+          escapeNotificationText(task.title),
+          gite ? `Gîte : ${escapeNotificationText(gite.nom)}` : "",
+          user?.displayName ? `Par ${escapeNotificationText(user.displayName)}` : "",
+        ].filter(Boolean).join("\n"),
+        taskTemplateId: task.template_id,
+        propertyEmail: gite?.email,
+        url: "/taches",
+      });
+    }
     return res.json(await taskResponse(task.id));
   } catch (error) { next(error); }
 });

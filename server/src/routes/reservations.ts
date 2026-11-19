@@ -44,7 +44,7 @@ import {
   getReservationOriginSystem,
   shouldExportReservationToIcal,
 } from "../utils/reservationOrigin.js";
-import { notifyGiteCheckedOnTelegram } from "../services/telegramNotifications.js";
+import { notifyGiteChecked } from "../services/ownerNotificationEvents.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import { verifyScopedApiToken } from "../services/apiTokens.js";
 import { recordCleaningCheckIntervention, removeUnpaidCleaningCheckIntervention } from "../services/userInterventions.js";
@@ -67,7 +67,7 @@ type CleaningCheckReservation = {
   departure_cleaning_checked_at: Date | null;
   arrival_cleaning_checked_by_user_id: string | null;
   departure_cleaning_checked_by_user_id: string | null;
-  gite: { nom: string } | null;
+  gite: { nom: string; email: string | null } | null;
 };
 
 const cleaningCheckSelect = {
@@ -79,7 +79,7 @@ const cleaningCheckSelect = {
   departure_cleaning_checked_at: true,
   arrival_cleaning_checked_by_user_id: true,
   departure_cleaning_checked_by_user_id: true,
-  gite: { select: { nom: true } },
+  gite: { select: { nom: true, email: true } },
 } as const;
 
 const getUtcDayRange = (value: Date) => {
@@ -225,13 +225,10 @@ router.put("/:id/cleaning-check", async (req, res, next) => {
     }
     let notificationWarning: string | null = null;
     if (changed.count && checked && !previousCheckedAt && canonicalCheckedAt) {
-      try {
-        const firstName = currentUser?.firstName ?? null;
-        const result = await notifyGiteCheckedOnTelegram(scope.reservation.gite?.nom ?? "Gîte", canonicalCheckedAt, firstName);
-        if (!result.sent_count) notificationWarning = "Contrôle enregistré. Notification Telegram non envoyée : vérifiez son activation et ses destinataires dans les réglages.";
-      } catch {
-        notificationWarning = "Contrôle enregistré, mais l’envoi Telegram a échoué.";
-      }
+      const queued = await notifyGiteChecked(
+        scope.reservation.gite?.nom ?? "Gîte", canonicalCheckedAt, currentUser?.firstName, scope.canonical.id, scope.reservation.gite?.email,
+      );
+      if (!queued) notificationWarning = "Contrôle enregistré, mais la notification propriétaire a échoué.";
     }
     res.json({
       occurrence,

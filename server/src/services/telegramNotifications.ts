@@ -30,7 +30,7 @@ export type TelegramNotificationPublicState = {
   bot_configured: boolean;
 };
 
-type BookingRequestTelegramPayload = {
+export type BookingRequestTelegramPayload = {
   id: string;
   approved_reservation_id?: string | null;
   hote_nom: string;
@@ -316,20 +316,6 @@ export const buildBookingRequestCreatedMessage = (
     .filter(Boolean)
     .join("\n");
 
-export const notifyBookingRequestCreatedOnTelegram = async (
-  payload: BookingRequestTelegramPayload,
-) => {
-  const config = readTelegramNotificationConfig();
-  if (!config.notify_booking_request_created) {
-    return { sent_count: 0, skipped_reason: "event_disabled" as const };
-  }
-
-  return sendTelegramMessage(
-    buildBookingRequestCreatedMessage(payload),
-    config,
-  );
-};
-
 const buildBookingOptionsSummary = (payload: BookingRequestTelegramPayload) => {
   const summary =
     buildBookingRequestOptionsTemplateValues(payload).optionsSummary;
@@ -419,18 +405,6 @@ export const buildBookingPaymentTelegramMessage = (
   return lines.filter(Boolean).join("\n");
 };
 
-export const notifyBookingRequestApprovedOnTelegram = async (
-  payload: BookingRequestTelegramPayload,
-) => {
-  const config = readTelegramNotificationConfig();
-  if (!config.notify_booking_request_approved)
-    return { sent_count: 0, skipped_reason: "event_disabled" as const };
-  return sendTelegramMessage(
-    buildBookingRequestApprovedTelegramMessage(payload),
-    config,
-  );
-};
-
 export const buildGiteCheckedMessage = (
   name: string,
   checkedAt: Date,
@@ -446,39 +420,15 @@ export const buildGiteCheckedMessage = (
     .filter(Boolean)
     .join("\n");
 
-export const notifyGiteCheckedOnTelegram = async (
-  name: string,
-  checkedAt: Date,
-  checkedBy?: string | null,
-) => {
-  const config = readTelegramNotificationConfig();
-  if (!config.notify_gite_checked)
-    return { sent_count: 0, skipped_reason: "event_disabled" };
-  return sendTelegramMessage(
-    buildGiteCheckedMessage(
-      name,
-      checkedAt,
-      config.gite_check_mentions,
-      checkedBy,
-    ),
-    config,
-  );
-};
-
-export const notifyCleaningCompletedOnTelegram = async (
+export const buildCleaningCompletedMessage = (
   name: string,
   completedAt: Date,
   completedBy?: string | null,
-) => {
-  const config = readTelegramNotificationConfig();
-  return sendTelegramMessage(
+) =>
     [
       `🧹 <b>Ménage terminé : ${escapeHtml(name)}</b>`,
       completedBy ? `Par ${escapeHtml(completedBy)}` : "",
       escapeHtml(formatDateTimeFr(completedAt)),
     ]
       .filter(Boolean)
-      .join("\n"),
-    config,
-  );
-};
+      .join("\n");

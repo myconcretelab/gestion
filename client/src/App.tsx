@@ -1109,6 +1109,7 @@ const App = () => {
             {(["organisation", "entreprises", "hebergements", "documents", "canaux", "connexions", "equipe-acces", "donnees", "systeme"] as const).map((section) => (
               <Route key={section} path={`/parametres/${section}`} element={<PageAccess allowed={canAccessPage("settings")}><ProductSettingsPage /></PageAccess>} />
             ))}
+            <Route path="/parametres/telegram" element={<Navigate to="/parametres/notifications?onglet=canaux" replace />} />
             <Route path="/parametres/notifications" element={<PageAccess allowed={canAccessPage("settings")}><NotificationSettings currentUser={currentUser} /></PageAccess>} />
             <Route path="/parametres/*" element={<PageAccess allowed={canAccessPage("settings")}><SettingsPage currentUser={currentUser} onAuthSessionUpdated={(session) => { setCurrentAuthUser(session.user); setAuthSession(session); }} /></PageAccess>} />
             <Route path="/abonnement" element={<PageAccess allowed={canAccessPage("settings")}><BillingPage /></PageAccess>} />

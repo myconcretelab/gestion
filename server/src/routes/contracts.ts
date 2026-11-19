@@ -1,3 +1,4 @@
+import { notifyContractReceived } from "../services/ownerNotificationEvents.js";
 import { cleaningBillingSuffix } from "@contrats/shared";
 import { BOOKING_SOURCES } from "@contrats/shared";
 import { assertLegacyTrackingEditable, syncManagedContractPayments, isManagedReservation, getContractPaymentContext } from "../modules/reservationPayments/ledger.js";
@@ -1019,6 +1020,9 @@ router.put("/:id", async (req, res, next) => {
       outputPath: pdfAbsolutePath,
     });
 
+    if (existing.statut_reception_contrat !== "recu" && contrat.statut_reception_contrat === "recu") {
+      await notifyContractReceived(contrat);
+    }
     res.json(hydrateContract(contrat));
   } catch (err) {
     next(err);
@@ -1090,7 +1094,7 @@ router.patch("/:id/reception", async (req, res, next) => {
     const data = receptionStatusSchema.parse(req.body);
     const existing = await prisma.contrat.findUnique({
       where: { id: req.params.id },
-      select: { date_reception_contrat: true },
+      select: { date_reception_contrat: true, statut_reception_contrat: true },
     });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
 
@@ -1105,6 +1109,9 @@ router.patch("/:id/reception", async (req, res, next) => {
       },
       include: { gite: true },
     });
+    if (existing.statut_reception_contrat !== "recu" && contrat.statut_reception_contrat === "recu") {
+      await notifyContractReceived(contrat);
+    }
     res.json(await hydrateContractForTrackingStatusResponse(contrat));
   } catch (err) {
     next(err);
@@ -1286,6 +1293,9 @@ router.patch("/:id/return-processing", async (req, res, next) => {
       });
     });
 
+    if (existing.statut_reception_contrat !== "recu" && updatedContract.statut_reception_contrat === "recu") {
+      await notifyContractReceived(updatedContract);
+    }
     res.json(await hydrateContractForTrackingStatusResponse(updatedContract));
   } catch (err) {
     next(err);
@@ -1345,6 +1355,7 @@ router.post("/:id/signed-document", async (req, res, next) => {
       await fs.unlink(previousPath).catch(() => undefined);
     }
 
+    if (!existing.signed_document_path) await notifyContractReceived(updated);
     res.json(hydrateContract(updated));
   } catch (err) {
     next(err);

@@ -265,7 +265,6 @@ export default function CleaningPage({ embedded = false, rulesOnly = false, rang
           {[0, 30, 60, 120].map((minutes) => <option key={minutes} value={minutes}>{minutes === 0 ? "À l’heure prévue d’arrivée" : `${minutes} min avant l’arrivée`}</option>)}
         </select></label>
         <label className="cleaning-page__checkbox"><input type="checkbox" checked={currentRule.requires_check} onChange={(event) => changeRule({ requires_check: event.target.checked })} /> Contrôle par le gestionnaire avant « gîte prêt »</label>
-        <label className="cleaning-page__checkbox"><input type="checkbox" checked={currentRule.notify_on_complete} onChange={(event) => changeRule({ notify_on_complete: event.target.checked })} /> Envoyer un Telegram quand le ménage est terminé</label>
         <label className="field">Rappel du contrôle avant l’arrivée<select value={currentRule.reminder_minutes} onChange={(event) => changeRule({ reminder_minutes: Number(event.target.value) })}>
           {[0, 60, 120, 240, 720, 1440].map((minutes) => <option key={minutes} value={minutes}>{minutes === 0 ? "Aucun rappel" : minutes < 60 ? `${minutes} min avant` : `${minutes / 60} h avant`}</option>)}
         </select></label>

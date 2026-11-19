@@ -15,6 +15,13 @@ import {
   type EmailBranding,
 } from "./emailPresentation.js";
 import { env } from "../config/env.js";
+import {
+  bookingPaymentOwnerEvent,
+  legacyBookingRequestEmail,
+  readOwnerNotificationEmails,
+  readOwnerNotificationSettings,
+} from "./ownerNotificationSettings.js";
+import { enqueueOwnerNotification, notifyOwner, paymentNotificationState } from "./ownerNotifications.js";
 import { sendSmtpMail } from "./mailer.js";
 import { formatBookedDateInput, type BookingQuote } from "./booked.js";
 import { readDocumentEmailTemplateSettings } from "./documentEmailTemplateSettings.js";
@@ -427,9 +434,6 @@ export const buildBookingRequestApprovedMessage = (
 
 const resolveReplyTo = (giteEmail?: string | null) =>
   giteEmail?.trim() || env.SMTP_REPLY_TO || undefined;
-const resolveAdminRecipient = (giteEmail?: string | null) =>
-  giteEmail?.trim() || env.SMTP_REPLY_TO.trim() || env.SMTP_FROM.trim() || null;
-
 const emailContext = async (payload: BookingRequestEmailPayload) => {
   const presentation = await resolveEmailPresentation(payload.gite);
   return {
@@ -448,20 +452,37 @@ export const sendBookingRequestCreatedEmails = async (
   payload: BookingRequestEmailPayload,
 ) => {
   const context = await emailContext(payload);
-  for (const [type, to] of [
-    ["bookingRequestOwner", resolveAdminRecipient(context.payload.gite.email)],
-    ["bookingRequestReceived", payload.email?.trim()],
-  ] as const) {
-    if (!to) continue;
-    const message = buildBookingEmailMessage(type, context.payload, context);
-    await sendSmtpMail({
-      to,
-      replyTo: resolveReplyTo(context.payload.gite.email),
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-    });
+  const guest = payload.email?.trim();
+  if (guest) {
+    const message = buildBookingEmailMessage("bookingRequestReceived", context.payload, context);
+    try {
+      await sendSmtpMail({
+        to: guest,
+        replyTo: resolveReplyTo(context.payload.gite.email),
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+      });
+    } catch {
+      console.error("[booked] Échec de l’accusé de réception voyageur.");
+    }
   }
+
+  const settings = await readOwnerNotificationSettings();
+  if (settings.rules.booking_requested?.email === false) return;
+  const message = buildBookingEmailMessage("bookingRequestOwner", context.payload, context);
+  const replyTo = resolveReplyTo(context.payload.gite.email);
+  if ((await readOwnerNotificationEmails()).length || settings.rules.booking_requested?.email === true) {
+    await notifyOwner({
+      event: "booking_requested", key: `${payload.id}:email`, message: message.subject,
+      emailOnly: true, emailMessage: { ...message, replyTo },
+      propertyEmail: context.payload.gite.email,
+    });
+    return;
+  }
+  const to = legacyBookingRequestEmail(context.payload.gite.email);
+  if (to) await sendSmtpMail({ to, subject: message.subject, text: message.text, html: message.html, replyTo });
+
 };
 export const sendBookingRequestApprovedEmail = async (
   payload: BookingRequestEmailPayload,
@@ -504,7 +525,7 @@ export const sendBookingRequestRejectedEmail = async (
 };
 export const sendBookingPaymentEmails = async (
   payload: BookingRequestEmailPayload,
-  payment: BookingPaymentEmailInfo,
+  payment: BookingPaymentEmailInfo & { id: string },
   existingReservation = false,
 ) => {
   const context = await emailContext(payload);
@@ -516,26 +537,35 @@ export const sendBookingPaymentEmails = async (
         : existingReservation
           ? "bookingPaymentReceipt"
           : "bookingRequestApproved";
+  const event = bookingPaymentOwnerEvent(payment, existingReservation);
+  const settings = await readOwnerNotificationSettings();
+  const emailRule = settings.rules[event]?.email;
+  const useNotificationQueue = emailRule === true || (await readOwnerNotificationEmails()).length > 0;
   const recipients = new Map<string, "client" | "owner">();
-  if (payload.email?.trim()) recipients.set(payload.email.trim(), "client");
+  const guest = payload.email?.trim();
+  if (guest) recipients.set(guest, "client");
   const owner = context.payload.gite.email?.trim();
-  if (owner) recipients.set(owner, "owner");
+  if (owner && emailRule !== false && !useNotificationQueue) recipients.set(owner, "owner");
+  const reservationId = existingReservation ? payload.id : payload.approved_reservation_id;
+  const replyTo = resolveReplyTo(context.payload.gite.email);
+  if (emailRule !== false && useNotificationQueue) {
+    const message = buildBookingEmailMessage(type, context.payload, {
+      ...context, payment, audience: "owner", reservationId,
+    });
+    const state = paymentNotificationState(payment);
+    await enqueueOwnerNotification({
+      event, key: `payment:${payment.id}:${state}:email`,
+      payment: { id: payment.id, state },
+      message: message.subject, automaticConfirmation: !existingReservation,
+      propertyEmail: owner, emailOnly: true, excludeEmail: guest,
+      emailMessage: { ...message, replyTo },
+    });
+  }
   for (const [to, audience] of recipients) {
     const message = buildBookingEmailMessage(type, context.payload, {
-      ...context,
-      payment,
-      audience,
-      reservationId: existingReservation
-        ? payload.id
-        : payload.approved_reservation_id,
+      ...context, payment, audience, reservationId,
     });
-    await sendSmtpMail({
-      to,
-      replyTo: resolveReplyTo(context.payload.gite.email),
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-    });
+    await sendSmtpMail({ to, replyTo, subject: message.subject, text: message.text, html: message.html });
   }
 };
 

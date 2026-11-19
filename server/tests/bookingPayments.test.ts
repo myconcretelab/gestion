@@ -492,6 +492,122 @@ test("Telegram après paiement : reprise par destinataire sans renvoi des emails
     );
   }
 });
+test("une confirmation Stripe personnalisée envoie un e-mail propriétaire distinct du reçu voyageur", async (t) => {
+  const { sent } = await mockPaymentMessaging(t);
+  const { saveOwnerNotificationSettings, saveOwnerNotificationEmails } =
+    await import("../src/services/ownerNotificationSettings.js");
+  const { runOwnerNotificationBatch } =
+    await import("../src/services/ownerNotifications.js");
+
+  await inOrg(async () => {
+    await saveOwnerNotificationSettings({
+      rules: {
+        booking_confirmed: { push: false, telegram: "off", email: true },
+      },
+      taskOverrides: {},
+      cleaningScope: "selected",
+    });
+    await saveOwnerNotificationEmails(["proprietaire@example.test"]);
+    const f = await fixture();
+    await db.default.bookingRequest.update({
+      where: { id: f.request.id },
+      data: { email: "voyageur@example.test" },
+    });
+    await service.applyVerifiedSession(f.session);
+    await service.deliverPaymentNotification(f.request.payment!.id);
+    await service.deliverPaymentNotification(f.request.payment!.id);
+  });
+  try {
+    assert.deepEqual(
+      sent.emails.map(({ to }) => to),
+      ["voyageur@example.test"],
+    );
+    const [delivery] = await runOwnerNotificationBatch();
+    assert.equal(delivery.status, "succeeded");
+    await runOwnerNotificationBatch();
+    assert.deepEqual(
+      sent.emails.map(({ to }) => to),
+      ["voyageur@example.test", "proprietaire@example.test"],
+    );
+  } finally {
+    await inOrg(async () => {
+      await saveOwnerNotificationSettings({
+        rules: {},
+        taskOverrides: {},
+        cleaningScope: "selected",
+      });
+      await saveOwnerNotificationEmails([]);
+    });
+  }
+});
+test("les échéances choisies sont mises en file une seule fois sans module Telegram", async (t) => {
+  const { sent } = await mockPaymentMessaging(t);
+  const { env } = await import("../src/config/env.js");
+  const { saveOwnerNotificationSettings, saveOwnerNotificationEmails } =
+    await import("../src/services/ownerNotificationSettings.js");
+  const { runOwnerNotificationBatch } =
+    await import("../src/services/ownerNotifications.js");
+  const { runOwnerDeadlineNotifications } =
+    await import("../src/services/telegramDeadlineNotifications.js");
+  const previousScheduler = env.MULTITENANT_AUTOMATION_ENABLED;
+  env.MULTITENANT_AUTOMATION_ENABLED = false;
+  const now = new Date("2026-11-19T09:00:00Z");
+  try {
+    await inOrg(async () => {
+      await db.default.contrat.create({
+        data: {
+          numero_contrat: "SIGNED-OVERDUE",
+          gite_id: "gite-payment-test",
+          date_envoi_email: new Date("2026-11-01"),
+          arrhes_date_limite: new Date("2026-11-15"),
+          locataire_nom: "Client fictif",
+          locataire_adresse: "",
+          locataire_tel: "",
+          nb_adultes: 2,
+          nb_enfants_2_17: 0,
+          nb_nuits: 3,
+          prix_par_nuit: 100,
+          date_debut: new Date("2026-12-01"),
+          date_fin: new Date("2026-12-04"),
+          heure_arrivee: "17:00",
+          heure_depart: "11:00",
+          arrhes_montant: 100,
+          solde_montant: 200,
+          caution_montant: 0,
+          cheque_menage_montant: 0,
+          options: "{}",
+          clauses: "{}",
+          pdf_path: "test.pdf",
+        },
+      });
+      assert.equal((await runOwnerDeadlineNotifications(now)).sent_count, 0);
+      await saveOwnerNotificationEmails(["proprietaire@example.test"]);
+      await saveOwnerNotificationSettings({
+        rules: { contract_overdue: { email: true } },
+        taskOverrides: {},
+        cleaningScope: "selected",
+      });
+      assert.equal((await runOwnerDeadlineNotifications(now)).sent_count, 1);
+      assert.equal((await runOwnerDeadlineNotifications(now)).sent_count, 0);
+    });
+    await runOwnerNotificationBatch();
+    assert.deepEqual(
+      sent.emails.map(({ to }) => to),
+      ["proprietaire@example.test"],
+    );
+    assert.match(sent.emails[0].text, /SIGNED-OVERDUE/);
+  } finally {
+    env.MULTITENANT_AUTOMATION_ENABLED = previousScheduler;
+    await inOrg(async () => {
+      await saveOwnerNotificationSettings({
+        rules: {},
+        taskOverrides: {},
+        cleaningScope: "selected",
+      });
+      await saveOwnerNotificationEmails([]);
+    });
+  }
+});
 after(async () => {
   await db?.systemPrisma.$disconnect();
   fs.rmSync(temp, { recursive: true, force: true });
@@ -569,7 +685,10 @@ test("mode explicite par environnement : clés cohérentes, réel réservé à l
     ],
     [
       "clé restreinte réelle explicitement configurée",
-      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "rk_live_fake_no_network" },
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_SECRET_KEY: "rk_live_fake_no_network",
+      },
       "live",
     ],
     [
@@ -588,12 +707,18 @@ test("mode explicite par environnement : clés cohérentes, réel réservé à l
     ],
     [
       "clé restreinte de test refusée en réel",
-      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "rk_test_fake_no_network" },
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_SECRET_KEY: "rk_test_fake_no_network",
+      },
       null,
     ],
     [
       "clé publique refusée",
-      { ...liveEnvironment, BOOKING_STRIPE_SECRET_KEY: "pk_live_fake_no_network" },
+      {
+        ...liveEnvironment,
+        BOOKING_STRIPE_SECRET_KEY: "pk_live_fake_no_network",
+      },
       null,
     ],
     [

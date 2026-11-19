@@ -1,13 +1,14 @@
 import fs from "node:fs";
-import path from "node:path";
 import crypto from "node:crypto";
 import prisma from "../db/prisma.js";
 import { env } from "../config/env.js";
 import {
   readTelegramNotificationConfig,
-  resolveTelegramNotificationRecipients,
 } from "./telegramNotifications.js";
-import { sendMessage } from "./messageChannels/index.js";
+import { enqueueOwnerNotification } from "./ownerNotifications.js";
+import { readOwnerNotificationSettings, resolveOwnerNotificationRule } from "./ownerNotificationSettings.js";
+import { organizationDataPath } from "./organizationFiles.js";
+import { runTenantTaskAcrossOrganizations } from "../modules/system/tenantTasks.js";
 import { loadGiteCleaningReadiness } from "./giteCleaningReadiness.js";
 
 type DeadlineDocument = {
@@ -22,12 +23,12 @@ type NotificationState = {
   notified: Record<string, string>;
 };
 
-const STATE_FILE = path.join(env.DATA_DIR, "telegram-deadline-notifications-state.json");
+const stateFile = () => organizationDataPath("telegram-deadline-notifications-state.json");
 const CHECK_INTERVAL_MS = 60 * 1000;
 const CLEANING_LINK_VALIDITY_MS = 24 * 60 * 60 * 1000;
 
 let timer: NodeJS.Timeout | null = null;
-let activeRun: Promise<TelegramDeadlineNotificationResult> | null = null;
+
 
 const escapeHtml = (value: unknown) =>
   String(value ?? "")
@@ -73,7 +74,7 @@ export const buildInvoicePaymentOverdueMessage = (document: DeadlineDocument) =>
 
 const readState = (): NotificationState => {
   try {
-    const parsed = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as Partial<NotificationState>;
+    const parsed = JSON.parse(fs.readFileSync(stateFile(), "utf8")) as Partial<NotificationState>;
     return {
       notified:
         parsed.notified && typeof parsed.notified === "object"
@@ -86,10 +87,10 @@ const readState = (): NotificationState => {
 };
 
 const writeState = (state: NotificationState) => {
-  fs.mkdirSync(env.DATA_DIR, { recursive: true });
-  const temporaryFile = `${STATE_FILE}.tmp`;
+  const filename = stateFile();
+  const temporaryFile = `${filename}.tmp`;
   fs.writeFileSync(temporaryFile, JSON.stringify(state, null, 2), "utf8");
-  fs.renameSync(temporaryFile, STATE_FILE);
+  fs.renameSync(temporaryFile, filename);
 };
 
 const alertKey = (type: "contract" | "invoice", document: DeadlineDocument) =>
@@ -106,7 +107,7 @@ export const startOfTodayInParisAsUtc = (now: Date) => {
   return new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
 };
 
-export type TelegramDeadlineNotificationResult = {
+export type OwnerDeadlineNotificationResult = {
   checked_count: number;
   sent_count: number;
   failed_count: number;
@@ -190,11 +191,9 @@ const sendCleaningCheckReminders = async (
   now: Date,
   config: ReturnType<typeof readTelegramNotificationConfig>,
   state: NotificationState,
-  recipients: string[],
 ) => {
-  if (!config.notify_cleaning_check_reminder) return { checked: 0, sent: 0, failed: 0 };
   const gites = await prisma.gite.findMany({
-    select: { id: true, nom: true, prefixe_contrat: true, ordre: true, heure_arrivee_defaut: true },
+    select: { id: true, nom: true, email: true, prefixe_contrat: true, ordre: true, heure_arrivee_defaut: true },
   });
   const readinessRows = (await loadGiteCleaningReadiness(gites, now))
     .filter((row) => row.next_arrival_reservation_id && !row.checked_at);
@@ -240,166 +239,169 @@ const sendCleaningCheckReminders = async (
     const key = `cleaning:${arrivalId}:${arrivalAt.toISOString()}`;
     if (state.notified[key]) continue;
 
-    const token = buildCleaningCheckToken({
+    const token = config.bot_token ? buildCleaningCheckToken({
       departureReservationId: readiness.departure_reservation_id,
       arrivalReservationId: arrivalId,
       expiresAt: arrivalAt.getTime() + CLEANING_LINK_VALIDITY_MS,
-    }, config.bot_token);
+    }, config.bot_token) : null;
     const origin = env.CLIENT_ORIGIN.trim().replace(/\/$/, "");
-    const confirmationUrl = origin
+    const confirmationUrl = origin && token
       ? `${origin}/api/public/cleaning-check/confirm?token=${encodeURIComponent(token)}`
       : "";
     const pendingKind = ["planned", "in_progress"].includes(taskByDeparture.get(readiness.departure_reservation_id)?.status ?? "") ? "cleaning" : "check";
     const actionUrl = pendingKind === "cleaning" ? `${origin}/menages` : confirmationUrl;
     try {
-      const result = await sendMessage("telegram", {
+      const queued = await enqueueOwnerNotification({
+        event: "cleaning_check_reminder",
+        key,
         message: buildCleaningCheckReminderMessage({
           giteName: gite.nom,
           guestName: arrival.hote_nom,
           arrivalAt,
           pendingKind,
         }),
-        recipients,
-        options: {
-          ...config,
-          owner_push: { key, url: "/menages" },
-          ...(origin && actionUrl ? {
-            reply_markup: { inline_keyboard: [[{ text: pendingKind === "cleaning" ? "Voir les ménages" : "✅ C'est fait !", url: actionUrl }]] },
-          } : {}),
-        },
+        url: "/taches?view=cleaning",
+        propertyEmail: gite.email,
+        expiresAt: arrivalAt.getTime(),
+        ...(origin && actionUrl ? {
+          telegramAction: { text: pendingKind === "cleaning" ? "Voir les ménages" : "✅ C'est fait !", url: actionUrl },
+        } : {}),
       });
-      if (result.sent_count > 0) {
+      if (queued) {
         state.notified[key] = now.toISOString();
         writeState(state);
         sent += 1;
       }
     } catch (error) {
       failed += 1;
-      console.error(`Échec du rappel Telegram ${key}:`, error);
+      console.error(`Échec du rappel propriétaire ${key}:`, error);
     }
   }
   return { checked: readinessRows.length, sent, failed };
 };
 
-export const runTelegramDeadlineNotifications = async (
+export const runOwnerDeadlineNotifications = async (
   now = new Date(),
-): Promise<TelegramDeadlineNotificationResult> => {
-  if (activeRun) return activeRun;
+): Promise<OwnerDeadlineNotificationResult> => {
+  const config = readTelegramNotificationConfig();
+  const settings = await readOwnerNotificationSettings();
+  const active = (event: "contract_overdue" | "invoice_overdue" | "cleaning_check_reminder") => {
+    const rule = resolveOwnerNotificationRule(event, settings, config);
+    return rule.push || rule.telegram !== "off" || rule.email;
+  };
+  const deadlineBefore = startOfTodayInParisAsUtc(now);
+  const [contracts, invoices] = await Promise.all([
+    active("contract_overdue")
+      ? prisma.contrat.findMany({
+          where: {
+            statut_reception_contrat: "non_recu",
+            signed_document_path: null,
+            date_envoi_email: { not: null },
+            arrhes_date_limite: { lt: deadlineBefore },
+          },
+          include: { gite: { select: { nom: true, email: true } } },
+        })
+      : [],
+    active("invoice_overdue")
+      ? prisma.facture.findMany({
+          where: {
+            statut_paiement: "non_reglee",
+            date_envoi_email: { not: null },
+            arrhes_date_limite: { lt: deadlineBefore },
+          },
+          include: { gite: { select: { nom: true, email: true } } },
+        })
+      : [],
+  ]);
 
-  activeRun = (async () => {
-    const config = readTelegramNotificationConfig();
-    if (
-      !config.enabled ||
-      (!config.notify_contract_return_overdue &&
-        !config.notify_invoice_payment_overdue &&
-        !config.notify_cleaning_check_reminder)
-    ) {
-      return { checked_count: 0, sent_count: 0, failed_count: 0 };
-    }
+  const state = readState();
+  let sentCount = 0;
+  let failedCount = 0;
 
-    const deadlineBefore = startOfTodayInParisAsUtc(now);
-    const recipients = await resolveTelegramNotificationRecipients(config);
-    const [contracts, invoices] = await Promise.all([
-      config.notify_contract_return_overdue
-        ? prisma.contrat.findMany({
-            where: {
-              statut_reception_contrat: "non_recu",
-              date_envoi_email: { not: null },
-              arrhes_date_limite: { lt: deadlineBefore },
-            },
-            include: { gite: { select: { nom: true } } },
-          })
-        : [],
-      config.notify_invoice_payment_overdue
-        ? prisma.facture.findMany({
-            where: {
-              statut_paiement: "non_reglee",
-              date_envoi_email: { not: null },
-              arrhes_date_limite: { lt: deadlineBefore },
-            },
-            include: { gite: { select: { nom: true } } },
-          })
-        : [],
-    ]);
-
-    const state = readState();
-    let sentCount = 0;
-    let failedCount = 0;
-
-    const send = async (
-      type: "contract" | "invoice",
-      document: DeadlineDocument,
-      message: string,
-    ) => {
-      const key = alertKey(type, document);
-      if (state.notified[key]) return;
-      try {
-        const result = await sendMessage("telegram", {
-          message,
-          recipients,
-          options: { ...config, owner_push: { key } },
-        });
-        if (result.sent_count > 0) {
-          state.notified[key] = now.toISOString();
-          writeState(state);
-          sentCount += 1;
-        }
-      } catch (error) {
-        failedCount += 1;
-        console.error(`Échec de l'alerte Telegram ${key}:`, error);
+  const send = async (
+    type: "contract" | "invoice",
+    document: DeadlineDocument,
+    message: string,
+    propertyEmail: string | null,
+  ) => {
+    const key = alertKey(type, document);
+    if (state.notified[key]) return;
+    try {
+      const queued = await enqueueOwnerNotification({
+        event: type === "contract" ? "contract_overdue" : "invoice_overdue",
+        key,
+        message,
+        url: `/${type === "contract" ? "contrats" : "factures"}/${encodeURIComponent(document.id)}`,
+        propertyEmail,
+      });
+      if (queued) {
+        state.notified[key] = now.toISOString();
+        writeState(state);
+        sentCount += 1;
       }
-    };
-
-    for (const contract of contracts) {
-      const document = {
-        id: contract.id,
-        number: contract.numero_contrat,
-        guestName: contract.locataire_nom,
-        giteName: contract.gite.nom,
-        deadline: contract.arrhes_date_limite,
-      };
-      await send("contract", document, buildContractReturnOverdueMessage(document));
+    } catch (error) {
+      failedCount += 1;
+      console.error(`Échec de l'alerte propriétaire ${key}:`, error);
     }
+  };
 
-    for (const invoice of invoices) {
-      const document = {
-        id: invoice.id,
-        number: invoice.numero_facture,
-        guestName: invoice.locataire_nom,
-        giteName: invoice.gite.nom,
-        deadline: invoice.arrhes_date_limite,
-      };
-      await send("invoice", document, buildInvoicePaymentOverdueMessage(document));
-    }
-
-    const cleaningReminders = await sendCleaningCheckReminders(now, config, state, recipients);
-
-    return {
-      checked_count: contracts.length + invoices.length + cleaningReminders.checked,
-      sent_count: sentCount + cleaningReminders.sent,
-      failed_count: failedCount + cleaningReminders.failed,
+  for (const contract of contracts) {
+    const document = {
+      id: contract.id,
+      number: contract.numero_contrat,
+      guestName: contract.locataire_nom,
+      giteName: contract.gite.nom,
+      deadline: contract.arrhes_date_limite,
     };
-  })().finally(() => {
-    activeRun = null;
-  });
+    await send("contract", document, buildContractReturnOverdueMessage(document), contract.gite.email);
+  }
 
-  return activeRun;
+  for (const invoice of invoices) {
+    const document = {
+      id: invoice.id,
+      number: invoice.numero_facture,
+      guestName: invoice.locataire_nom,
+      giteName: invoice.gite.nom,
+      deadline: invoice.arrhes_date_limite,
+    };
+    await send("invoice", document, buildInvoicePaymentOverdueMessage(document), invoice.gite.email);
+  }
+
+  const cleaningReminders = active("cleaning_check_reminder")
+    ? await sendCleaningCheckReminders(now, config, state)
+    : { checked: 0, sent: 0, failed: 0 };
+
+  return {
+    checked_count: contracts.length + invoices.length + cleaningReminders.checked,
+    sent_count: sentCount + cleaningReminders.sent,
+    failed_count: failedCount + cleaningReminders.failed,
+  };
 };
 
-export const startTelegramDeadlineNotificationCron = () => {
-  if (timer) clearInterval(timer);
-  void runTelegramDeadlineNotifications().catch((error) => {
-    console.error("Échec de la vérification des échéances Telegram:", error);
+export const runOwnerDeadlineNotificationTick = () =>
+  runTenantTaskAcrossOrganizations({
+    taskKey: "automation.telegram",
+    moduleKeys: [],
+    handler: () => runOwnerDeadlineNotifications(),
+    leaseMs: 10 * 60_000,
+    minimumIntervalMs: 5 * 60_000,
   });
-  timer = setInterval(() => {
-    void runTelegramDeadlineNotifications().catch((error) => {
-      console.error("Échec de la vérification des échéances Telegram:", error);
-    });
-  }, CHECK_INTERVAL_MS);
+
+export const startOwnerDeadlineNotificationScheduler = () => {
+  if (env.MULTITENANT_AUTOMATION_ENABLED || !env.ORGANIZATION_JOB_WORKER_ENABLED || timer) return;
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await runOwnerDeadlineNotificationTick();
+    } catch {
+      console.error("Échec de la vérification des échéances des notifications propriétaire.");
+    } finally {
+      running = false;
+    }
+  };
+  void tick();
+  timer = setInterval(() => void tick(), CHECK_INTERVAL_MS);
   timer.unref();
-};
-
-export const stopTelegramDeadlineNotificationCron = () => {
-  if (timer) clearInterval(timer);
-  timer = null;
 };

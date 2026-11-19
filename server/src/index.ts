@@ -9,6 +9,9 @@ import { startMultiTenantAutomationScheduler } from "./services/multiTenantAutom
 import { startTaskUrgencyAutomationScheduler } from "./services/taskUrgencyAutomation.js";
 import { startReportAutomationScheduler } from "./services/reportAutomation.js";
 
+import { startOwnerNotificationWorker } from "./services/ownerNotifications.js";
+import { startOwnerDeadlineNotificationScheduler } from "./services/telegramDeadlineNotifications.js";
+
 await assertProductionAuthConfigured();
 await ensureLegacyIntegrationTokenMigrated();
 
@@ -16,6 +19,8 @@ const app = createApp();
 
 if (env.NODE_ENV !== "test") {
   startBookingPaymentsWorker();
+  startOwnerNotificationWorker();
+  startOwnerDeadlineNotificationScheduler();
   startBillingJobWorker();
   startSuperPdpJobWorker();
   startMultiTenantAutomationScheduler();

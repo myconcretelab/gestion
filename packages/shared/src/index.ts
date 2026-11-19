@@ -132,3 +132,5 @@ export * from "./ota.js";
 export * from "./otaPricing.js";
 
 export * from "./touristTaxRemittance.js";
+
+export * from "./ownerNotifications.js";

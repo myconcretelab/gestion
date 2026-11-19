@@ -7,6 +7,7 @@ import {
 } from "../services/reservationPaymentSettings.js";
 import { partialInputSchema } from "../utils/validation.js";
 import { Router } from "express";
+import { preserveOwnerNotificationRules } from "../services/ownerNotificationSettings.js";
 import { z } from "zod";
 import prisma from "../db/prisma.js";
 import {
@@ -337,11 +338,11 @@ const telegramNotificationSettingsSchema = z.object({
   recipient_user_ids: z.array(z.string().trim().min(1)).default([]),
   notify_gite_checked: z.boolean().optional(),
   gite_check_mentions: z.array(z.string().trim().regex(/^@?[a-zA-Z][a-zA-Z0-9_]{4,31}$/, "Pseudo Telegram invalide.")).optional(),
-  notify_booking_request_created: z.boolean().default(true),
-  notify_booking_request_approved: z.boolean().default(true),
-  notify_contract_return_overdue: z.boolean().default(true),
-  notify_invoice_payment_overdue: z.boolean().default(true),
-  notify_cleaning_check_reminder: z.boolean().default(true),
+  notify_booking_request_created: z.boolean().optional(),
+  notify_booking_request_approved: z.boolean().optional(),
+  notify_contract_return_overdue: z.boolean().optional(),
+  notify_invoice_payment_overdue: z.boolean().optional(),
+  notify_cleaning_check_reminder: z.boolean().optional(),
 });
 const dailyReservationEmailRunSchema = z.object({
   force: z.boolean().optional().default(false),
@@ -1516,7 +1517,7 @@ router.put("/daily-reservation-email", async (req, res, next) => {
   }
 });
 
-router.put("/telegram", (req, res, next) => {
+router.put("/telegram", async (req, res, next) => {
   try {
     const payload = telegramNotificationSettingsSchema.parse(
       req.body ?? {},
@@ -1525,6 +1526,7 @@ router.put("/telegram", (req, res, next) => {
       buildDefaultTelegramNotificationConfig(),
     );
     const merged = mergeTelegramNotificationConfig(current, payload);
+    if (merged.enabled !== current.enabled) await preserveOwnerNotificationRules(current);
     writeTelegramNotificationConfig(merged);
     res.json(buildTelegramNotificationState(merged));
   } catch (error) {

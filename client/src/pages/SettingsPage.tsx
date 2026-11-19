@@ -2,7 +2,7 @@ import EmailTextPreview, { EmailTextPreviewProvider } from "./shared/EmailTextPr
 import BookingEmailTemplatesEditor from "./shared/BookingEmailTemplatesEditor";
 import { bookingEmailTemplateKeys, defaultBookingEmailTextSettings, type BookingEmailTemplateKey } from "@contrats/shared";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, buildApiUrl } from "../utils/api";
 import { getGiteColor } from "../utils/giteColors";
 import {
@@ -40,8 +40,6 @@ import ReservationPaymentSettings from "./settings/ReservationPaymentSettings";
 import TouristTaxCollectionSettings from "./settings/TouristTaxCollectionSettings";
 import UserSettings from "./UserSettings";
 import SettingsShell from "./settings/SettingsShell";
-import NotificationDeliveryStatus from "./settings/NotificationDeliveryStatus";
-import "./settings/notificationSettings.css";
 
 type IcalPreviewItem = {
   id: string;
@@ -328,7 +326,6 @@ const SETTINGS_SECTIONS = [
   { id: "settings-import-log", label: "Journal des imports" },
   { id: "settings-sms", label: "SMS" },
   { id: "settings-email-texts", label: "Emails" },
-  { id: "settings-telegram", label: "Telegram" },
   { id: "settings-daily-reservation-email", label: "Email quotidien" },
   { id: "settings-smartlife", label: "Smart Life" },
   { id: "settings-source-colors", label: "Couleurs des sources" },
@@ -354,7 +351,6 @@ const SETTINGS_SECTION_PATHS: Record<SettingsSectionId, string> = {
   "settings-import-log": "journal-imports",
   "settings-sms": "sms",
   "settings-email-texts": "emails",
-  "settings-telegram": "telegram",
   "settings-daily-reservation-email": "email-quotidien",
   "settings-smartlife": "smartlife",
   "settings-source-colors": "couleurs-sources",
@@ -504,42 +500,6 @@ type DocumentEmailTextSettings = {
     destinationUrl: string;
   };
 } & Record<BookingEmailTemplateKey, DocumentEmailTextTemplate>;
-
-type TelegramNotificationConfig = {
-  enabled: boolean;
-  bot_token: string;
-  chat_ids: string[];
-  recipient_user_ids: string[];
-  notify_gite_checked: boolean;
-  gite_check_mentions: string[];
-  notify_booking_request_created: boolean;
-  notify_booking_request_approved: boolean;
-  notify_contract_return_overdue: boolean;
-  notify_invoice_payment_overdue: boolean;
-  notify_cleaning_check_reminder: boolean;
-};
-
-type TelegramRecipientUser = {
-  id: string;
-  displayName: string;
-  telegramChatId: string | null;
-  isActive: boolean;
-};
-
-type TelegramNotificationState = {
-  config: TelegramNotificationConfig;
-  bot_configured: boolean;
-};
-
-type TelegramNotificationTestResponse = {
-  ok: boolean;
-  sent_count: number;
-  skipped_reason:
-    | "disabled"
-    | "missing_bot_token"
-    | "missing_chat_ids"
-    | null;
-};
 
 type DailyReservationEmailConfig = {
   enabled: boolean;
@@ -950,25 +910,6 @@ const DEFAULT_DAILY_RESERVATION_EMAIL_CONFIG: DailyReservationEmailConfig = {
   recipients: [],
   hour: 7,
   minute: 0,
-};
-
-const DEFAULT_TELEGRAM_NOTIFICATION_CONFIG: TelegramNotificationConfig = {
-  enabled: false,
-  bot_token: "",
-  chat_ids: [],
-  recipient_user_ids: [],
-  notify_gite_checked: true,
-  gite_check_mentions: [],
-  notify_booking_request_created: true,
-  notify_booking_request_approved: true,
-  notify_contract_return_overdue: true,
-  notify_invoice_payment_overdue: true,
-  notify_cleaning_check_reminder: true,
-};
-
-const DEFAULT_TELEGRAM_NOTIFICATION_STATE: TelegramNotificationState = {
-  config: DEFAULT_TELEGRAM_NOTIFICATION_CONFIG,
-  bot_configured: false,
 };
 
 const DEFAULT_DAILY_RESERVATION_EMAIL_STATE: DailyReservationEmailState = {
@@ -1782,25 +1723,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
   const [documentEmailTextNotice, setDocumentEmailTextNotice] = useState<
     string | null
   >(null);
-  const [telegramNotificationState, setTelegramNotificationState] =
-    useState<TelegramNotificationState>(DEFAULT_TELEGRAM_NOTIFICATION_STATE);
-  const [telegramNotificationDraft, setTelegramNotificationDraft] =
-    useState<TelegramNotificationConfig>(
-      DEFAULT_TELEGRAM_NOTIFICATION_CONFIG,
-    );
-  const [telegramRecipientUsers, setTelegramRecipientUsers] = useState<TelegramRecipientUser[]>([]);
-  const [loadingTelegramNotification, setLoadingTelegramNotification] =
-    useState(true);
-  const [savingTelegramNotification, setSavingTelegramNotification] =
-    useState(false);
-  const [testingTelegramNotification, setTestingTelegramNotification] =
-    useState(false);
-  const [telegramNotificationError, setTelegramNotificationError] = useState<
-    string | null
-  >(null);
-  const [telegramNotificationNotice, setTelegramNotificationNotice] = useState<
-    string | null
-  >(null);
   const [dailyReservationEmailState, setDailyReservationEmailState] =
     useState<DailyReservationEmailState>(
       DEFAULT_DAILY_RESERVATION_EMAIL_STATE,
@@ -2417,41 +2339,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
     setDocumentEmailTextDraft(nextSettings);
   };
 
-  const applyTelegramNotificationState = (
-    data: TelegramNotificationState,
-  ) => {
-    const chatIds = Array.isArray(data?.config?.chat_ids)
-      ? data.config.chat_ids
-          .map((item) => String(item ?? "").trim())
-          .filter(Boolean)
-      : [];
-
-    const nextState: TelegramNotificationState = {
-      config: {
-        enabled: Boolean(data?.config?.enabled),
-        bot_token: "",
-        chat_ids: chatIds,
-        recipient_user_ids: Array.isArray(data?.config?.recipient_user_ids) ? data.config.recipient_user_ids : [],
-        notify_gite_checked: data?.config?.notify_gite_checked !== false,
-        gite_check_mentions: data?.config?.gite_check_mentions ?? [],
-        notify_booking_request_created:
-          data?.config?.notify_booking_request_created !== false,
-        notify_booking_request_approved:
-          data?.config?.notify_booking_request_approved !== false,
-        notify_contract_return_overdue:
-          data?.config?.notify_contract_return_overdue !== false,
-        notify_invoice_payment_overdue:
-          data?.config?.notify_invoice_payment_overdue !== false,
-        notify_cleaning_check_reminder:
-          data?.config?.notify_cleaning_check_reminder !== false,
-      },
-      bot_configured: Boolean(data?.bot_configured),
-    };
-
-    setTelegramNotificationState(nextState);
-    setTelegramNotificationDraft(nextState.config);
-  };
-
   const applyDailyReservationEmailState = (data: DailyReservationEmailState) => {
     const recipients = Array.isArray(data?.config?.recipients)
       ? data.config.recipients
@@ -2739,15 +2626,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
     applyDocumentEmailTextSettings(data);
   };
 
-  const loadTelegramNotificationState = async () => {
-    const [data, users] = await Promise.all([
-      apiFetch<TelegramNotificationState>("/settings/telegram"),
-      apiFetch<TelegramRecipientUser[]>("/users"),
-    ]);
-    setTelegramRecipientUsers(users);
-    applyTelegramNotificationState(data);
-  };
-
   const loadDailyReservationEmailState = async () => {
     try {
       const data = await apiFetch<DailyReservationEmailState>(
@@ -2955,20 +2833,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             return;
           } finally {
             setLoadingDocumentEmailTexts(false);
-          }
-          break;
-        case "settings-telegram":
-          setLoadingTelegramNotification(true);
-          try {
-            await loadTelegramNotificationState();
-          } catch (error: any) {
-            setTelegramNotificationError(
-              error?.message ??
-                "Impossible de charger la configuration Telegram.",
-            );
-            return;
-          } finally {
-            setLoadingTelegramNotification(false);
           }
           break;
         case "settings-daily-reservation-email":
@@ -3355,107 +3219,6 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
       );
     } finally {
       setSavingDocumentEmailTexts(false);
-    }
-  };
-
-  const saveTelegramNotificationSettings = async () => {
-    setSavingTelegramNotification(true);
-    setTelegramNotificationError(null);
-    setTelegramNotificationNotice(null);
-
-    try {
-      const chatIds = telegramNotificationDraft.chat_ids
-        .map((item) => String(item ?? "").trim())
-        .filter(Boolean);
-      const deduplicatedChatIds = [...new Set(chatIds)];
-      const recipientUserIds = [...new Set(telegramNotificationDraft.recipient_user_ids)];
-
-      if (telegramNotificationDraft.enabled) {
-        const hasBotToken =
-          telegramNotificationState.bot_configured ||
-          Boolean(telegramNotificationDraft.bot_token.trim());
-        if (!hasBotToken) {
-          setTelegramNotificationError("Renseignez le token du bot Telegram.");
-          return;
-        }
-        if (deduplicatedChatIds.length === 0 && recipientUserIds.length === 0) {
-          setTelegramNotificationError(
-            "Sélectionnez au moins un utilisateur destinataire.",
-          );
-          return;
-        }
-      }
-
-      const response = await apiFetch<TelegramNotificationState>(
-        "/settings/telegram",
-        {
-          method: "PUT",
-          json: {
-            enabled: telegramNotificationDraft.enabled,
-            bot_token: telegramNotificationDraft.bot_token.trim(),
-            chat_ids: deduplicatedChatIds,
-            recipient_user_ids: recipientUserIds,
-            notify_gite_checked: telegramNotificationDraft.notify_gite_checked,
-            gite_check_mentions: telegramNotificationDraft.gite_check_mentions.map((name) => name.trim()).filter(Boolean),
-            notify_booking_request_created:
-              telegramNotificationDraft.notify_booking_request_created,
-            notify_booking_request_approved:
-              telegramNotificationDraft.notify_booking_request_approved,
-            notify_contract_return_overdue:
-              telegramNotificationDraft.notify_contract_return_overdue,
-            notify_invoice_payment_overdue:
-              telegramNotificationDraft.notify_invoice_payment_overdue,
-            notify_cleaning_check_reminder:
-              telegramNotificationDraft.notify_cleaning_check_reminder,
-          },
-        },
-      );
-      applyTelegramNotificationState(response);
-      setTelegramNotificationNotice("Configuration Telegram enregistrée.");
-    } catch (error: any) {
-      setTelegramNotificationError(
-        error.message ?? "Impossible d'enregistrer Telegram.",
-      );
-    } finally {
-      setSavingTelegramNotification(false);
-    }
-  };
-
-  const testTelegramNotification = async () => {
-    setTestingTelegramNotification(true);
-    setTelegramNotificationError(null);
-    setTelegramNotificationNotice(null);
-
-    try {
-      const response = await apiFetch<TelegramNotificationTestResponse>(
-        "/settings/telegram/test",
-        {
-          method: "POST",
-          json: {
-            message: "Message de test Telegram depuis Contrats.",
-          },
-        },
-      );
-
-      if (response.ok) {
-        setTelegramNotificationNotice(
-          `Message Telegram envoyé à ${response.sent_count} destinataire${response.sent_count > 1 ? "s" : ""}.`,
-        );
-      } else if (response.skipped_reason === "disabled") {
-        setTelegramNotificationNotice("Telegram est désactivé.");
-      } else if (response.skipped_reason === "missing_bot_token") {
-        setTelegramNotificationError("Token du bot Telegram manquant.");
-      } else if (response.skipped_reason === "missing_chat_ids") {
-        setTelegramNotificationError("Aucun chat ID Telegram configuré.");
-      } else {
-        setTelegramNotificationError("Aucun message Telegram envoyé.");
-      }
-    } catch (error: any) {
-      setTelegramNotificationError(
-        error.message ?? "Impossible d'envoyer le message de test Telegram.",
-      );
-    } finally {
-      setTestingTelegramNotification(false);
     }
   };
 
@@ -6048,329 +5811,20 @@ const SettingsPage = ({ currentUser, onAuthSessionUpdated }: SettingsPageProps) 
             </section>
           ) : null}
 
-          {activeSettingsSection === "settings-telegram" ? (
-            <section
-              id="settings-telegram"
-              className="settings-cluster"
-              aria-labelledby="nav-settings-telegram"
-            >
-              <div className="settings-cluster__header">
-                <div>
-                  <div className="settings-cluster__eyebrow">Communication</div>
-                  <h2 className="settings-cluster__title">Telegram</h2>
-                </div>
-                <p className="settings-cluster__text">
-                  Vos appareils sont prioritaires ; Telegram reste disponible en secours.
-                </p>
-              </div>
-              <div className="settings-cluster__grid">
-                <div className="card settings-card settings-card--span-12">
-                  <div className="settings-card__topline">
-                    <span className="settings-card__tag">Notifications</span>
-                  </div>
-                  <div className="section-title">Bot Telegram</div>
-                  <NotificationDeliveryStatus page="telegram" refreshKey={`${telegramNotificationState.config.enabled}:${telegramNotificationState.bot_configured}:${telegramNotificationNotice ?? ""}`} />
-                  <div className="field-hint">
-                    Les alertes d'échéance concernent uniquement les documents
-                    déjà envoyés. Une seule alerte est envoyée par échéance.
-                  </div>
-                  {loadingTelegramNotification ? (
-                    <div className="field-hint" style={{ marginTop: 12 }}>
-                      Chargement...
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid-2" style={{ marginTop: 16 }}>
-                        <label className="field">
-                          Alertes automatiques
-                          <select
-                            value={telegramNotificationDraft.enabled ? "1" : "0"}
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                enabled: event.target.value === "1",
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                          >
-                            <option value="0">Désactivé</option>
-                            <option value="1">Activées · notifications prioritaires</option>
-                          </select>
-                        </label>
-                        <label className="field">
-                          Demandes Booked
-                          <select
-                            value={
-                              telegramNotificationDraft.notify_booking_request_created
-                                ? "1"
-                                : "0"
-                            }
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                notify_booking_request_created:
-                                  event.target.value === "1",
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                          >
-                            <option value="1">Notifier</option>
-                            <option value="0">Ignorer</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="grid-2" style={{ marginTop: 16 }}>
-                        <label className="field">
-                          Réservations confirmées et suivi des paiements
-                          <select
-                            value={telegramNotificationDraft.notify_booking_request_approved ? "1" : "0"}
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                notify_booking_request_approved: event.target.value === "1",
-                              }));
-                            }}
-                            disabled={savingTelegramNotification || testingTelegramNotification}
-                          >
-                            <option value="1">Notifier</option>
-                            <option value="0">Ignorer</option>
-                          </select>
-                        </label>
-                        <p className="field-hint">
-                          Approbations manuelles, arrhes et paiements Stripe, paiements à vérifier et remboursements.
-                        </p>
-                      </div>
-
-                      <div className="grid-2" style={{ marginTop: 16 }}>
-                        <label className="field">
-                          Contrats non rendus
-                          <select
-                            value={
-                              telegramNotificationDraft.notify_contract_return_overdue
-                                ? "1"
-                                : "0"
-                            }
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                notify_contract_return_overdue:
-                                  event.target.value === "1",
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                          >
-                            <option value="1">Notifier après l'échéance</option>
-                            <option value="0">Ignorer</option>
-                          </select>
-                        </label>
-                        <label className="field">
-                          Factures impayées
-                          <select
-                            value={
-                              telegramNotificationDraft.notify_invoice_payment_overdue
-                                ? "1"
-                                : "0"
-                            }
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                notify_invoice_payment_overdue:
-                                  event.target.value === "1",
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                          >
-                            <option value="1">Notifier après l'échéance</option>
-                            <option value="0">Ignorer</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="grid-2" style={{ marginTop: 16 }}>
-                        <label className="field">
-                          Token du bot
-                          <input
-                            type="password"
-                            value={telegramNotificationDraft.bot_token}
-                            onChange={(event) => {
-                              setTelegramNotificationError(null);
-                              setTelegramNotificationNotice(null);
-                              setTelegramNotificationDraft((previous) => ({
-                                ...previous,
-                                bot_token: event.target.value,
-                              }));
-                            }}
-                            disabled={
-                              savingTelegramNotification ||
-                              testingTelegramNotification
-                            }
-                            placeholder={
-                              telegramNotificationState.bot_configured
-                                ? "Token déjà enregistré"
-                                : "123456:ABC..."
-                            }
-                            autoComplete="off"
-                          />
-                        </label>
-                        <label className="field">
-                          Contrôle du ménage des gîtes
-                          <select value={telegramNotificationDraft.notify_gite_checked ? "1" : "0"}
-                            disabled={savingTelegramNotification || testingTelegramNotification}
-                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, notify_gite_checked: event.target.value === "1" }))}>
-                            <option value="1">Notifier quand un gîte est checké</option>
-                            <option value="0">Ne pas notifier</option>
-                          </select>
-                        </label>
-                        <label className="field">
-                          Rappel du contrôle ménage
-                          <select value={telegramNotificationDraft.notify_cleaning_check_reminder ? "1" : "0"}
-                            disabled={savingTelegramNotification || testingTelegramNotification}
-                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, notify_cleaning_check_reminder: event.target.value === "1" }))}>
-                            <option value="1">Rappeler 1 h avant l'arrivée</option>
-                            <option value="0">Ne pas rappeler</option>
-                          </select>
-                        </label>
-                        <label className="field">
-                          Personnes à mentionner lors du contrôle
-                          <textarea rows={3} placeholder="@prenom, @autre_personne"
-                            value={telegramNotificationDraft.gite_check_mentions.join(",")}
-                            disabled={savingTelegramNotification || testingTelegramNotification}
-                            onChange={(event) => setTelegramNotificationDraft((previous) => ({ ...previous, gite_check_mentions: event.target.value.split(/[,;\n]/) }))} />
-                          <span className="field-hint">Pseudos Telegram, séparés par des virgules. Le message est envoyé dans les mêmes chats que les nouvelles réservations. Laissez vide pour ne mentionner personne.</span>
-                        </label>
-                        <fieldset className="user-editor__fieldset">
-                          <legend>Destinataires</legend>
-                          <div className="user-page-access">
-                            {telegramRecipientUsers.filter((user) => user.isActive).map((user) => (
-                              <label className="user-switch-row" key={user.id}>
-                                <span><strong>{user.displayName}</strong><small>{user.telegramChatId ? "Identifiant Telegram renseigné" : "Identifiant Telegram manquant dans sa fiche"}</small></span>
-                                <span className="switch switch--compact"><input role="switch" type="checkbox"
-                                  checked={telegramNotificationDraft.recipient_user_ids.includes(user.id)}
-                                  disabled={savingTelegramNotification || testingTelegramNotification || !user.telegramChatId}
-                                  onChange={(event) => setTelegramNotificationDraft((previous) => ({
-                                    ...previous,
-                                    recipient_user_ids: event.target.checked
-                                      ? [...new Set([...previous.recipient_user_ids, user.id])]
-                                      : previous.recipient_user_ids.filter((id) => id !== user.id),
-                                  }))} /><span className="slider" /></span>
-                              </label>
-                            ))}
-                          </div>
-                          <span className="field-hint">Les identifiants de chat se renseignent dans les fiches utilisateurs. Les choix d’abonnement restent centralisés ici.</span>
-                        </fieldset>
-                      </div>
-
-                      <div className="field-hint" style={{ marginTop: 8 }}>
-                        Bot:{" "}
-                        <strong>
-                          {telegramNotificationState.bot_configured
-                            ? "configuré"
-                            : "non configuré"}
-                        </strong>
-                        {" · "}Destinataires:{" "}
-                        <strong>
-                          {telegramNotificationDraft.recipient_user_ids.length + telegramNotificationDraft.chat_ids.length}
-                        </strong>
-                      </div>
-
-                      <div className="actions" style={{ marginTop: 16 }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void loadTelegramNotificationState()}
-                          disabled={
-                            loadingTelegramNotification ||
-                            savingTelegramNotification ||
-                            testingTelegramNotification
-                          }
-                        >
-                          {loadingTelegramNotification
-                            ? "Chargement..."
-                            : "Recharger"}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void testTelegramNotification()}
-                          disabled={
-                            savingTelegramNotification ||
-                            testingTelegramNotification
-                          }
-                        >
-                          {testingTelegramNotification
-                            ? "Envoi..."
-                            : "Tester Telegram uniquement"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void saveTelegramNotificationSettings()
-                          }
-                          disabled={
-                            savingTelegramNotification ||
-                            testingTelegramNotification
-                          }
-                        >
-                          {savingTelegramNotification
-                            ? "Enregistrement..."
-                            : "Enregistrer"}
-                        </button>
-                      </div>
-                      {telegramNotificationNotice ? (
-                        <div className="note note--success">
-                          {telegramNotificationNotice}
-                        </div>
-                      ) : null}
-                      {telegramNotificationError ? (
-                        <div className="note">
-                          {telegramNotificationError}
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-
-              </div>
-            </section>
-          ) : null}
-
           {activeSettingsSection === "settings-daily-reservation-email" ? (
             <section
               id="settings-daily-reservation-email"
               className="settings-cluster"
-              aria-labelledby="nav-settings-daily-reservation-email"
+              aria-labelledby="daily-reservation-email-title"
             >
             <div className="settings-cluster__header">
               <div>
                 <div className="settings-cluster__eyebrow">Communication</div>
-                <h2 className="settings-cluster__title">Email quotidien</h2>
+                <h2 className="settings-cluster__title" id="daily-reservation-email-title">E-mail quotidien</h2>
               </div>
               <p className="settings-cluster__text">
-                Configurez le digest quotidien des nouvelles réservations avec
-                des réglages distincts par adresse email.
+                Choisissez l’horaire et les destinataires du récapitulatif des nouvelles réservations.{" "}
+                <Link to="/parametres/notifications">Retour aux règles d’envoi</Link>
               </p>
             </div>
             <div className="settings-cluster__grid">

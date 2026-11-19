@@ -6,7 +6,7 @@ import { runScheduledIcalSync } from "./icalSync.js";
 import { runPlanningRelaySmsSchedule } from "./planningRelaySms.js";
 import { runConfiguredPumpCronImport } from "./pumpCron.js";
 import { runSmartlifeAutomation } from "./smartlifeAutomation.js";
-import { runTelegramDeadlineNotifications } from "./telegramDeadlineNotifications.js";
+import { runOwnerDeadlineNotificationTick } from "./telegramDeadlineNotifications.js";
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -15,7 +15,7 @@ export const runMultiTenantAutomationTick = async () => {
   const taskResults = [];
   taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.smartlife", moduleKeys: ["smart_life"], handler: () => runSmartlifeAutomation({ triggered_by: "scheduler" }), leaseMs: 10 * 60_000, minimumIntervalMs: 45_000 }));
   taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.daily_email", moduleKeys: ["daily_email"], handler: () => runDailyReservationEmail({ triggered_by: "scheduler" }), leaseMs: 10 * 60_000, minimumIntervalMs: 45_000 }));
-  taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.telegram", moduleKeys: ["telegram"], handler: () => runTelegramDeadlineNotifications(), leaseMs: 10 * 60_000, minimumIntervalMs: 5 * 60_000 }));
+  taskResults.push(await runOwnerDeadlineNotificationTick());
   taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.planning_sms", moduleKeys: ["worker_planning"], handler: () => runPlanningRelaySmsSchedule(), leaseMs: 10 * 60_000, minimumIntervalMs: 45_000 }));
   taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.wordpress", moduleKeys: ["web_publication"], handler: () => runGitePhotosWordPressWebhookQueueOnce(), leaseMs: 10 * 60_000, minimumIntervalMs: 45_000 }));
   taskResults.push(await runTenantTaskAcrossOrganizations({ taskKey: "automation.ical", moduleKeys: ["ical"], handler: () => runScheduledIcalSync(), leaseMs: 60 * 60_000, minimumIntervalMs: env.ICAL_SYNC_INTERVAL_HOURS * 60 * 60_000 }));

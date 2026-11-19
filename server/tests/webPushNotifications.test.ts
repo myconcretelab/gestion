@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { Server } from "node:http";
 import webPush from "web-push";
+import nodemailer from "nodemailer";
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "owner-push-"));
 const org = "org_push_test";
@@ -43,6 +44,8 @@ before(async () => {
     DATA_DIR: `${temp}/data`,
     CLIENT_ORIGIN: "https://app.example.test",
     APP_PUBLIC_URL: "https://app.example.test",
+    SMTP_HOST: "smtp.example.test",
+    SMTP_FROM: "alerts@example.test",
   });
   fs.writeFileSync(`${temp}/test.db`, "");
   const root = process.cwd().endsWith("/server")
@@ -534,6 +537,177 @@ test("les deux réglages voient la même priorité et Telegram redevient actif a
     device_count: 0,
     telegram_state: "active",
   });
+});
+
+test("les règles propriétaire cumulent les canaux et réessaient uniquement l’envoi en échec", async () => {
+  const notifications = await import("../src/services/ownerNotifications.js");
+  const settings = await import("../src/services/ownerNotificationSettings.js");
+  const mailer = await import("../src/services/mailer.js");
+  const { telegramMessageChannel } =
+    await import("../src/services/messageChannels/telegram.js");
+  const headers = {
+    Cookie: cookies[`${org}-owner`],
+    "Content-Type": "application/json",
+  };
+  const url = `${origin}/api/notifications/rules`;
+  assert.equal(
+    (await fetch(url, { headers: { Cookie: cookies[`${org}-worker`] } }))
+      .status,
+    403,
+  );
+
+  await inOrg(async () => {
+    telegram.writeTelegramNotificationConfig({
+      ...telegram.buildDefaultTelegramNotificationConfig(),
+      enabled: true,
+      bot_token: "test-token",
+      chat_ids: ["test-chat"],
+    });
+    await db.default.organizationSettings.update({
+      where: { organization_id: org },
+      data: { modules_json: JSON.stringify({ telegram: true }) },
+    });
+    await push.savePushSubscription(
+      `${org}-owner`,
+      subscription("owner-rules"),
+      "iPhone",
+    );
+    await settings.saveOwnerNotificationEmails(["owner@example.test"]);
+  });
+  assert.equal(
+    (
+      await fetch(url, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          rules: {
+            task_completed: { push: true, telegram: "always", email: true },
+          },
+        }),
+      })
+    ).status,
+    200,
+  );
+  const other = await fetch(url, {
+    headers: { Cookie: cookies[`${otherOrg}-owner`] },
+  });
+  assert.deepEqual((await other.json()).settings.rules, {});
+
+  const pushes = mock.method(webPush, "sendNotification", async () => {});
+  let failTelegram = true;
+  const telegramSends = mock.method(
+    telegramMessageChannel,
+    "send",
+    async () => {
+      if (failTelegram) throw new Error("Échec simulé");
+      return {
+        channel: "telegram",
+        sent_count: 1,
+        skipped_reason: null,
+        deliveries: [],
+      };
+    },
+  );
+  const emails: string[] = [];
+  mailer.resetSmtpTransportForTests();
+  mock.method(nodemailer, "createTransport", () => ({
+    verify: async () => true,
+    sendMail: async (message: { to: string }) => {
+      emails.push(message.to);
+      return { accepted: [message.to] };
+    },
+  }));
+  try {
+    const jobOf = (key: string) => ({
+      event: "task_completed" as const,
+      key,
+      message: "<b>Tâche terminée</b>\nContrôle jardin",
+    });
+    await inOrg(async () => {
+      await notifications.enqueueOwnerNotification(jobOf("parallel"));
+      await notifications.enqueueOwnerNotification(jobOf("parallel"));
+    });
+    const [attempt] = await notifications.runOwnerNotificationBatch();
+    assert.equal(attempt.status, "retrying");
+    assert.deepEqual(emails, ["owner@example.test"]);
+    assert.equal(pushes.mock.callCount(), 1);
+    assert.equal(telegramSends.mock.callCount(), 1);
+
+    failTelegram = false;
+    await inOrg(() =>
+      db.default.organizationJob.updateMany({
+        where: { status: "queued", type: "owner.notification" },
+        data: { run_at: new Date(0) },
+      }),
+    );
+    const [retry] = await notifications.runOwnerNotificationBatch();
+    assert.equal(retry.status, "succeeded");
+    assert.deepEqual(emails, ["owner@example.test"]);
+    assert.equal(pushes.mock.callCount(), 1);
+    assert.equal(telegramSends.mock.callCount(), 2);
+
+    await inOrg(async () => {
+      await settings.saveOwnerNotificationSettings({
+        rules: { task_completed: { push: true, telegram: "fallback" } },
+        taskOverrides: {},
+        cleaningScope: "selected",
+      });
+      await notifications.enqueueOwnerNotification(jobOf("push-accepted"));
+    });
+    await notifications.runOwnerNotificationBatch();
+    assert.equal(pushes.mock.callCount(), 2);
+    assert.equal(telegramSends.mock.callCount(), 2);
+
+    pushes.mock.mockImplementation(async () => {
+      throw { statusCode: 503 };
+    });
+    await inOrg(() =>
+      notifications.enqueueOwnerNotification(jobOf("push-failed")),
+    );
+    await notifications.runOwnerNotificationBatch();
+    assert.equal(telegramSends.mock.callCount(), 3);
+
+    await inOrg(async () => {
+      await settings.saveOwnerNotificationSettings({
+        rules: { task_completed: { push: false, email: true } },
+        taskOverrides: {},
+        cleaningScope: "selected",
+      });
+      await notifications.enqueueOwnerNotification(jobOf("email-only"));
+    });
+    await notifications.runOwnerNotificationBatch();
+    assert.deepEqual(emails, ["owner@example.test", "owner@example.test"]);
+    assert.equal(pushes.mock.callCount(), 3);
+    assert.equal(telegramSends.mock.callCount(), 3);
+    await inOrg(() =>
+      telegram.writeTelegramNotificationConfig({
+        ...telegram.readTelegramNotificationConfig(),
+        notify_booking_request_created: false,
+      }),
+    );
+    const configRequest = (enabled: boolean) =>
+      fetch(`${origin}/api/settings/telegram`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ enabled, chat_ids: ["test-chat"] }),
+      });
+    const updated = await configRequest(true);
+    assert.equal(updated.status, 200);
+    assert.equal(
+      (await updated.json()).config.notify_booking_request_created,
+      false,
+    );
+    assert.equal((await configRequest(false)).status, 200);
+    const afterDisable = await fetch(url, { headers });
+    const rules = (await afterDisable.json()).settings.rules;
+    assert.equal(rules.booking_requested.push, false);
+    assert.deepEqual(rules.booking_confirmed, {
+      push: true,
+      telegram: "fallback",
+    });
+  } finally {
+    mailer.resetSmtpTransportForTests();
+  }
 });
 
 test("le test d'envoi vise seulement les appareils du propriétaire connecté", async () => {

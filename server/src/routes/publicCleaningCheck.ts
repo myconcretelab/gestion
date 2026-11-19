@@ -1,7 +1,7 @@
+import { notifyGiteChecked } from "../services/ownerNotificationEvents.js";
 import { Router } from "express";
 import prisma from "../db/prisma.js";
 import {
-  notifyGiteCheckedOnTelegram,
   readTelegramNotificationConfig,
 } from "../services/telegramNotifications.js";
 import { parseCleaningCheckToken } from "../services/telegramDeadlineNotifications.js";
@@ -42,7 +42,7 @@ router.get("/confirm", async (req, res, next) => {
           id: true,
           gite_id: true,
           arrival_cleaning_checked_at: true,
-          gite: { select: { nom: true } },
+          gite: { select: { nom: true, email: true } },
         },
       }),
     ]);
@@ -72,11 +72,7 @@ router.get("/confirm", async (req, res, next) => {
         await syncCleaningTasks(departureDay, departureDay);
         await markCleaningTaskCheckedFromPublicLink(departure.id, checkedAt);
       }
-      try {
-        await notifyGiteCheckedOnTelegram(arrival.gite?.nom ?? "Gîte", checkedAt, "Telegram");
-      } catch (error) {
-        console.error("Échec de la confirmation Telegram du contrôle ménage:", error);
-      }
+      await notifyGiteChecked(arrival.gite?.nom ?? "Gîte", checkedAt, "Telegram", departure.id, arrival.gite?.email);
     }
 
     return res.type("html").send(renderResult(
