@@ -85,7 +85,7 @@ export function applyIndividualVatPreset(
   });
   return {
     input: changed
-      ? { ...input, lines, reviewed: false, tourist_tax_reviewed: false }
+      ? { ...input, lines, reviewed: false }
       : input,
     applied,
   };

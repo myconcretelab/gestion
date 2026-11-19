@@ -33,6 +33,7 @@ const invoice = () => {
 test("un particulier n’est prérempli en franchise que sur la base du régime français renseigné de l’émetteur", () => {
   const input = invoice();
   input.reviewed = true;
+  input.tourist_tax_reviewed = true;
   const result = applyIndividualVatPreset(input, context);
   assert.equal(result.input.lines[0].vat_category, "E");
   assert.equal(result.input.lines[0].vat_rate, 0);
@@ -41,6 +42,7 @@ test("un particulier n’est prérempli en franchise que sur la base du régime 
     "TVA non applicable, article 293 B du CGI",
   );
   assert.equal(result.input.reviewed, false);
+  assert.equal(result.input.tourist_tax_reviewed, true);
   assert.equal(input.lines[0].vat_category, "unknown");
   assert.equal(
     computeInvoiceFiscal(result.input).gross_cents,

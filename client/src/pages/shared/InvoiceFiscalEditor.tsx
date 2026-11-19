@@ -4,7 +4,7 @@ import {
   focusInvoiceField,
   type InvoiceValidationOptions,
 } from "./invoiceFormCompletion";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   computeInvoiceFiscal,
   invoiceFiscalInputSchema,
@@ -12,7 +12,7 @@ import {
   type InvoiceFiscalInput,
   type InvoiceFiscalLine,
 } from "@contrats/shared";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, isAbortError } from "../../utils/api";
 import { formatDate, formatEuro } from "../../utils/format";
 import "./invoiceFiscal.css";
 import InvoiceOperationEditor from "./InvoiceOperationEditor";
@@ -21,6 +21,7 @@ export default function InvoiceFiscalEditor({
   value,
   onChange,
   payload,
+  pricingContextKey,
   expectedTotal,
   children,
   touristTaxRequired = false,
@@ -32,17 +33,20 @@ export default function InvoiceFiscalEditor({
   value: InvoiceFiscalInput | null;
   onChange: (value: InvoiceFiscalInput) => void;
   payload: unknown;
+  pricingContextKey: string;
   expectedTotal: number;
   children?: ReactNode;
   touristTaxRequired?: boolean;
   pricingEditor?: ReactNode;
-  onReprepared?: (options?: InvoiceValidationOptions) => void;
+  onReprepared: (proposal: InvoiceFiscalInput, options?: InvoiceValidationOptions) => void;
   vatPresetHint?: string;
   manualLines?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedLines, setExpandedLines] = useState<string[]>([]);
+  const preparationRef = useRef<AbortController | null>(null);
+  useEffect(() => () => preparationRef.current?.abort(), [pricingContextKey]);
   const prepare = async () => {
     if (
       value?.lines.length &&
@@ -51,6 +55,8 @@ export default function InvoiceFiscalEditor({
       )
     )
       return;
+    const controller = new AbortController();
+    preparationRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -59,27 +65,20 @@ export default function InvoiceFiscalEditor({
         validation_options?: InvoiceValidationOptions;
       }>("/invoices/fiscal-preview", {
         method: "POST",
+        signal: controller.signal,
         json: {
           ...(payload as Record<string, unknown>),
           fiscal_input: undefined,
         },
       });
-      onChange(
-        value
-          ? {
-              ...value,
-              lines: result.fiscal_input.lines,
-              tourist_taxes: result.fiscal_input.tourist_taxes,
-              reviewed: false,
-              tourist_tax_reviewed: false,
-            }
-          : result.fiscal_input,
-      );
-      onReprepared?.(result.validation_options);
+      if (!controller.signal.aborted) onReprepared(result.fiscal_input, result.validation_options);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Préparation impossible.");
+      if (!isAbortError(err)) setError(err instanceof Error ? err.message : "Préparation impossible.");
     } finally {
-      setLoading(false);
+      if (preparationRef.current === controller) {
+        preparationRef.current = null;
+        setLoading(false);
+      }
     }
   };
   const update = (patch: Partial<InvoiceFiscalInput>) =>
@@ -547,7 +546,7 @@ export default function InvoiceFiscalEditor({
                     type="checkbox"
                     checked={value.tourist_tax_reviewed}
                     onChange={(e) =>
-                      update({ tourist_tax_reviewed: e.target.checked })
+                      onChange({ ...value, tourist_tax_reviewed: e.target.checked })
                     }
                   />
                   J’ai vérifié le traitement et la collecte de la taxe de

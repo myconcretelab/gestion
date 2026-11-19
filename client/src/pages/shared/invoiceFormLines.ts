@@ -1,4 +1,34 @@
-import type { InvoiceFiscalLine } from "@contrats/shared";
+import type { InvoiceFiscalInput, InvoiceFiscalLine } from "@contrats/shared";
+
+const invoiceDataKey = (value: unknown) =>
+  JSON.stringify(value, (_, field: unknown) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) return field;
+    return Object.fromEntries(
+      Object.entries(field).sort(([first], [second]) => first.localeCompare(second)),
+    );
+  });
+
+// Keep the latest tax calculation, even when only the accommodation subtotal changes.
+const taxReviewKey = (taxes: InvoiceFiscalInput["tourist_taxes"]) =>
+  invoiceDataKey((taxes ?? []).map(({ accommodation_amount: _accommodation, ...tax }) => tax));
+
+export function applyInvoiceFiscalProposal(
+  current: InvoiceFiscalInput,
+  lines: InvoiceFiscalLine[],
+  touristTaxes: InvoiceFiscalInput["tourist_taxes"],
+): InvoiceFiscalInput {
+  const linesChanged = lines !== current.lines && invoiceDataKey(lines) !== invoiceDataKey(current.lines);
+  const taxesChanged = invoiceDataKey(touristTaxes ?? []) !== invoiceDataKey(current.tourist_taxes ?? []);
+  if (!linesChanged && !taxesChanged) return current;
+  return {
+    ...current,
+    lines: linesChanged ? lines : current.lines,
+    tourist_taxes: taxesChanged ? touristTaxes : current.tourist_taxes,
+    reviewed: current.reviewed && !linesChanged,
+    tourist_tax_reviewed: current.tourist_tax_reviewed &&
+      (!taxesChanged || taxReviewKey(touristTaxes) === taxReviewKey(current.tourist_taxes)),
+  };
+}
 
 export const sameInvoiceLineAmounts = (
   left: InvoiceFiscalLine[],

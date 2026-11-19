@@ -62,7 +62,13 @@ const fiscalInput = {
       exemption_reason: "TVA non applicable, article 293 B du CGI",
     },
   ],
-  tourist_taxes: [],
+};
+const touristTax = {
+  version: 1, stay_label: "", collector: "host", platform: "",
+  included: false, classified: true, nights: 3, occupants: 4,
+  taxable_adults: 2, exempt_people: 2, exemption_reason: "",
+  unit_amount: 1, amount: 6, host_amount: 6, accommodation_amount: 210,
+  authority: "Commune de test", issues: [],
 };
 let browser;
 let vite;
@@ -72,11 +78,17 @@ try {
     `<!doctype html><html lang="fr"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><body><div id="root"></div><script type="module">
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Form from "/src/pages/FactureFormPage.tsx";
+import List from "/src/pages/FacturesListPage.tsx";
 import "/src/styles.css";
-history.replaceState(null, "", "/factures/nouvelle?fromReservationId=r1");
-createRoot(document.getElementById("root")).render(React.createElement(BrowserRouter,null,React.createElement(Form)));
+const view = new URLSearchParams(location.search).get("view");
+history.replaceState(null, "", view === "list" ? "/factures" : view === "edit" ? "/factures/draft-1/edition" : "/factures/nouvelle?fromReservationId=r1");
+createRoot(document.getElementById("root")).render(React.createElement(BrowserRouter,null,React.createElement(Routes,null,
+  React.createElement(Route,{path:"/factures",element:React.createElement(List)}),
+  React.createElement(Route,{path:"/factures/:id/edition",element:React.createElement(Form)}),
+  React.createElement(Route,{path:"/factures/nouvelle",element:React.createElement(Form)}),
+)));
 </script></body></html>`,
   );
   vite = await createServer({
@@ -94,12 +106,15 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   page.on("pageerror", (error) => errors.push(error.message));
   let childrenMax = 0;
   let saveAttempts = 0;
+  let savedInvoice;
+  let listInvoices = [];
+  let manualPreviewGate;
   const savedPayloads = [];
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
     let body;
-    if (pathname === "/api/gites") body = [gite];
+    if (pathname === "/api/gites") body = [{ ...gite, nb_enfants_max: childrenMax }];
     else if (pathname === "/api/settings/tourist-tax-collection/defaults")
       body = DEFAULT_TOURIST_TAX_COLLECTION;
     else if (pathname === "/api/gites/g1")
@@ -107,15 +122,23 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
     else if (pathname === "/api/reservations/invoice-options")
       body = [reservation];
     else if (pathname === "/api/reservations/prefill/r1") body = reservation;
-    else if (pathname === "/api/invoices" && method === "GET") body = [];
-    else if (pathname === "/api/invoices/fiscal-preview")
+    else if (pathname === "/api/invoices" && method === "GET") body = listInvoices;
+    else if (pathname === "/api/invoices/draft-1") body = savedInvoice;
+    else if (pathname === "/api/invoices/fiscal-preview") {
+      const input = route.request().postDataJSON();
+      if (input.locataire_nom && manualPreviewGate) await manualPreviewGate;
+      const exempt = input.nb_enfants_2_17 ?? 0;
+      const touristTaxes = [{ ...touristTax, occupants: 2 + exempt, exempt_people: exempt }];
       body = {
-        fiscal_input: fiscalInput,
+        fiscal_input: { ...fiscalInput, tourist_taxes: touristTaxes },
         validation_options: {
           vatRegime: "franchise_en_base",
           sellerCountryCode: "FR",
+          touristTax: 6,
+          touristTaxes,
         },
       };
+    }
     else if (pathname === "/api/invoices/preview-html") {
       await route.fulfill({
         status: 200,
@@ -143,11 +166,12 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
         });
         return;
       }
-      body = {
+      body = savedInvoice = {
         ...payload,
         id: "draft-1",
         revision: 1,
         lifecycle_status: "draft",
+        document_kind: "invoice",
       };
     } else throw new Error(`Unexpected request: ${method} ${pathname}`);
     await route.fulfill({
@@ -156,9 +180,8 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
       body: JSON.stringify(body),
     });
   });
-  await page.goto(
-    `http://127.0.0.1:${vite.httpServer.address().port}/__invoice_occupancy_test.html`,
-  );
+  const fixtureUrl = `http://127.0.0.1:${vite.httpServer.address().port}/__invoice_occupancy_test.html`;
+  await page.goto(fixtureUrl);
   const children = page.locator("#invoice-children");
   await page.waitForFunction(
     () => document.querySelector("#invoice-children")?.value === "2",
@@ -247,6 +270,56 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
         .querySelector("#invoice-children")
         ?.getAttribute("aria-invalid") === "false",
   );
+  const fiscalReview = page.locator("#invoice-reviewed");
+  const taxReview = page.locator("#tourist-tax-reviewed");
+  await save.waitFor();
+  await page.waitForFunction(() => !document.querySelector("#invoice-save button")?.disabled);
+  await fiscalReview.check();
+  await taxReview.check();
+  assert.equal(await fiscalReview.isChecked(), true, "La taxe et la vérification fiscale se cochent dans les deux ordres");
+
+  await page.getByText("Une précision à ajouter ?", { exact: false }).click();
+  await page.getByLabel("Clause additionnelle", { exact: true }).fill("Arrivée convenue avec le client.");
+  await page.locator("#invoice-buyer-phone").fill("0612345678");
+  assert.equal(await fiscalReview.isChecked(), true);
+  assert.equal(await taxReview.isChecked(), true);
+
+  const paidAmount = page.getByLabel("Sommes réellement reçues (€)");
+  const { promise, resolve } = Promise.withResolvers();
+  manualPreviewGate = promise;
+  const recalculate = page.getByRole("button", { name: "Recalculer les lignes", exact: true });
+  page.once("dialog", (dialog) => dialog.accept());
+  await recalculate.click();
+  await page.getByRole("button", { name: "Préparation…", exact: true }).waitFor();
+  await paidAmount.fill("20");
+  await fiscalReview.check();
+  resolve();
+  await recalculate.waitFor();
+  assert.equal(await paidAmount.inputValue(), "20", "Le recalcul conserve la saisie effectuée en attendant.");
+  assert.equal(await fiscalReview.isChecked(), true);
+  assert.equal(await taxReview.isChecked(), true);
+
+  const unchangedPreview = page.waitForResponse((response) => response.url().endsWith("/invoices/fiscal-preview"));
+  await page.getByText("Ajouter une ventilation personnalisée", { exact: true }).click();
+  await page.getByRole("button", { name: "Ajouter une ligne de ventilation", exact: true }).click();
+  assert.equal(await fiscalReview.isChecked(), false, "La ventilation modifiée doit être vérifiée.");
+  await fiscalReview.check();
+  await unchangedPreview;
+  await page.waitForFunction(() => !document.querySelector("#invoice-save button")?.disabled);
+  assert.equal(await fiscalReview.isChecked(), true, "Le recalcul identique préserve la vérification des lignes manuelles.");
+  assert.equal(await taxReview.isChecked(), true);
+
+  await children.fill("1");
+  await page.getByText(/1 personne\(s\) exonérée\(s\)/).waitFor();
+  assert.equal(await taxReview.isChecked(), false, "Le nombre de personnes exonérées a changé.");
+  assert.equal(await fiscalReview.isChecked(), true);
+  await children.fill("2");
+  await page.getByText(/2 personne\(s\) exonérée\(s\)/).waitFor();
+  await taxReview.check();
+  await paidAmount.fill("50");
+  assert.equal(await fiscalReview.isChecked(), false, "Le montant encaissé a changé.");
+  assert.equal(await taxReview.isChecked(), true);
+  await fiscalReview.check();
   await save.click();
   await page
     .getByRole("link", { name: /Ouvrir la fiche pour vérifier/ })
@@ -255,6 +328,27 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   assert.equal(savedPayloads[1].nb_adultes, 2);
   assert.equal(savedPayloads[1].nb_enfants_2_17, 2);
   assert.equal(savedPayloads[1].locataire_nom, "Client de test");
+  assert.equal(savedPayloads[1].fiscal_input.reviewed, true);
+  assert.equal(savedPayloads[1].fiscal_input.tourist_tax_reviewed, true);
+
+  const restoredPreview = page.waitForResponse((response) => response.url().endsWith("/invoices/fiscal-preview"));
+  await page.goto(`${fixtureUrl}?view=edit`);
+  await restoredPreview;
+  await page.waitForFunction(() => !document.querySelector("#invoice-save button")?.disabled);
+  assert.equal(await fiscalReview.isChecked(), true, "La réouverture conserve la validation enregistrée.");
+  assert.equal(await taxReview.isChecked(), true);
+
+  listInvoices = [
+    { ...savedInvoice, locataire_nom: "Client avec deux points", fiscal_issues: ["Adresse", "TVA"] },
+    { ...savedInvoice, id: "draft-2", locataire_nom: "Client avec un point", fiscal_issues: ["Adresse"] },
+    { ...savedInvoice, id: "draft-3", locataire_nom: "Client avec zéro point", fiscal_issues: [] },
+    { ...savedInvoice, id: "issued-1", numero_facture: "2027-01", locataire_nom: "Client facturé", lifecycle_status: "issued", fiscal_issues: ["Adresse"] },
+  ];
+  await page.goto(`${fixtureUrl}?view=list`);
+  await page.getByRole("row").filter({ hasText: "Client avec deux points" }).getByText("2 points à compléter", { exact: true }).waitFor();
+  await page.getByRole("row").filter({ hasText: "Client avec un point" }).getByText("1 point à compléter", { exact: true }).waitFor();
+  await page.getByRole("row").filter({ hasText: "Client avec zéro point" }).getByText("Aucun point fiscal à compléter", { exact: true }).waitFor();
+  assert.doesNotMatch(await page.getByRole("row").filter({ hasText: "Client facturé" }).innerText(), /à compléter/);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, saveAttempts, screenshots }));
 } finally {

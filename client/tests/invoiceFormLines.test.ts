@@ -4,9 +4,11 @@ import {
   emptyInvoiceFiscalInput,
   computeInvoiceFiscal,
   type InvoiceFiscalLine,
+  type TouristTaxResult,
 } from "@contrats/shared";
 import { createInvoiceFormInput } from "../src/pages/shared/invoiceFormDefaults.ts";
 import {
+  applyInvoiceFiscalProposal,
   reconcileInvoiceGeneratedLines,
   shouldSyncInvoiceGeneratedLines,
 } from "../src/pages/shared/invoiceFormLines.ts";
@@ -23,6 +25,37 @@ const line = (id: string, label: string, price: number): InvoiceFiscalLine => ({
   vat_category: "unknown",
   vat_rate: 0,
   exemption_reason: "",
+});
+
+test("le recalcul conserve les vérifications dont les données sont identiques", () => {
+  const tax: TouristTaxResult = {
+    version: 1, stay_label: "", collector: "host", platform: "",
+    included: false, classified: true, nights: 3, occupants: 2,
+    taxable_adults: 2, exempt_people: 0, exemption_reason: "",
+    unit_amount: 1, amount: 6, host_amount: 6, accommodation_amount: 210,
+    authority: "Commune", issues: [],
+  };
+  const invoice = {
+    ...createInvoiceFormInput(),
+    lines: [line("stay", "Location", 210)],
+    tourist_taxes: [tax],
+    reviewed: true,
+    tourist_tax_reviewed: true,
+  };
+  assert.equal(applyInvoiceFiscalProposal(invoice, structuredClone(invoice.lines), [{ ...tax }]), invoice);
+  const { id, ...lineFields } = invoice.lines[0];
+  const { version, ...taxFields } = tax;
+  assert.equal(applyInvoiceFiscalProposal(invoice, [{ ...lineFields, id }], [{ ...taxFields, version }]), invoice);
+
+  const priceChanged = applyInvoiceFiscalProposal(invoice, [line("stay", "Location", 220)], [{ ...tax, accommodation_amount: 220 }]);
+  assert.equal(priceChanged.reviewed, false);
+  assert.equal(priceChanged.tourist_tax_reviewed, true);
+  assert.equal(priceChanged.tourist_taxes?.[0].accommodation_amount, 220);
+
+  const collectorChanged = applyInvoiceFiscalProposal(invoice, invoice.lines, [{ ...tax, collector: "platform", host_amount: 0 }]);
+  assert.equal(collectorChanged.reviewed, true);
+  assert.equal(collectorChanged.tourist_tax_reviewed, false);
+  assert.equal(collectorChanged.tourist_taxes?.[0].collector, "platform");
 });
 
 test("les nouvelles factures sont B2C/FR sans changer les données partagées ou une autre facture", () => {

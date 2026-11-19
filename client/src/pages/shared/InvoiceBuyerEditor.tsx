@@ -10,12 +10,12 @@ export default function InvoiceBuyerEditor({
   onChange: (value: InvoiceFiscalInput) => void;
   children: React.ReactNode;
 }) {
-  const updateBuyer = (patch: Partial<InvoiceFiscalInput["buyer"]>) =>
-    onChange({
-      ...value,
-      reviewed: false,
-      buyer: { ...value.buyer, ...patch },
-    });
+  const updateBuyer = (patch: Partial<InvoiceFiscalInput["buyer"]>) => {
+    const buyer = { ...value.buyer, ...patch };
+    if (JSON.stringify(buyer) !== JSON.stringify(value.buyer)) {
+      onChange({ ...value, reviewed: false, buyer });
+    }
+  };
   const required = (note = "Requis") => (
     <span className="invoice-fiscal__required">{note}</span>
   );

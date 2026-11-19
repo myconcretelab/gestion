@@ -7,7 +7,7 @@ import { applyIndividualVatPreset, changedVatLineIds, individualVatPresetHint, t
 import { useEffect, useMemo, useRef, useState } from "react";
 import { documentOccupancyIssues, getDocumentOccupancyLimits, defaultInvoiceTheme, resolveInvoiceTheme, type DocumentOccupancyGite, type InvoiceThemeId, type InvoiceFiscalInput, type InvoiceFiscalLine } from "@contrats/shared";
 import InvoiceThemePicker from "./shared/InvoiceThemePicker";
-import { reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
+import { applyInvoiceFiscalProposal, reconcileInvoiceGeneratedLines, shouldSyncInvoiceGeneratedLines } from "./shared/invoiceFormLines";
 import { createInvoiceFormInput } from "./shared/invoiceFormDefaults";
 import { invoiceReservationPrefill } from "./shared/invoiceReservationPrefill";
 import InvoiceBuyerEditor from "./shared/InvoiceBuyerEditor";
@@ -84,7 +84,7 @@ const FactureFormPage = () => {
   const currentFiscalRef = useRef(fiscalInput);
   currentFiscalRef.current = fiscalInput;
   const pricedGiteRef = useRef<string | null>(null);
-  const fiscalContextRef = useRef<string | null>(null);
+  const reviewContextRef = useRef<{ id?: string; stay: string; fiscal: string }>();
   const handledHashNavigationRef = useRef<string | null>(null);
   const location = useLocation();
   const { id } = useParams();
@@ -665,7 +665,7 @@ const FactureFormPage = () => {
   const pricingContextKey = JSON.stringify({ split_invoice_id: splitInvoiceId, gite_id: giteId, date_debut: dateDebut, date_fin: dateFin, prix_par_nuit: prixParNuit,
     remise_montant: remiseMontant, options, frais_supplementaires: fraisSupplementairesPayload, reservation_ids: selectedReservationIds,
     nb_adultes: nbAdultes, nb_enfants_2_17: nbEnfants });
-  const fiscalSourceReady = !isEdit || Boolean(editingContract);
+  const fiscalSourceReady = !isEdit || editingContract?.id === id;
   useEffect(() => {
     const pricingContext = JSON.parse(pricingContextKey);
     if (!pricingContext.gite_id || !pricingContext.date_debut || !pricingContext.date_fin ||
@@ -686,14 +686,12 @@ const FactureFormPage = () => {
         const baseline = proposedLinesRef.current;
         const proposed = result.fiscal_input.lines;
         const shouldSync = shouldSyncInvoiceGeneratedLines(linesManual, currentFiscalRef.current.lines, proposed, baseline);
-        if (shouldSync) {
-          setLinesManual(false);
-          setFiscalInput((previous) => {
-            const lines = reconcileInvoiceGeneratedLines(previous.lines, proposed, baseline);
-            return JSON.stringify(lines) === JSON.stringify(previous.lines) && JSON.stringify(previous.tourist_taxes) === JSON.stringify(result.fiscal_input.tourist_taxes) ? previous : { ...previous, lines, tourist_taxes: result.fiscal_input.tourist_taxes, reviewed: false, tourist_tax_reviewed: false };
-          });
-        }
-        if (!shouldSync) setFiscalInput(previous => ({ ...previous, tourist_taxes: result.fiscal_input.tourist_taxes, reviewed: false, tourist_tax_reviewed: false }));
+        if (shouldSync) setLinesManual(false);
+        setFiscalInput((previous) => applyInvoiceFiscalProposal(
+          previous,
+          shouldSync ? reconcileInvoiceGeneratedLines(previous.lines, proposed, baseline) : previous.lines,
+          result.fiscal_input.tourist_taxes,
+        ));
         proposedLinesRef.current = proposed;
       }).catch((err) => {
         if (!isAbortError(err)) setLinesError(err instanceof Error ? err.message : "Préparation des lignes impossible.");
@@ -720,14 +718,21 @@ const FactureFormPage = () => {
   })];
 
   const payloadKey = useMemo(() => JSON.stringify(previewPayload), [previewPayload]);
-  const fiscalContextKey = JSON.stringify({ ...previewPayload, fiscal_input: undefined, clauses: { ...clausesPayload, invoice_theme: undefined } });
+  const stayReviewKey = JSON.stringify([giteId, dateDebut, dateFin, linkedReservationId, selectedReservationIds]);
+  const fiscalReviewKey = JSON.stringify([locataireNom.trim(), locataireEmail.trim()]);
   useEffect(() => {
-    if (isEdit && !editingContract) return;
-    if (fiscalContextRef.current !== null && fiscalContextRef.current !== fiscalContextKey) {
-      setFiscalInput((previous) => ({ ...previous, reviewed: false, tourist_tax_reviewed: false }));
-    }
-    fiscalContextRef.current = fiscalContextKey;
-  }, [fiscalContextKey, isEdit, editingContract]);
+    if (!fiscalSourceReady || loadingFromContract || loadingFromReservation) return;
+    const previous = reviewContextRef.current;
+    reviewContextRef.current = { id, stay: stayReviewKey, fiscal: fiscalReviewKey };
+    if (!previous || previous.id !== id) return;
+    const stayChanged = previous.stay !== stayReviewKey;
+    if (!stayChanged && previous.fiscal === fiscalReviewKey) return;
+    setFiscalInput((input) => ({
+      ...input,
+      reviewed: false,
+      tourist_tax_reviewed: input.tourist_tax_reviewed && !stayChanged,
+    }));
+  }, [id, stayReviewKey, fiscalReviewKey, fiscalSourceReady, loadingFromContract, loadingFromReservation]);
 
   const previewDatesValid = useMemo(() => {
     return isDocumentDateRangeValid(dateDebut, dateFin);
@@ -1604,10 +1609,12 @@ const FactureFormPage = () => {
         if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
         setFiscalInput(next);
 
-      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax || validationOptions?.touristTaxes?.length)} pricingEditor={splitInvoiceId ? undefined : pricingEditor} onReprepared={(options) => {
+      }} payload={previewPayload} pricingContextKey={JSON.stringify([id, pricingContextKey])} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax || validationOptions?.touristTaxes?.length)} pricingEditor={splitInvoiceId ? undefined : pricingEditor} onReprepared={(proposal, options) => {
         setLinesManual(false);
         if (options) { setValidationOptions(options); setValidationGiteId(giteId); }
+        proposedLinesRef.current = proposal.lines;
         touchedVatLinesRef.current.clear(); appliedVatPresetsRef.current = {};
+        setFiscalInput((previous) => applyInvoiceFiscalProposal(previous, proposal.lines, proposal.tourist_taxes));
       }} manualLines={linesManual} vatPresetHint={fiscalInput.buyer.kind === "individual" ? individualVatPresetHint(vatPresetContext) : undefined}>
         <footer className="invoice-save" id="invoice-save" data-invoice-step="3" tabIndex={-1} aria-label="Enregistrement de la facture">
           <div><strong>{lastSavedKey === payloadKey ? "Toutes vos modifications sont enregistrées" : "Enregistrez les informations de cette facture"}</strong>

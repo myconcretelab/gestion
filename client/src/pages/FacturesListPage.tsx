@@ -361,9 +361,22 @@ const FacturesListPage = () => {
               const totalMontant =
                 Number(facture.solde_montant ?? 0) +
                 Number(facture.arrhes_montant ?? 0);
+              const remaining = facture.lifecycle_status === "draft" ? facture.fiscal_issues?.length : undefined;
               return (
                 <tr key={facture.id}>
-                  <td><Link to={`/factures/${facture.id}`}>{invoiceDisplayNumber(facture)}</Link><br />{facture.document_kind === "credit_note" ? "Avoir · " : ""}{invoiceLifecycleLabel(facture)}</td>
+                  <td>
+                    <Link to={`/factures/${facture.id}`}>{invoiceDisplayNumber(facture)}</Link>
+                    <br />
+                    {facture.document_kind === "credit_note" ? "Avoir · " : ""}
+                    {invoiceLifecycleLabel(facture)}
+                    {remaining !== undefined && (
+                      <div className="field-hint">
+                        {remaining === 0
+                          ? "Aucun point fiscal à compléter"
+                          : `${remaining} point${remaining > 1 ? "s" : ""} à compléter`}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {facture.reservation_items?.length >= 2
                       ? `${facture.reservation_items.length} réservations`
