@@ -110,6 +110,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   let listInvoices = [];
   let manualPreviewGate;
   const savedPayloads = [];
+  const addressQueries = [];
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -124,6 +125,18 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
     else if (pathname === "/api/reservations/prefill/r1") body = reservation;
     else if (pathname === "/api/invoices" && method === "GET") body = listInvoices;
     else if (pathname === "/api/invoices/draft-1") body = savedInvoice;
+    else if (pathname === "/api/invoices/address-suggestions" && method === "POST") {
+      const input = route.request().postDataJSON();
+      addressQueries.push(input.query);
+      assert.deepEqual(Object.keys(input), ["query"]);
+      if (input.query === "Service indisponible") {
+        return route.fulfill({ status: 503, json: { error: "Suggestions indisponibles." } });
+      }
+      body = [
+        { address_line1: "5 rue du Grand Pré", postal_code: "87280", city: "Limoges" },
+        { address_line1: "5 Rue du Grand Pré", postal_code: "60000", city: "Beauvais" },
+      ];
+    }
     else if (pathname === "/api/invoices/fiscal-preview") {
       const input = route.request().postDataJSON();
       if (input.locataire_nom && manualPreviewGate) await manualPreviewGate;
@@ -356,6 +369,48 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   await page.getByRole("row").filter({ hasText: "Client avec deux points" }).getByRole("link", { name: "Modifier", exact: true }).click();
   await page.waitForURL("**/factures/draft-1/edition");
   await page.waitForFunction(() => document.querySelector("#invoice-buyer-name")?.value === "Client de test");
+
+  const address = page.locator("#buyer-address");
+  const postalCode = page.locator("#buyer-postal-code");
+  const city = page.locator("#buyer-city");
+  const complement = page.getByLabel("Complément d’adresse");
+  const suggestions = page.getByRole("listbox", { name: "Suggestions d’adresses" });
+  assert.equal(addressQueries.length, 0);
+  await complement.fill("Appartement 4");
+  await address.fill("cin");
+  await address.fill("cinq rue du Grand Pré");
+  await suggestions.getByRole("option", { name: /60000 Beauvais/ }).waitFor();
+  assert.deepEqual(addressQueries, ["cinq rue du Grand Pré"]);
+  await address.press("ArrowDown");
+  await address.press("ArrowDown");
+  assert.equal(await suggestions.getByRole("option", { name: /60000 Beauvais/ }).getAttribute("aria-selected"), "true");
+  await address.press("Enter");
+  await suggestions.waitFor({ state: "hidden" });
+  assert.equal(await address.inputValue(), "5 Rue du Grand Pré");
+  assert.equal(await postalCode.inputValue(), "60000");
+  assert.equal(await city.inputValue(), "Beauvais");
+  assert.equal(await complement.inputValue(), "Appartement 4");
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await address.fill("5 rue du Grand");
+  await suggestions.getByRole("option", { name: /87280 Limoges/ }).waitFor();
+  await address.evaluate((input) => input.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: path.join(screenshots, "address-suggestions-mobile.png") });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await suggestions.getByRole("option", { name: /87280 Limoges/ }).click();
+  assert.equal(await city.inputValue(), "Limoges");
+  assert.equal(await postalCode.inputValue(), "87280");
+
+  await address.fill("Service indisponible");
+  await page.getByText("Suggestions indisponibles. Vous pouvez continuer la saisie.", { exact: true }).waitFor();
+  await city.fill("Rennes");
+  assert.equal(await city.inputValue(), "Rennes");
+  const requestsWithFrance = addressQueries.length;
+  await page.locator("#buyer-country").selectOption("BE");
+  await address.fill("Rue manuelle en Belgique");
+  await page.waitForTimeout(450);
+  assert.equal(addressQueries.length, requestsWithFrance);
+  assert.equal(await address.inputValue(), "Rue manuelle en Belgique");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, saveAttempts, screenshots }));
 } finally {

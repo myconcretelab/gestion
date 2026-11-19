@@ -1,5 +1,6 @@
 import { countryOptions } from "./countryOptions";
 import type { InvoiceFiscalInput } from "@contrats/shared";
+import InvoiceAddressField from "./InvoiceAddressField";
 
 export default function InvoiceBuyerEditor({
   value,
@@ -93,15 +94,13 @@ export default function InvoiceBuyerEditor({
             ))}
           </select>
         </label>
-        <label className="field">
-          {fieldLabel("Adresse de facturation")}
-          <input
-            id="buyer-address"
-            value={value.buyer.address_line1}
-            maxLength={500}
-            onChange={(e) => updateBuyer({ address_line1: e.target.value })}
-          />
-        </label>
+        <InvoiceAddressField
+          label={fieldLabel("Adresse de facturation")}
+          value={value.buyer.address_line1}
+          enabled={value.buyer.country_code === "FR"}
+          onChange={(address_line1) => updateBuyer({ address_line1 })}
+          onSelect={updateBuyer}
+        />
         <label className="field">
           Complément d’adresse
           <input

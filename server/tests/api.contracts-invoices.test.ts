@@ -107,6 +107,49 @@ const getRouteHandler = (router: any, method: "get" | "post" | "put" | "patch", 
   return layer.route.stack[0].handle as (req: any, res: any, next: (err?: unknown) => void) => Promise<void>;
 };
 
+test("la recherche d'adresses de facture normalise la saisie et renvoie uniquement les champs utiles", async (t) => {
+  const { default: router } = await import("../src/routes/invoices.ts");
+  const suggest = getRouteHandler(router, "post", "/address-suggestions");
+  const queries: URL[] = [];
+  let unavailable = false;
+  const feature = {
+    properties: { name: "5 rue du Grand Pré", postcode: "87280", city: "Limoges", type: "housenumber", score: 0.95 },
+    geometry: { coordinates: [1.2, 45.8] },
+  };
+  t.mock.method(globalThis, "fetch", async (input: URL) => {
+    queries.push(input);
+    return unavailable ? new Response(null, { status: 429 }) : Response.json({
+      features: [feature, feature, { properties: { ...feature.properties, postcode: null } }],
+    });
+  });
+  const next = (error?: unknown) => { if (error) throw error; };
+
+  const response = createMockResponse();
+  await suggest({ body: { query: "  Cinq   rue du Grand Pré " } }, response, next);
+  assert.deepEqual(response.body, [
+    { address_line1: "5 rue du Grand Pré", postal_code: "87280", city: "Limoges" },
+  ]);
+  assert.equal(response.headers["Cache-Control"], "no-store");
+  assert.equal(queries[0].origin + queries[0].pathname, "https://data.geopf.fr/geocodage/search");
+  assert.deepEqual(Object.fromEntries(queries[0].searchParams), {
+    q: "5 rue du Grand Pré", index: "address", limit: "5", type: "housenumber",
+  });
+
+  await suggest({ body: { query: "quatre-vingt-dix-neuf bis avenue de Paris" } }, createMockResponse(), next);
+  assert.equal(queries[1].searchParams.get("q"), "99 bis avenue de Paris");
+  await suggest({ body: { query: "Le Grand Pré" } }, createMockResponse(), next);
+  assert.equal(queries[2].searchParams.get("q"), "Le Grand Pré");
+  assert.equal(queries[2].searchParams.get("type"), null);
+
+  await assert.rejects(suggest({ body: { query: "x" } }, createMockResponse(), next), { name: "ZodError" });
+  assert.equal(queries.length, 3);
+  unavailable = true;
+  const failed = createMockResponse();
+  await suggest({ body: { query: "5 rue du Grand Pré" } }, failed, next);
+  assert.equal(failed.statusCode, 503);
+  assert.deepEqual(failed.body, { error: "Les suggestions d’adresses sont indisponibles." });
+});
+
 test("API handlers calculent le solde correct sur create/update contrat/facture", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-handler-test-"));
   const envBackup = {

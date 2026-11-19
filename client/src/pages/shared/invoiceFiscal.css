@@ -76,6 +76,44 @@
   max-width: 100%;
 }
 
+.invoice-address {
+  position: relative;
+  min-width: 0;
+}
+
+.invoice-address__suggestions {
+  position: absolute;
+  z-index: 5;
+  inset: calc(100% + 4px) 0 auto;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+  list-style: none;
+}
+
+.invoice-address__suggestions [role="option"] {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.invoice-address__suggestions [role="option"]:hover,
+.invoice-address__suggestions [aria-selected="true"] {
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.invoice-address__suggestions small {
+  color: var(--muted);
+}
+
 .invoice-form {
   padding-bottom: 110px;
 }

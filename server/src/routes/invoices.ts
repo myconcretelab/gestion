@@ -11,6 +11,7 @@ import prisma, { type TenantTransactionClient } from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type ContractTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { syncReservationFromDocument } from "../services/documentReservationSync.js";
+import { searchFrenchAddresses } from "../services/frenchAddressSearch.js";
 import {
   assertEditableInvoice, buildInvoiceCalculation, createFullCreditNote, deleteInvoiceDraft,
   invoiceError, invoiceReadInclude, invoiceRenderInput, issueInvoice, parseInvoiceCalculation, readInvoiceShare,
@@ -545,6 +546,22 @@ router.get("/", async (req, res, next) => {
       include: invoiceReadInclude,
     });
     res.json(factures.map(hydrateInvoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const addressSuggestionRequest = z.object({ query: z.string().trim().min(3).max(160) });
+
+router.post("/address-suggestions", async (req, res, next) => {
+  try {
+    const { query } = addressSuggestionRequest.parse(req.body);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      res.json(await searchFrenchAddresses(query));
+    } catch {
+      res.status(503).json({ error: "Les suggestions d’adresses sont indisponibles." });
+    }
   } catch (err) {
     next(err);
   }
