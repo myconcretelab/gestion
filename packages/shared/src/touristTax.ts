@@ -127,6 +127,7 @@ export const touristTaxResultSchema = z.object({
   accommodation_amount: money,
   authority: z.string().max(200),
   issues: z.array(z.string().max(500)),
+  allocated: z.boolean().optional(),
 });
 export type TouristTaxResult = z.infer<typeof touristTaxResultSchema>;
 

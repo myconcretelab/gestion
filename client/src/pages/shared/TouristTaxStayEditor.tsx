@@ -24,14 +24,14 @@ export function TouristTaxSummary({ taxes }: { taxes: TouristTaxResult[] }) {
             Taxe de séjour{tax.stay_label ? ` · ${tax.stay_label}` : ""} :{" "}
             {formatEuro(tax.amount)}
           </strong>
-          <p>
+          {tax.allocated ? <p>Quote-part du séjour.</p> : <p>
             {tax.taxable_adults} personne(s) taxable(s) × {tax.nights} nuit(s) ×{" "}
             {formatEuro(tax.unit_amount)}
             {tax.exempt_people > 0
               ? ` · ${tax.exempt_people} personne(s) exonérée(s)`
               : ""}
             .
-          </p>
+          </p>}
           <p>
             {tax.collector === "host"
               ? `${tax.included ? "Comprise dans le prix annoncé" : "En supplément du prix annoncé"} · à collecter par vous.`

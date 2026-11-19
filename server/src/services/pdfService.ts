@@ -1083,8 +1083,8 @@ const buildTouristTaxRows = (taxes: TouristTaxResult[] = [], sign = 1, documentT
   const nights = isContract ? formatCountLabel(tax.nights, "nuit") : `${tax.nights} nuit(s)`;
   const exemptPeople = isContract ? formatCountLabel(tax.exempt_people, "personne exonérée", "personnes exonérées") : `${tax.exempt_people} personne(s) exonérée(s)`;
   const detail = [
-    `${taxablePeople} × ${nights} × ${formatEuro(tax.unit_amount)}`,
-    tax.exempt_people ? exemptPeople : "",
+    tax.allocated ? "Quote-part du séjour" : `${taxablePeople} × ${nights} × ${formatEuro(tax.unit_amount)}`,
+    !tax.allocated && tax.exempt_people ? exemptPeople : "",
     !isContract ? tax.authority : "",
     collector,
     tax.collector === "platform" ? formatEuro(tax.amount) : "",

@@ -556,6 +556,8 @@ test("creation facture complete une reservation existante plutot que d'en creer 
   const prisma = prismaModule.default as any;
 
   const original = {
+    transaction: prisma.$transaction,
+    factureFindMany: prisma.facture.findMany,
     giteFindUnique: prisma.gite.findUnique,
     factureCounterUpsert: prisma.factureCounter.upsert,
     factureCreate: prisma.facture.create,
@@ -566,6 +568,8 @@ test("creation facture complete une reservation existante plutot que d'en creer 
   };
 
   try {
+    prisma.$transaction = async (work: any) => work(prisma);
+    prisma.facture.findMany = async () => [];
     prisma.gite.findUnique = async () => ({
       id: "g1",
       prefixe_contrat: "GT",
@@ -659,6 +663,8 @@ test("creation facture complete une reservation existante plutot que d'en creer 
     assert.equal(reservationUpdatePayload.data.frais_optionnels_libelle, "Ménage");
     assert.equal(reservationUpdatePayload.data.frais_optionnels_declares, true);
   } finally {
+    prisma.$transaction = original.transaction;
+    prisma.facture.findMany = original.factureFindMany;
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.factureCounter.upsert = original.factureCounterUpsert;
     prisma.facture.create = original.factureCreate;
@@ -692,6 +698,7 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
   const prismaModule = await import("../src/db/prisma.ts");
   const prisma = prismaModule.default as any;
   const original = {
+    transaction: prisma.$transaction,
     giteFindUnique: prisma.gite.findUnique,
     reservationFindMany: prisma.reservation.findMany,
     factureFindMany: prisma.facture.findMany,
@@ -700,6 +707,7 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
   };
 
   try {
+    prisma.$transaction = async (work: any) => work(prisma);
     const gite = {
       id: "g1",
       nom: "Gîte un",
@@ -764,6 +772,7 @@ test("creation facture regroupe plusieurs reservations et fige leurs montants", 
     assert.equal(computeInvoiceFiscal(proposed).gross_cents, 51000);
     assert.equal(proposed.lines.filter((line) => line.unit === "DAY").reduce((sum, line) => sum + line.quantity, 0), 5);
   } finally {
+    prisma.$transaction = original.transaction;
     prisma.gite.findUnique = original.giteFindUnique;
     prisma.reservation.findMany = original.reservationFindMany;
     prisma.facture.findMany = original.factureFindMany;

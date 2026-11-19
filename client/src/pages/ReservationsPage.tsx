@@ -2,6 +2,8 @@ import { useBookingSourceOptions } from "../utils/bookingSourceOptions";
 import { cleaningBillingSuffix } from "@contrats/shared";
 import { getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
 import ReservationPaymentPopover from "./shared/ReservationPaymentPopover";
+import ReservationInvoiceSplitDrawer from "./shared/ReservationInvoiceSplitDrawer";
+import { canCurrentUserAccessPage, canCurrentUserViewAmounts } from "../utils/auth";
 import ReservationPaymentLinkDialog from "./shared/ReservationPaymentLinkDialog";
 import ReservationOnlinePayment from "./shared/ReservationOnlinePayment";
 import ReservationNightBadges, { useReservationNightSummaries } from "../features/finance/reports/ReservationNightBadges";
@@ -1043,6 +1045,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const location = useLocation();
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedFocusReservationId = locationParams.get("focus");
+  const requestedInvoices = locationParams.get("invoices") === "1";
   const requestedPayments = locationParams.get("payments") === "1";
   const requestedTab = locationParams.get("tab");
   const requestedYear = locationParams.get("year");
@@ -1065,6 +1068,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [invoiceSplitReservation, setInvoiceSplitReservation] = useState<Reservation | null>(null);
   const [paymentLinkReservation, setPaymentLinkReservation] = useState<Reservation | null>(null);
   const [emailReservation, setEmailReservation] = useState<Reservation | null>(null);
   const [draggedGiteId, setDraggedGiteId] = useState<string | null>(null);
@@ -3393,7 +3397,10 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       if (!targetRow) return;
 
       handledLinkedFocusRef.current = focusSignature;
-      targetRow.scrollIntoView({ block: "center", behavior: requestedPayments ? "instant" : "smooth" });
+      targetRow.scrollIntoView({ block: "center", behavior: requestedPayments || requestedInvoices ? "instant" : "smooth" });
+      if (requestedInvoices && targetReservation.gite_id && canCurrentUserAccessPage("invoices") && canCurrentUserViewAmounts()) {
+        setInvoiceSplitReservation({ ...targetReservation, hote_nom: getEditableHostName(targetReservation.hote_nom) });
+      }
       if (requestedPayments) {
         targetRow.querySelector<HTMLButtonElement>(".reservation-payment-balance")?.click();
       }
@@ -3415,6 +3422,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     location.key,
     monthExpandedByIndex,
     requestedFocusReservationId,
+    requestedInvoices,
     requestedPayments,
     requestedTab,
     reservations,
@@ -5734,6 +5742,11 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                                       { id: "contract", label: "Créer un contrat", icon: "contract", to: `/contrats/nouveau?fromReservationId=${encodeURIComponent(reservation.id)}` } satisfies ActionMenuItem,
                                       { id: "invoice", label: "Créer une facture", icon: "invoice", to: `/factures/nouvelle?fromReservationId=${encodeURIComponent(reservation.id)}` } satisfies ActionMenuItem,
                                     ] : []),
+                                    ...(reservation.gite_id && canCurrentUserAccessPage("invoices") && canCurrentUserViewAmounts() ? [{
+                                      id: "invoice-split", label: "Répartir la facturation", icon: "split",
+                                      disabled: isEditing || rowSaveState === "saving",
+                                      onSelect: () => setInvoiceSplitReservation({ ...reservation, hote_nom: getEditableHostName(reservation.hote_nom) }),
+                                    } satisfies ActionMenuItem] : []),
                                     { id: "delete", label: deletingId === reservation.id ? "Suppression en cours…" : "Supprimer", icon: "trash", danger: true, separatorBefore: true, disabled: deletingId === reservation.id, onSelect: () => { void removeReservation(reservation); } },
                                     { id: "duplicate", label: "Dupliquer", icon: "copy", separatorBefore: true, onSelect: () => duplicateIntoNewRow(reservation, monthIndex, rowIndex) },
                                   ]}
@@ -5890,6 +5903,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           </section>
         </div>
       ) : null}
+      {invoiceSplitReservation ? <ReservationInvoiceSplitDrawer key={invoiceSplitReservation.id} reservation={invoiceSplitReservation} onClose={() => setInvoiceSplitReservation(null)} /> : null}
       {emailReservation ? <ReservationEmailDialog key={emailReservation.id} reservation={emailReservation} onClose={() => setEmailReservation(null)} /> : null}
       {paymentLinkReservation ? <ReservationPaymentLinkDialog reservation={paymentLinkReservation} onClose={() => setPaymentLinkReservation(null)} /> : null}
     </div>

@@ -121,6 +121,7 @@ const FactureFormPage = () => {
   const [createdContract, setCreatedContract] = useState<Facture | null>(null);
   const [createdPayloadKey, setCreatedPayloadKey] = useState<string | null>(null);
   const [editingContract, setEditingContract] = useState<Facture | null>(null);
+  const splitInvoiceId = editingContract?.split_stay && editingContract.id === id ? id : undefined;
   const [loadingContract, setLoadingContract] = useState(false);
   const [loadingFromContract, setLoadingFromContract] = useState(false);
   const [sourceContractNumber, setSourceContractNumber] = useState<string | null>(null);
@@ -557,7 +558,7 @@ const FactureFormPage = () => {
   }, [clausesText, remiseReason, invoiceTheme]);
 
   const occupancyGite = refreshedOccupancyGite?.id === selectedGite?.id ? refreshedOccupancyGite : selectedGite;
-  const occupancy = !isMultiReservation && occupancyGite ? { gite: occupancyGite, nbAdultes, nbEnfants } : undefined;
+  const occupancy = !splitInvoiceId && !isMultiReservation && occupancyGite ? { gite: occupancyGite, nbAdultes, nbEnfants } : undefined;
   const occupancyIssues = occupancy ? documentOccupancyIssues(occupancy) : [];
   const occupancyLimits = occupancyGite ? getDocumentOccupancyLimits(occupancyGite, nbAdultes) : null;
   const occupancyFieldErrors: InvoiceFieldErrors = { ...Object.fromEntries(occupancyIssues.map(({ field, message }) => [field, message])), ...fieldErrors };
@@ -586,10 +587,13 @@ const FactureFormPage = () => {
     }
   };
 
-  const expectedTotal = (isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal;
+  const expectedTotal = splitInvoiceId && editingContract
+    ? Math.round((editingContract.solde_montant + editingContract.arrhes_montant) * 100) / 100
+    : (isMultiReservation ? selectedReservationsTotal : totals?.totalGlobal ?? 0) + fraisSupplementairesTotal;
   const draftReady = Boolean(giteId && locataireNom.trim() && dateDebut && dateFin && dateFin > dateDebut && !occupancyIssues.length);
   const previewPayload = useMemo(() => {
     const payload: any = {
+      split_invoice_id: splitInvoiceId,
       fiscal_input: fiscalInput,
       gite_id: giteId,
       locataire_nom: locataireNom,
@@ -620,6 +624,7 @@ const FactureFormPage = () => {
 
     return payload;
   }, [
+    splitInvoiceId,
     fiscalInput,
     giteId,
     locataireNom,
@@ -647,7 +652,7 @@ const FactureFormPage = () => {
     setFiscalInput((previous) => previous.buyer.address_line1 ? previous : { ...previous, buyer: { ...previous.buyer, address_line1: locataireAdresse } });
   }, [locataireAdresse]);
 
-  const pricingContextKey = JSON.stringify({ gite_id: giteId, date_debut: dateDebut, date_fin: dateFin, prix_par_nuit: prixParNuit,
+  const pricingContextKey = JSON.stringify({ split_invoice_id: splitInvoiceId, gite_id: giteId, date_debut: dateDebut, date_fin: dateFin, prix_par_nuit: prixParNuit,
     remise_montant: remiseMontant, options, frais_supplementaires: fraisSupplementairesPayload, reservation_ids: selectedReservationIds,
     nb_adultes: nbAdultes, nb_enfants_2_17: nbEnfants });
   const fiscalSourceReady = !isEdit || Boolean(editingContract);
@@ -1379,7 +1384,7 @@ const FactureFormPage = () => {
             <select
               id="invoice-gite"
               value={giteId}
-              disabled={isMultiReservation}
+              disabled={isMultiReservation || Boolean(splitInvoiceId)}
               onChange={(e) => {
                 clearFieldError("gite_id");
                 setGiteId(e.target.value);
@@ -1434,7 +1439,12 @@ const FactureFormPage = () => {
         </div>
       </InvoiceBuyerEditor>
 
-      <div className="card invoice-reservations">
+      {splitInvoiceId ? (
+        <div className="card" id="invoice-stay">
+          <div className="section-title">Quote-part du séjour</div>
+          <p>{formatDate(dateDebut)} – {formatDate(dateFin)} · <strong>{formatEuro(expectedTotal)}</strong></p>
+        </div>
+      ) : <div className="card invoice-reservations">
         <div className="invoice-reservations__header">
           <div>
             <div className="section-title">Réservations incluses</div>
@@ -1562,7 +1572,7 @@ const FactureFormPage = () => {
             {Boolean(occupancyIssues.length) && <div className="field-hint"><p>L’effectif saisi dépasse les limites de la fiche du gîte. Vérifiez l’effectif du séjour ou les <Link to={`/gites?gite=${encodeURIComponent(giteId)}&section=base-fiche`} target="_blank" rel="noreferrer">capacités configurées du gîte (nouvel onglet)</Link>.</p><button type="button" className="secondary" disabled={refreshingOccupancy} onClick={refreshOccupancy}>{refreshingOccupancy ? "Actualisation…" : "Actualiser les capacités après modification"}</button></div>}
           </div>
         )}
-      </div>
+      </div>}
 
       <details className="card invoice-form__optional">
         <summary>Une précision à ajouter ? <span>Clause additionnelle</span></summary>
@@ -1584,7 +1594,7 @@ const FactureFormPage = () => {
         if (JSON.stringify(pricingLines(next)) !== JSON.stringify(pricingLines(fiscalInput))) setLinesManual(true);
         setFiscalInput(next);
 
-      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax || validationOptions?.touristTaxes?.length)} pricingEditor={pricingEditor} onReprepared={(options) => {
+      }} payload={previewPayload} expectedTotal={expectedTotal} touristTaxRequired={Boolean(validationOptions?.touristTax || validationOptions?.touristTaxes?.length)} pricingEditor={splitInvoiceId ? undefined : pricingEditor} onReprepared={(options) => {
         setLinesManual(false);
         if (options) { setValidationOptions(options); setValidationGiteId(giteId); }
         touchedVatLinesRef.current.clear(); appliedVatPresetsRef.current = {};

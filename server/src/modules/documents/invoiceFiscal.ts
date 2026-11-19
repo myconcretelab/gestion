@@ -31,6 +31,7 @@ export const proposeInvoiceFiscal = (
     reservation_items?: unknown;
     remise_montant?: unknown;
     options?: unknown;
+    split?: boolean;
   },
   totals: ContractTotals,
 ): InvoiceFiscalInput => {
@@ -97,7 +98,9 @@ export const proposeInvoiceFiscal = (
         "DAY",
       );
   };
-  if (items.length >= 2) {
+  if (invoice.split) {
+    add("Quote-part d’hébergement", totals.totalSansOptions);
+  } else if (items.length >= 2) {
     items.forEach((item, index) => {
       // Historical snapshots contain only a total: retain it until explicitly rebuilt.
       if (

@@ -1,0 +1,64 @@
+.reservation-invoice-split,
+.reservation-invoice-split form {
+  display: grid;
+  gap: 1rem;
+}
+
+.reservation-invoice-split__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.75rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.65rem;
+  background: var(--primary-soft);
+}
+
+.reservation-invoice-split__totals dd {
+  margin: 0.2rem 0 0;
+  color: var(--primary-strong);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.reservation-invoice-split__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reservation-invoice-split__recipient {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+}
+
+.reservation-invoice-split__recipient legend {
+  padding: 0 0.3rem;
+  font-weight: 600;
+}
+
+.reservation-invoice-split__invoices {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.reservation-invoice-split__invoices li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.reservation-invoice-split__invoices a {
+  display: grid;
+  gap: 0.15rem;
+}

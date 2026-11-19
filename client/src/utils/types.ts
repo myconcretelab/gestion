@@ -611,6 +611,7 @@ export type Contrat = {
 };
 
 export type Facture = {
+  split_stay?: boolean;
   fiscal_input?: import("@contrats/shared").InvoiceFiscalInput | null;
   fiscal_totals?: ReturnType<typeof import("@contrats/shared").computeInvoiceFiscal> | null;
   fiscal_issues?: string[];

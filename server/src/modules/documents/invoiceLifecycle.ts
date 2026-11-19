@@ -118,10 +118,20 @@ export const snapshotInvoiceGite = (gite: Gite): GiteLike => ({
   options_chiens_forfait: toNumber(gite.options_chiens_forfait),
 });
 
+export type InvoiceShare = {
+  requestId: string;
+  stayTotalCents: number;
+  fees: Array<{ key: string; cents: number }>;
+};
+
+export const readInvoiceShare = (value: unknown) =>
+  fromJsonString<{ share?: InvoiceShare } | null>(value, null)?.share;
+
 export type InvoiceCalculation = {
   version: 1;
   gite: GiteLike;
   totals: ContractTotals;
+  share?: InvoiceShare;
 };
 const totalsSchema = z.object({
   nbNuits: z.number().int().positive(),
@@ -154,11 +164,12 @@ export const parseInvoiceCalculation = (value: unknown): InvoiceCalculation => {
   }
   return parsed;
 };
-export const buildInvoiceCalculation = (gite: Gite, totals: ContractTotals) =>
+export const buildInvoiceCalculation = (gite: Gite, totals: ContractTotals, share?: InvoiceShare) =>
   JSON.stringify({
     version: 1,
     gite: snapshotInvoiceGite(gite),
     totals,
+    share,
   } satisfies InvoiceCalculation);
 
 type Issuer = { entity: FiscalEntity; establishment: FiscalEstablishment };

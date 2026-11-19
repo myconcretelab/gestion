@@ -15,7 +15,8 @@ import {
 } from "../utils/documentEmail";
 import DocumentEmailComposerDialog from "./shared/DocumentEmailComposerDialog";
 import { invoiceDisplayNumber, invoiceLifecycleLabel } from "../utils/invoiceLifecycle";
-import { canCurrentUserManageIntegrations } from "../utils/auth";
+import { reservationInvoicesHref } from "../utils/reservationNavigation";
+import { canCurrentUserAccessPage, canCurrentUserManageIntegrations } from "../utils/auth";
 import ElectronicInvoicePanel from "./shared/ElectronicInvoicePanel";
 
 type EmailComposerState = {
@@ -282,6 +283,9 @@ const FactureDetailPage = () => {
         {facture.structured_available && <p><a href={`/api/invoices/${facture.id}/structured`} target="_blank" rel="noreferrer">Exporter l’instantané fiscal structuré</a> · Données figées à l’émission, distinctes du suivi SuperPDP.</p>}
         {facture.lifecycle_status === "issued" && canCurrentUserManageIntegrations() && <ElectronicInvoicePanel key={facture.id} invoiceId={facture.id} />}
         {facture.lifecycle_status === "legacy" && <p className="note">Document historique conservé avec son numéro et son PDF d’origine. Les corrections nécessitent une reprise vérifiée de son émetteur et de ses montants.</p>}
+        {facture.split_stay && facture.reservation_id && canCurrentUserAccessPage("reservations") && (
+          <p><Link to={reservationInvoicesHref(facture.reservation_id, facture.date_debut)}>Voir la répartition du séjour</Link></p>
+        )}
         {facture.original_invoice && <p>Avoir de la <Link to={`/factures/${facture.original_invoice.id}`}>facture {facture.original_invoice.numero_facture}</Link>.</p>}
         {facture.credit_notes?.map((credit) => <p key={credit.id}><Link to={`/factures/${credit.id}`}>{credit.lifecycle_status === "draft" ? "Consulter le brouillon d’avoir" : `Consulter l’avoir ${credit.numero_facture}`}</Link></p>)}
         {showCreditForm && <div className="form-section"><p>L’avoir annulera l’intégralité du montant de cette facture. La facture d’origine sera conservée. L’avoir sera d’abord enregistré en brouillon.</p>

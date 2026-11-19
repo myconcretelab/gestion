@@ -1199,3 +1199,110 @@ test("une facture regroupée conserve la taxe et le mode d’inclusion propres �
   });
   assert.equal(issued.status, 200, JSON.stringify(issued.body));
 });
+
+test("un séjour est réparti au centime sans modifier sa réservation ni permettre une double facturation", async () => {
+  const tenant = db.getTenantPrisma(orgA);
+  const { encodeJsonField } = await import("../src/utils/jsonFields.js");
+  const reservation = await tenant.reservation.create({
+    data: {
+      gite_id: "gite-a",
+      hote_nom: "Hôte de la réservation",
+      email: "hote@example.test",
+      date_entree: new Date("2028-07-10"),
+      date_sortie: new Date("2028-07-13"),
+      nb_nuits: 3,
+      nb_adultes: 4,
+      prix_par_nuit: 100,
+      prix_total: 300.01,
+      frais_optionnels_montant: 30,
+      options: encodeJsonField({
+        menage: { enabled: true },
+        tourist_tax: {
+          settings: {
+            version: 1, classified: true, stars: 3, included: false,
+            fixed_rate: 1, percentage: 4, cap: 4, additional_percentage: 0,
+            accommodation_vat_rate: 0, authority: "Collectivité fictive", effective_from: "2026-01-01",
+          },
+          collector: "host", platform: "", infants: 0, exempt_adults: 0, exemption_reason: "",
+        },
+      }),
+    },
+  });
+  const endpoint = `/invoices/reservation/${reservation.id}/split`;
+  assert.equal((await request(endpoint, "GET", undefined, orgB)).status, 404);
+  const quote = await request(endpoint);
+  assert.equal(quote.status, 200);
+  assert.equal(quote.body.remainingTaxCents, 1200);
+  const split = {
+    requestId: "e57d6241-90fb-4b04-96f3-fba3ecbb5f49",
+    totalCents: 34201,
+    recipients: [8551, 8550, 8550, 8550].map((cents, index) => ({
+      name: `Destinataire ${index + 1}`,
+      cents,
+      taxCents: 300,
+    })),
+  };
+  assert.equal((await request(endpoint, "POST", { ...split, totalCents: 34200 })).status, 409);
+  assert.deepEqual((await request(endpoint)).body.invoices, []);
+  const created = await request(endpoint, "POST", split);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.remainingCents, 0);
+  assert.equal(created.body.invoices.length, 4);
+  assert.ok(created.body.invoices.every((invoice: { lifecycle: string; number: string | null }) =>
+    invoice.lifecycle === "draft" && invoice.number === null));
+  assert.deepEqual((await request(endpoint, "POST", split)).body, created.body);
+  assert.equal((await request(endpoint, "POST", {
+    ...split, requestId: "7af6966a-71cd-47ce-b04e-50d84ca6d045",
+  })).status, 409);
+  assert.equal((await request("/invoices", "POST", {
+    ...payload, reservation_id: reservation.id, locataire_nom: "Ne doit pas écraser l’hôte",
+  })).status, 409);
+
+  const id = created.body.invoices.find((invoice: { name: string }) => invoice.name === "Destinataire 1").id;
+  const draft = await request(`/invoices/${id}`);
+  assert.equal(draft.body.split_stay, true);
+  assert.equal(draft.body.fiscal_totals.gross_cents, 8551);
+  assert.equal(draft.body.fiscal_totals.tourist_tax_cents, 300);
+  const prepared = await request("/invoices/fiscal-preview", "POST", {
+    ...payload, split_invoice_id: id,
+  });
+  assert.equal(prepared.status, 200);
+  assert.equal(prepared.body.total_ttc, 85.51);
+  const fiscal = prepared.body.fiscal_input;
+  fiscal.buyer = { ...fiscal.buyer, kind: "individual", address_line1: "2 rue Exemple", postal_code: "35000", city: "Rennes", country_code: "FR" };
+  fiscal.lines = fiscal.lines.map((line: Record<string, unknown>) => ({
+    ...line, vat_category: "E", vat_rate: 0, exemption_reason: "TVA non applicable, article 293 B du CGI",
+  }));
+  fiscal.reviewed = true;
+  fiscal.tourist_tax_reviewed = true;
+  fiscal.paid_amount = 85.51;
+  const updated = await request(`/invoices/${id}`, "PUT", {
+    ...payload, locataire_nom: "Destinataire corrigé", fiscal_input: fiscal, revision: draft.body.revision,
+  });
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+  assert.equal(updated.body.solde_montant, 0);
+  assert.equal(updated.body.statut_paiement, "reglee");
+  assert.equal(updated.body.reservation_id, reservation.id);
+  assert.equal(updated.body.date_debut, reservation.date_entree.toISOString());
+  assert.deepEqual(updated.body.fiscal_issues, []);
+  assert.equal((await request(`/invoices/${id}/pdf`)).status, 200);
+  const issued = await request(`/invoices/${id}/issue`, "POST", { revision: updated.body.revision });
+  assert.equal(issued.status, 200, JSON.stringify(issued.body));
+  assert.equal(issued.body.lifecycle_status, "issued");
+  assert.equal(issued.body.fiscal_totals.gross_cents, 8551);
+
+  const removedId = created.body.invoices.find((invoice: { name: string }) => invoice.name === "Destinataire 4").id;
+  assert.equal((await request(`/invoices/${removedId}`, "DELETE")).status, 204);
+  const reopened = await request(endpoint);
+  assert.equal(reopened.body.remainingCents, 8550);
+  assert.equal(reopened.body.remainingTaxCents, 300);
+  const completed = await request(endpoint, "POST", {
+    ...split, requestId: "5a038a48-30f7-4405-b876-838005c4032d", recipients: [
+      { name: "Destinataire de remplacement", cents: 8550, taxCents: 300 },
+    ],
+  });
+  assert.equal(completed.status, 201, JSON.stringify(completed.body));
+  assert.equal(completed.body.invoices.length, 4);
+  assert.equal(completed.body.remainingCents, 0);
+  assert.deepEqual(await tenant.reservation.findUnique({ where: { id: reservation.id } }), reservation);
+});

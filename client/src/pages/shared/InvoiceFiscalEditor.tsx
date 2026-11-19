@@ -154,10 +154,9 @@ export default function InvoiceFiscalEditor({
               )}
               {manualLines && (
                 <p className="field-hint">
-                  Votre ventilation personnalisée est conservée. Si vous
-                  modifiez le séjour, vous pouvez recalculer les lignes ou
-                  ajuster leur répartition ci-dessous. Le total doit rester
-                  identique.
+                  Votre ventilation personnalisée est conservée. Vous pouvez
+                  recalculer les lignes ou ajuster leur répartition ci-dessous.
+                  Le total doit rester identique.
                 </p>
               )}
               <p className="field-hint">
@@ -374,9 +373,8 @@ export default function InvoiceFiscalEditor({
               <details className="invoice-line__allocation">
                 <summary>Ajouter une ventilation personnalisée</summary>
                 <p className="field-hint">
-                  Pour ajouter un montant à la facture, utilisez les frais
-                  supplémentaires ci-dessus. La ventilation répartit le même
-                  total entre les prestations.
+                  {pricingEditor && "Pour ajouter un montant à la facture, utilisez les frais supplémentaires ci-dessus. "}
+                  La ventilation répartit le même total entre les prestations.
                 </p>
                 <button
                   type="button"

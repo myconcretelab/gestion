@@ -7,15 +7,16 @@ import { parseInvoiceFiscal, proposeInvoiceFiscal } from "../modules/documents/i
 import path from "path";
 import fs from "fs/promises";
 import crypto from "node:crypto";
-import prisma from "../db/prisma.js";
+import prisma, { type TenantTransactionClient } from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { computeTotals, type ContractTotals, type OptionsInput } from "../services/contractCalculator.js";
 import { syncReservationFromDocument } from "../services/documentReservationSync.js";
 import {
   assertEditableInvoice, buildInvoiceCalculation, createFullCreditNote, deleteInvoiceDraft,
-  invoiceError, invoiceReadInclude, invoiceRenderInput, issueInvoice, parseInvoiceCalculation,
+  invoiceError, invoiceReadInclude, invoiceRenderInput, issueInvoice, parseInvoiceCalculation, readInvoiceShare,
   readArchivedInvoicePdf, withEditableInvoice, updateInvoicePayment,
 } from "../modules/documents/invoiceLifecycle.js";
+import { assertNoActiveSplitInvoices, createInvoiceSplit, getInvoiceSplit, splitInvoiceSchema } from "../modules/documents/invoiceSplit.js";
 import { getAuthenticatedAppUser } from "../services/serverAuth.js";
 import {
   generateInvoicePdf,
@@ -128,6 +129,11 @@ const invoiceSchema = z.object({
   reservation_ids: z.array(z.string().trim().min(1)).max(50).optional().default([]),
 });
 
+const invoiceShareUpdateSchema = invoiceSchema.pick({
+  revision: true, fiscal_input: true, locataire_adresse: true, locataire_tel: true, locataire_email: true,
+  arrhes_date_limite: true, clauses: true, notes: true,
+}).extend({ locataire_nom: z.string().trim().min(1).max(250) });
+
 const paymentStatusSchema = z.object({
   statut_paiement: z.enum(["non_reglee", "reglee"]),
 });
@@ -142,6 +148,7 @@ const sendEmailSchema = z.object({
 });
 
 const previewSchema = z.object({
+  split_invoice_id: z.string().min(1).optional(),
   fiscal_input: invoiceFiscalInputSchema.nullable().optional(),
   gite_id: z.string().min(1),
   locataire_nom: z.string().optional().default(""),
@@ -197,6 +204,7 @@ const invoiceSeller = (invoice: any) => {
 
 const hydrateInvoice = (contrat: any) => ({
   ...hydrateInvoiceMoneyFields(contrat),
+  split_stay: contrat.document_kind === "invoice" && Boolean(readInvoiceShare(contrat.calculation_snapshot)),
   frais_supplementaires: fromJsonString<InvoiceExtraFee[]>(contrat.frais_supplementaires, []),
   reservation_items: fromJsonString<InvoiceReservationItem[]>(contrat.reservation_items, []),
   options: fromJsonString<OptionsInput>(contrat.options, {}),
@@ -321,9 +329,9 @@ const resolveInvoiceReservationItems = async (reservationIds: string[]): Promise
   });
 };
 
-const ensureReservationsCanBeInvoiced = async (reservationIds: string[], excludedInvoiceId?: string) => {
+const ensureReservationsCanBeInvoiced = async (tx: TenantTransactionClient, reservationIds: string[], excludedInvoiceId?: string) => {
   if (reservationIds.length < 2) return;
-  const invoices = await prisma.facture.findMany({
+  const invoices = await tx.facture.findMany({
     where: { document_kind: "invoice" },
     select: { id: true, numero_facture: true, reservation_id: true, reservation_items: true },
   });
@@ -373,6 +381,7 @@ type PreviewContext = {
   gite: NonNullable<Awaited<ReturnType<typeof prisma.gite.findUnique>>>;
   totals: ReturnType<typeof computeTotals>;
   invoiceForPdf: InvoiceRenderInput;
+  split?: boolean;
   fiscalValidation: { vatRegime?: string; sellerVatNumber?: string | null; sellerCountryCode?: string; touristTax: number; touristTaxes?: import("@contrats/shared").TouristTaxResult[] };
 };
 
@@ -380,6 +389,34 @@ type PreviewError = { error: { status: number; message: string } };
 
 const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | PreviewError> => {
   const data = previewSchema.parse(payload);
+  if (data.split_invoice_id) {
+    const invoice = await prisma.facture.findUnique({ where: { id: data.split_invoice_id }, include: invoiceReadInclude });
+    if (!invoice || invoice.document_kind !== "invoice" || invoice.lifecycle_status !== "draft" || !readInvoiceShare(invoice.calculation_snapshot)) {
+      return { error: { status: 404, message: "Brouillon de facturation répartie introuvable." } };
+    }
+    const { totals } = parseInvoiceCalculation(invoice.calculation_snapshot);
+    const establishment = invoice.gite.fiscal_establishment;
+    const seller = invoiceSeller(invoice);
+    const fiscal = data.fiscal_input ?? parseInvoiceFiscal(invoice.fiscal_data);
+    return {
+      gite: invoice.gite,
+      split: true,
+      totals,
+      invoiceForPdf: {
+        ...toInvoiceRenderInput(invoice), fiscal,
+        locataire_nom: data.locataire_nom || invoice.locataire_nom,
+        locataire_tel: data.locataire_tel,
+        clauses: data.clauses ?? fromJsonString(invoice.clauses, {}),
+      },
+      fiscalValidation: {
+        vatRegime: establishment?.fiscal_entity?.vat_regime,
+        sellerCountryCode: establishment?.fiscal_entity?.country_code,
+        sellerVatNumber: seller?.vat_number,
+        touristTax: totals.taxeSejourCalculee,
+        touristTaxes: totals.touristTaxes,
+      },
+    };
+  }
   const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
   const gite = await prisma.gite.findUnique({ where: { id: data.gite_id }, include: invoiceReadInclude.gite.include });
   if (!gite) return { error: { status: 404, message: "Gîte introuvable" } };
@@ -473,6 +510,19 @@ const buildPreviewContext = async (payload: unknown): Promise<PreviewContext | P
   } };
 };
 
+router.get("/reservation/:reservationId/split", async (req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await getInvoiceSplit(req.params.reservationId));
+  } catch (error) { next(error); }
+});
+
+router.post("/reservation/:reservationId/split", async (req, res, next) => {
+  try {
+    res.status(201).json(await createInvoiceSplit(req.params.reservationId, splitInvoiceSchema.parse(req.body)));
+  } catch (error) { next(error); }
+});
+
 router.get("/", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q : "";
@@ -527,7 +577,7 @@ router.post("/fiscal-preview", async (req, res, next) => {
     const context = await buildPreviewContext(req.body);
     if ("error" in context) return res.status(context.error.status).json({ error: context.error.message });
     res.setHeader("Cache-Control", "no-store");
-    res.json({ fiscal_input: proposeInvoiceFiscal(context.invoiceForPdf, context.totals), total_ttc: context.totals.totalGlobal, tourist_tax: context.totals.taxeSejourCalculee, validation_options: context.fiscalValidation });
+    res.json({ fiscal_input: proposeInvoiceFiscal({ ...context.invoiceForPdf, split: context.split }, context.totals), total_ttc: context.totals.totalGlobal, tourist_tax: context.totals.taxeSejourCalculee, validation_options: context.fiscalValidation });
   } catch (error) { next(error); }
 });
 
@@ -560,7 +610,6 @@ router.post("/", async (req, res, next) => {
   try {
     const data = invoiceSchema.parse(req.body);
     const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
-    await ensureReservationsCanBeInvoiced(data.reservation_ids);
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
     const occupancyError = reservationItems.length < 2 ? validateDocumentOccupancy({
@@ -630,67 +679,71 @@ router.post("/", async (req, res, next) => {
       dateDebut
     );
 
-    const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
-      explicitReservationId: data.reservation_id ?? null,
-      giteId: data.gite_id,
-      locataireNom: data.locataire_nom,
-      locataireTel: data.locataire_tel,
-      locataireEmail: data.locataire_email ?? null,
-      dateDebut,
-      dateFin,
-      nbNuits: totals.nbNuits,
-      nbAdultes: data.nb_adultes,
-      nbEnfants: data.nb_enfants_2_17,
-      prixParNuit: data.prix_par_nuit,
-      prixTotal: totals.montantBase,
-      remiseMontant: data.remise_montant ?? 0,
-      options,
-      optionsTotal: totals.optionsTotal,
-      additionalFees: fraisSupplementaires.map((fee) => ({
-        label: fee.libelle,
-        amount: fee.montant,
-      })),
-    });
+    const contrat = await prisma.$transaction(async (tx) => {
+      await ensureReservationsCanBeInvoiced(tx, data.reservation_ids);
+      const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
+        explicitReservationId: data.reservation_id ?? null,
+        giteId: data.gite_id,
+        locataireNom: data.locataire_nom,
+        locataireTel: data.locataire_tel,
+        locataireEmail: data.locataire_email ?? null,
+        dateDebut,
+        dateFin,
+        nbNuits: totals.nbNuits,
+        nbAdultes: data.nb_adultes,
+        nbEnfants: data.nb_enfants_2_17,
+        prixParNuit: data.prix_par_nuit,
+        prixTotal: totals.montantBase,
+        remiseMontant: data.remise_montant ?? 0,
+        options,
+        optionsTotal: totals.optionsTotal,
+        additionalFees: fraisSupplementaires.map((fee) => ({
+          label: fee.libelle,
+          amount: fee.montant,
+        })),
+      }, tx);
+      await assertNoActiveSplitInvoices(tx, [...data.reservation_ids, reservationId]);
 
-    const contrat = await prisma.facture.create({
-      data: {
-        numero_facture: numeroFacture,
-        lifecycle_status: "draft",
-        calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
-        fiscal_data: data.fiscal_input ? JSON.stringify(data.fiscal_input) : null,
-        gite_id: data.gite_id,
-        locataire_nom: data.locataire_nom,
-        locataire_adresse: data.locataire_adresse,
-        locataire_tel: data.locataire_tel,
-        locataire_email: data.locataire_email ?? null,
-        nb_adultes: data.nb_adultes,
-        nb_enfants_2_17: data.nb_enfants_2_17,
-        date_debut: dateDebut,
-        heure_arrivee: data.heure_arrivee,
-        date_fin: dateFin,
-        heure_depart: data.heure_depart,
-        nb_nuits: invoiceTotals.nbNuits,
-        prix_par_nuit: data.prix_par_nuit,
-        remise_montant: data.remise_montant ?? 0,
-        taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
-        options: encodeJsonField(options),
-        arrhes_montant: arrhesMontant,
-        arrhes_date_limite: parseDate(data.arrhes_date_limite),
-        frais_supplementaires: encodeJsonField(fraisSupplementaires),
-        reservation_items: encodeJsonField(reservationItems),
-        solde_montant: invoiceTotals.solde,
-        caution_montant: data.caution_montant,
-        cheque_menage_montant: data.cheque_menage_montant,
-        afficher_caution_phrase: data.afficher_caution_phrase ?? true,
-        afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
-        clauses: encodeJsonField(data.clauses ?? {}),
-        pdf_path: pdfRelativePath,
-        statut_paiement: data.statut_paiement ?? "non_reglee",
-        notes: data.notes ?? null,
-        reservation_id: reservationId,
-      },
-      include: invoiceReadInclude,
-    });
+      return tx.facture.create({
+        data: {
+          numero_facture: numeroFacture,
+          lifecycle_status: "draft",
+          calculation_snapshot: buildInvoiceCalculation(gite, invoiceTotals),
+          fiscal_data: data.fiscal_input ? JSON.stringify(data.fiscal_input) : null,
+          gite_id: data.gite_id,
+          locataire_nom: data.locataire_nom,
+          locataire_adresse: data.locataire_adresse,
+          locataire_tel: data.locataire_tel,
+          locataire_email: data.locataire_email ?? null,
+          nb_adultes: data.nb_adultes,
+          nb_enfants_2_17: data.nb_enfants_2_17,
+          date_debut: dateDebut,
+          heure_arrivee: data.heure_arrivee,
+          date_fin: dateFin,
+          heure_depart: data.heure_depart,
+          nb_nuits: invoiceTotals.nbNuits,
+          prix_par_nuit: data.prix_par_nuit,
+          remise_montant: data.remise_montant ?? 0,
+          taxe_sejour_calculee: invoiceTotals.taxeSejourCalculee,
+          options: encodeJsonField(options),
+          arrhes_montant: arrhesMontant,
+          arrhes_date_limite: parseDate(data.arrhes_date_limite),
+          frais_supplementaires: encodeJsonField(fraisSupplementaires),
+          reservation_items: encodeJsonField(reservationItems),
+          solde_montant: invoiceTotals.solde,
+          caution_montant: data.caution_montant,
+          cheque_menage_montant: data.cheque_menage_montant,
+          afficher_caution_phrase: data.afficher_caution_phrase ?? true,
+          afficher_cheque_menage_phrase: data.afficher_cheque_menage_phrase ?? true,
+          clauses: encodeJsonField(data.clauses ?? {}),
+          pdf_path: pdfRelativePath,
+          statut_paiement: data.statut_paiement ?? "non_reglee",
+          notes: data.notes ?? null,
+          reservation_id: reservationId,
+        },
+        include: invoiceReadInclude,
+      });
+    }, { isolationLevel: "Serializable" });
 
     const invoiceForPdf = toInvoiceRenderInput(contrat);
     await generateInvoicePdf({
@@ -710,13 +763,44 @@ router.post("/", async (req, res, next) => {
 
 router.put("/:id", async (req, res, next) => {
   try {
-    const data = invoiceSchema.parse(req.body);
     const existing = await prisma.facture.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Facture introuvable" });
     assertEditableInvoice(existing);
     if (existing.document_kind === "credit_note") throw invoiceError("Un avoir intégral ne peut pas être édité.");
+    if (readInvoiceShare(existing.calculation_snapshot)) {
+      const data = invoiceShareUpdateSchema.parse(req.body);
+      const calculation = parseInvoiceCalculation(existing.calculation_snapshot);
+      const dueDate = parseDate(data.arrhes_date_limite);
+      ensureValidDate(dueDate, "arrhes_date_limite");
+      const fiscal = data.fiscal_input ?? parseInvoiceFiscal(existing.fiscal_data);
+      const paid = fiscal?.paid_amount ?? 0;
+      if (paid > calculation.totals.totalGlobal) throw invoiceError("Les sommes reçues dépassent le montant de cette part.");
+      const totals = { ...calculation.totals, solde: round2(calculation.totals.totalGlobal - paid) };
+      const invoice = await withEditableInvoice(req.params.id, data.revision ?? existing.revision, (tx) =>
+        tx.facture.update({
+          where: { id: req.params.id },
+          data: {
+            locataire_nom: data.locataire_nom,
+            locataire_adresse: data.locataire_adresse,
+            locataire_tel: data.locataire_tel,
+            locataire_email: data.locataire_email ?? null,
+            clauses: encodeJsonField(data.clauses ?? {}),
+            notes: data.notes ?? existing.notes,
+            arrhes_date_limite: dueDate,
+            arrhes_montant: paid,
+            solde_montant: totals.solde,
+            statut_paiement: totals.solde === 0 ? "reglee" : "non_reglee",
+            calculation_snapshot: JSON.stringify({ ...calculation, totals }),
+            fiscal_data: fiscal ? JSON.stringify(fiscal) : null,
+            revision: { increment: 1 },
+          },
+          include: invoiceReadInclude,
+        }),
+      );
+      return res.json(hydrateInvoice(invoice));
+    }
+    const data = invoiceSchema.parse(req.body);
     const reservationItems = await resolveInvoiceReservationItems(data.reservation_ids);
-    await ensureReservationsCanBeInvoiced(data.reservation_ids, req.params.id);
 
     const gite = await prisma.gite.findUnique({ where: { id: data.gite_id } });
     if (!gite) return res.status(404).json({ error: "Gîte introuvable" });
@@ -772,6 +856,7 @@ router.put("/:id", async (req, res, next) => {
     );
 
     const contrat = await withEditableInvoice(req.params.id, data.revision ?? existing.revision, async (tx) => {
+      await ensureReservationsCanBeInvoiced(tx, data.reservation_ids, req.params.id);
       const reservationId = reservationItems.length >= 2 ? reservationItems[0].reservation_id : await syncReservationFromDocument({
         explicitReservationId: data.reservation_id ?? null,
         existingReservationId: existing.reservation_id ?? null,
@@ -794,6 +879,7 @@ router.put("/:id", async (req, res, next) => {
           amount: fee.montant,
         })),
       }, tx);
+      await assertNoActiveSplitInvoices(tx, [...data.reservation_ids, reservationId]);
 
       return tx.facture.update({
         where: { id: req.params.id },
