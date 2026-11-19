@@ -5,20 +5,15 @@ import {
   type NightSummaryResponse,
 } from "@contrats/shared";
 import { apiFetch } from "../../../utils/api";
+import { useTimelineYearsData } from "../../../utils/useTimelineYearsData";
 
-export function useReservationNightSummaries(
-  year: number,
-  refreshKey: unknown,
-  enabled: boolean,
-) {
-  const [result, setResult] = useState<{
-    data: NightSummaryResponse | null;
-    error: boolean;
-  }>({ data: null, error: false });
+export function useReservationNightSummaries(years: number[], revision: number, enabled: boolean) {
   const [attempt, setAttempt] = useState(0);
+  const { data, errors } = useTimelineYearsData(years, revision + attempt, enabled, (year, signal) =>
+    apiFetch<NightSummaryResponse>(`/reports/night-summaries?year=${year}`, { signal }),
+  );
   useEffect(() => {
     if (!enabled) return;
-    const controller = new AbortController();
     let timer: number | undefined;
     const onFocus = () => {
       if (document.visibilityState !== "visible") return;
@@ -27,30 +22,18 @@ export function useReservationNightSummaries(
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
-    setResult({ data: null, error: false });
-    void apiFetch<NightSummaryResponse>(
-      `/reports/night-summaries?year=${year}`,
-      { signal: controller.signal },
-    )
-      .then((data) => {
-        if (!controller.signal.aborted) setResult({ data, error: false });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setResult({ data: null, error: true });
-      });
     return () => {
-      controller.abort();
       window.clearTimeout(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [year, refreshKey, enabled, attempt]);
-  return {
-    data: result.data?.year === year ? result.data : null,
-    error: result.error,
+  }, [enabled]);
+  return (year: number) => ({
+    data: data[year] ?? null,
+    error: Boolean(errors[year]),
     enabled,
     retry: () => setAttempt((value) => value + 1),
-  };
+  });
 }
 
 export default function ReservationNightBadges({
@@ -58,7 +41,7 @@ export default function ReservationNightBadges({
   propertyIds,
   month,
 }: {
-  summary: ReturnType<typeof useReservationNightSummaries>;
+  summary: ReturnType<ReturnType<typeof useReservationNightSummaries>>;
   propertyIds: string[];
   month: number;
 }) {

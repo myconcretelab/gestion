@@ -221,6 +221,21 @@ test("GET /reservations/calendar charge un payload primaire filtre par chevauche
     );
     assert.equal(nextError, null);
     assert.equal(capturedReservationArgs?.where?.date_entree?.lt?.toISOString(), "2027-07-01T00:00:00.000Z");
+
+    const winter = createMockResponse();
+    await get(
+      { query: { year: "2026", startMonth: "11", months: "3" }, body: {}, params: {}, headers: {} },
+      winter,
+      (err) => { nextError = err ?? null; },
+    );
+    assert.equal(nextError, null);
+    assert.equal(winter.statusCode, 200);
+    assert.equal(capturedReservationArgs?.where?.date_entree?.lt?.toISOString(), "2027-02-01T00:00:00.000Z");
+    assert.equal(capturedReservationArgs?.where?.date_sortie?.gt?.toISOString(), "2026-11-01T00:00:00.000Z");
+
+    const invalid = createMockResponse();
+    await get({ query: { year: "2026", startMonth: "13" }, body: {}, params: {}, headers: {} }, invalid, () => {});
+    assert.equal(invalid.statusCode, 400);
   } finally {
     prisma.gite.findMany = originals.giteFindMany;
     prisma.reservation.findMany = originals.reservationFindMany;

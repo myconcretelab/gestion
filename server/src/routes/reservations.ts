@@ -504,8 +504,11 @@ const buildReservationListWhere = (query: Record<string, unknown>) => {
 
   if (fromRaw || toRaw) {
     const from = fromRaw ? parseDateInput(fromRaw, "début de période") : undefined;
-    const to = toRaw ? addDays(parseDateInput(toRaw, "fin de période"), 1) : undefined;
-    if (to) where.date_entree = { lt: to };
+    const to = toRaw ? parseDateInput(toRaw, "fin de période") : undefined;
+    if (to) {
+      to.setUTCDate(to.getUTCDate() + 1);
+      where.date_entree = { lt: to };
+    }
     if (from) where.date_sortie = { gte: from };
   } else if (Number.isFinite(yearRaw)) {
     const year = Number(yearRaw);
@@ -1956,11 +1959,16 @@ router.get("/calendar", async (req, res, next) => {
       return res.status(400).json({ error: "Paramètre year invalide." });
     }
 
-    const year = Number(yearRaw);
+    const year = yearRaw;
+    const hasStartMonth = req.query.startMonth !== undefined;
+    const startMonth = typeof req.query.startMonth === "string" ? Number(req.query.startMonth) : 1;
+    if (hasStartMonth && (typeof req.query.startMonth !== "string" || !Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12)) {
+      return res.status(400).json({ error: "Paramètre startMonth invalide." });
+    }
     const monthsRaw = typeof req.query.months === "string" ? Number.parseInt(req.query.months, 10) : 12;
-    const months = Number.isInteger(monthsRaw) ? Math.min(Math.max(monthsRaw, 12), 18) : 12;
-    const from = makeUtcDate(year, 1, 1);
-    const to = makeUtcDate(year + Math.floor(months / 12), (months % 12) + 1, 1);
+    const months = Number.isInteger(monthsRaw) ? Math.min(Math.max(monthsRaw, hasStartMonth ? 1 : 12), 18) : 12;
+    const from = makeUtcDate(year, startMonth, 1);
+    const to = new Date(Date.UTC(year, startMonth - 1 + months, 1));
 
     const [gites, reservationRows] = await Promise.all([
       prisma.gite.findMany({

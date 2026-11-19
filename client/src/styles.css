@@ -22534,3 +22534,10 @@ button.gite-task-card__title:hover { text-decoration: underline; text-underline-
 .reservation-tax-fields small { line-height: 1.45; }
 .reservation-payment-tax { display: grid; gap: 5px; margin-top: 5px; }
 .reservation-payment-tax > small { font-size: .72rem; }
+
+.month-timeline-edge {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  overflow-anchor: none;
+}

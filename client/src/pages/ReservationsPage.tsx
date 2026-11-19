@@ -1,3 +1,8 @@
+import MonthTimelineEdge from "./shared/MonthTimelineEdge";
+import { mergeTimelineRows, monthKey, monthKeyForDate, monthParts, monthRangeDates, monthsInRange, overlappingMonthKeys, timelineMonthIsValid, timelineToday, yearsInRange, type MonthRange } from "../utils/monthTimeline";
+import { useMonthTimeline } from "../utils/useMonthTimeline";
+import { useTimelineSchoolHolidays } from "../utils/useTimelineSchoolHolidays";
+import { useTimelineYearsData } from "../utils/useTimelineYearsData";
 import { useBookingSourceOptions } from "../utils/bookingSourceOptions";
 import { cleaningBillingSuffix } from "@contrats/shared";
 import { getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
@@ -67,7 +72,6 @@ import {
   buildSchoolHolidayDateSet,
   computeReservationHolidayNightCount,
   getSchoolHolidaySegmentsForMonth,
-  type SchoolHoliday,
 } from "../utils/schoolHolidays";
 import type {
   ContratOptions,
@@ -618,16 +622,6 @@ const getReservationNightsInMonth = (reservation: Reservation, year: number, mon
   return Math.round((overlapEnd - overlapStart) / DAY_MS);
 };
 
-const reservationOverlapsMonth = (reservation: Reservation, year: number, month: number) => {
-  const start = toUtcDateOnly(reservation.date_entree);
-  const end = toUtcDateOnly(reservation.date_sortie);
-  if (!start || !end || end.getTime() <= start.getTime()) return false;
-
-  const monthStart = Date.UTC(year, month - 1, 1);
-  const monthEnd = Date.UTC(year, month, 1);
-  return start.getTime() < monthEnd && end.getTime() > monthStart;
-};
-
 const parseInputDate = (value: string): Date | null => {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
@@ -1041,7 +1035,8 @@ const ReservationTableDate = ({ value }: { value: string }) => {
 
 const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean }) => {
   const bookingSources = useBookingSourceOptions();
-  const currentYear = new Date().getUTCFullYear();
+  const today = timelineToday();
+  const currentYear = today.getUTCFullYear();
   const location = useLocation();
   const locationParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedFocusReservationId = locationParams.get("focus");
@@ -1057,14 +1052,18 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const [gites, setGites] = useState<Gite[]>([]);
   const [placeholders, setPlaceholders] = useState<ReservationPlaceholder[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [monthlyEnergySummaries, setMonthlyEnergySummaries] = useState<
-    ReservationMonthlyEnergySummary[]
-  >([]);
   const [monthlyEnergyEligibleGiteIds, setMonthlyEnergyEligibleGiteIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("");
-  const [year, setYear] = useState<number>(initialLocationPeriod.year);
+  const nowMonth = monthKeyForDate(today);
+  const createEntryDate = requestedCreateMode === "1" && requestedCreateEntry ? toUtcDateOnly(requestedCreateEntry) : null;
+  const initialMonthKey = createEntryDate
+    ? monthKeyForDate(createEntryDate)
+    : monthKey(initialLocationPeriod.year, initialLocationPeriod.month || monthParts(nowMonth).month);
+  const locationMonthKey = timelineMonthIsValid(initialMonthKey) ? initialMonthKey : nowMonth;
+  const [selectedMonthKey, setSelectedMonthKey] = useState(locationMonthKey);
+  const [pendingMonth, setPendingMonth] = useState<number | null>(requestedFocusReservationId || createEntryDate ? null : locationMonthKey);
+  const { year, month } = monthParts(selectedMonthKey);
   const [availableYears, setAvailableYears] = useState<number[]>([currentYear]);
-  const [month, setMonth] = useState<number | 0>(initialLocationPeriod.month);
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1099,10 +1098,10 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const [importColumnMap, setImportColumnMap] = useState<Partial<Record<ImportColumnField, string>>>({});
   const [importing, setImporting] = useState(false);
   const [reservationOptions, setReservationOptions] = useState<Record<string, ContratOptions>>({});
-  const [statisticsDataset, setStatisticsDataset] = useState<ParsedStatisticsPayload | null>(null);
+  const [annualDataRevision, setAnnualDataRevision] = useState(0);
+  const [monthlyEnergyRevision, setMonthlyEnergyRevision] = useState(0);
   const [stuckMonthHeaders, setStuckMonthHeaders] = useState<Record<number, boolean>>({});
   const [monthExpandedByIndex, setMonthExpandedByIndex] = useState<Record<number, boolean>>({});
-  const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [linkedFocusReservationId, setLinkedFocusReservationId] = useState<string | null>(null);
   const [stickyOffsets, setStickyOffsets] = useState<ReservationsStickyOffsets>({ topbar: 74, tabs: 52 });
@@ -1114,9 +1113,9 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const saveTimers = useRef<Record<string, number>>({});
   const detailsCloseTimers = useRef<Record<string, number>>({});
   const savedRowFadeTimers = useRef<Record<string, number>>({});
-  const liveEnergyLoadKeyRef = useRef("");
-  const backgroundEnergyLoadCancelRef = useRef<(() => void) | null>(null);
-  const backgroundEnergyLoadControllerRef = useRef<AbortController | null>(null);
+  const backgroundEnergyRequests = useRef(new Set<() => void>());
+  const timelineListRef = useRef<HTMLDivElement>(null);
+  const previousSearch = useRef(q);
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
   const linkedFocusTimerRef = useRef<number | null>(null);
@@ -1124,13 +1123,12 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const commentDialogTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const handledLinkedFocusRef = useRef<string | null>(null);
   const handledCalendarInsertRef = useRef<string | null>(null);
-  const appliedLocationYearMonthKeyRef = useRef<string | null>(null);
+  const appliedLocationYearMonthKeyRef = useRef(location.key);
   const appliedLocationTabKeyRef = useRef<string | null>(null);
-  const loadSequenceRef = useRef(0);
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const currentTime = new Date(currentTimeMs);
   const currentPeriod = useMemo(() => {
-    const now = new Date(currentTimeMs);
+    const now = timelineToday(new Date(currentTimeMs));
     return {
       year: now.getUTCFullYear(),
       month: now.getUTCMonth() + 1,
@@ -1219,26 +1217,14 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     };
   }, []);
 
-  const loadStatistics = useCallback(async () => {
-    try {
-      const payload = await apiFetch<StatisticsPayload>(`/statistics?year=${year}`);
-      setStatisticsDataset(parseStatisticsPayload(payload));
-    } catch {
-      setStatisticsDataset(null);
-    }
-  }, [year]);
-
-  useEffect(() => {
-    void loadStatistics();
-  }, [loadStatistics]);
+  const loadStatistics = useCallback(() => setAnnualDataRevision((revision) => revision + 1), []);
 
   useEffect(() => {
     return () => {
       Object.values(detailsCloseTimers.current).forEach((timer) => window.clearTimeout(timer));
       Object.values(savedRowFadeTimers.current).forEach((timer) => window.clearTimeout(timer));
       airbnbCalendarRefreshControllersRef.current.forEach((controller) => controller.abort());
-      backgroundEnergyLoadCancelRef.current?.();
-      backgroundEnergyLoadControllerRef.current?.abort();
+      backgroundEnergyRequests.current.forEach((cancel) => cancel());
       if (restoreViewRafRef.current) {
         window.cancelAnimationFrame(restoreViewRafRef.current);
       }
@@ -1293,129 +1279,94 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     });
   }, [reservations]);
 
-  const load = async () => {
-    const loadSequence = ++loadSequenceRef.current;
-    const params = new URLSearchParams();
-    params.set("year", String(year));
-    if (month) params.set("month", String(month));
+  const loadReservationMonths = async (batch: MonthRange, mode: "replace" | "extend" | "refresh", signal: AbortSignal) => {
+    const energyParams = new URLSearchParams(monthRangeDates(batch));
+    const params = new URLSearchParams(energyParams);
     if (q.trim()) params.set("q", q.trim());
-    const energyParams = new URLSearchParams();
-    energyParams.set("year", String(year));
-    if (month) energyParams.set("month", String(month));
-    const liveEnergyLoadKey = energyParams.toString();
-    const energyPeriodChanged = liveEnergyLoadKeyRef.current !== liveEnergyLoadKey;
-    liveEnergyLoadKeyRef.current = liveEnergyLoadKey;
-    backgroundEnergyLoadCancelRef.current?.();
-    backgroundEnergyLoadControllerRef.current?.abort();
-    if (energyPeriodChanged) {
-      setMonthlyEnergySummaries([]);
-    }
-
-    const [
-      gitesData,
-      placeholdersData,
-      reservationsData,
-      monthlyEnergyEligibleGitesData,
-      yearsData,
-      sourceColorData,
-    ] = await Promise.all([
-      apiFetch<Gite[]>("/gites"),
-      apiFetch<ReservationPlaceholder[]>("/reservations/placeholders"),
-      apiFetch<Reservation[]>(`/reservations?${params.toString()}`),
-      apiFetch<string[]>("/reservations/monthly-energy/eligible-gites"),
-      apiFetch<number[]>("/reservations/years"),
-      apiFetch<SourceColorSettingsResponse>("/settings/source-colors").catch(() => ({
-        colors: DEFAULT_PAYMENT_SOURCE_COLORS,
-        available_sources: [],
+    const metadata = mode === "extend" ? null : Promise.all([
+      apiFetch<Gite[]>("/gites", { signal }),
+      apiFetch<ReservationPlaceholder[]>("/reservations/placeholders", { signal }),
+      apiFetch<string[]>("/reservations/monthly-energy/eligible-gites", { signal }),
+      apiFetch<number[]>("/reservations/years", { signal }),
+      apiFetch<SourceColorSettingsResponse>("/settings/source-colors", { signal }).catch(() => ({
+        colors: DEFAULT_PAYMENT_SOURCE_COLORS, available_sources: [],
       })),
     ]);
+    const [rows, settings] = await Promise.all([
+      apiFetch<Reservation[]>(`/reservations?${params}`, { signal }),
+      metadata,
+    ]);
+    if (signal.aborted) return;
 
-    if (loadSequence !== loadSequenceRef.current) return;
+    setReservations((previous) => mode === "extend" ? mergeTimelineRows(previous, rows) : rows);
+    if (settings) {
+      const [gitesData, placeholdersData, energyGites, yearsData, sourceColorData] = settings;
+      setGites(gitesData);
+      setPlaceholders(placeholdersData);
+      setMonthlyEnergyEligibleGiteIds(energyGites);
+      setSourceColors(sourceColorData.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
+      setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
+      setActiveTab((current) => current ||
+        (requestedTab === ALL_GITES_TAB || requestedTab === UNASSIGNED_TAB || gitesData.some((gite) => gite.id === requestedTab)
+          ? requestedTab : gitesData[0]?.id) ||
+        (rows.some((item) => !item.gite_id) ? UNASSIGNED_TAB : ""));
+    }
 
-    setGites(gitesData);
-    setPlaceholders(placeholdersData);
-    setReservations(reservationsData);
-    setSourceColors(sourceColorData.colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-    setMonthlyEnergyEligibleGiteIds(monthlyEnergyEligibleGitesData);
-    setAvailableYears([...new Set([currentYear, ...yearsData])].sort((a, b) => b - a));
-
-    setActiveTab((current) => {
-      if (current) return current;
-
-      if (requestedTab === UNASSIGNED_TAB && reservationsData.some((item) => !item.gite_id)) {
-        return UNASSIGNED_TAB;
-      }
-
-      if (requestedTab === ALL_GITES_TAB) {
-        return ALL_GITES_TAB;
-      }
-
-      if (requestedTab && gitesData.some((gite) => gite.id === requestedTab)) {
-        return requestedTab;
-      }
-
-      if (gitesData[0]?.id) {
-        return gitesData[0].id;
-      }
-
-      if (reservationsData.some((item) => !item.gite_id)) {
-        return UNASSIGNED_TAB;
-      }
-
-      return current;
+    if (mode !== "extend") {
+      backgroundEnergyRequests.current.forEach((cancel) => cancel());
+      backgroundEnergyRequests.current.clear();
+    }
+    if (!(settings?.[2] ?? monthlyEnergyEligibleGiteIds).length && !rows.some((row) => row.energy_tracking?.length)) return;
+    const energyController = new AbortController();
+    const stop = scheduleLazyTask(() => {
+      void apiFetch<ReservationLiveEnergyById>(`/reservations/live-energy?${energyParams}`, { signal: energyController.signal })
+        .then((energy) => {
+          if (energyController.signal.aborted) return;
+          setReservations((previous) => previous.map((row) => energy[row.id] ? { ...row, ...energy[row.id] } : row));
+        })
+        .catch(() => undefined)
+        .finally(() => backgroundEnergyRequests.current.delete(cancel));
     });
-
-    const energyLoadController = new AbortController();
-    backgroundEnergyLoadControllerRef.current = energyLoadController;
-    backgroundEnergyLoadCancelRef.current = scheduleLazyTask(() => {
-      backgroundEnergyLoadCancelRef.current = null;
-
-      void Promise.allSettled([
-        apiFetch<ReservationMonthlyEnergySummary[]>(
-          `/reservations/monthly-energy?${energyParams.toString()}`,
-          { signal: energyLoadController.signal },
-        ).then((monthlyEnergyData) => {
-          if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
-          setMonthlyEnergySummaries(
-            monthlyEnergyData
-              .map((item) => normalizeReservationMonthlyEnergySummary(item))
-              .filter((item): item is ReservationMonthlyEnergySummary => item !== null),
-          );
-        }),
-        apiFetch<ReservationLiveEnergyById>(
-          `/reservations/live-energy?${energyParams.toString()}`,
-          { signal: energyLoadController.signal },
-        ).then((liveEnergyById) => {
-          if (liveEnergyLoadKeyRef.current !== liveEnergyLoadKey) return;
-          setReservations((previous) =>
-            previous.map((reservation) =>
-              liveEnergyById[reservation.id]
-                ? {
-                    ...reservation,
-                    ...liveEnergyById[reservation.id],
-                  }
-                : reservation,
-            ),
-          );
-        }),
-      ]);
-    });
+    const cancel = () => { stop(); energyController.abort(); };
+    backgroundEnergyRequests.current.add(cancel);
   };
 
+  const timeline = useMonthTimeline({
+    initialMonth: locationMonthKey, monthsBefore: 0, loadMonths: loadReservationMonths,
+    listRef: timelineListRef, autoPaging: pendingMonth === null, stickyOffset: stickyOffsets.topbar + stickyOffsets.tabs,
+  });
+  const monthsToRender = useMemo(() => timeline.range ? monthsInRange(timeline.range) : [], [timeline.range]);
+  const timelineYears = useMemo(() => timeline.range ? yearsInRange(timeline.range) : [], [timeline.range]);
+  const statistics = useTimelineYearsData<ParsedStatisticsPayload>(timelineYears, annualDataRevision, reportsEnabled, async (targetYear, signal) =>
+    parseStatisticsPayload(await apiFetch<StatisticsPayload>(`/statistics?year=${targetYear}`, { signal })));
+  const energySummaries = useTimelineYearsData<ReservationMonthlyEnergySummary[]>(timelineYears, monthlyEnergyRevision, timeline.range !== null, async (targetYear, signal) =>
+    (await apiFetch<ReservationMonthlyEnergySummary[]>(`/reservations/monthly-energy?year=${targetYear}`, { signal }))
+      .map(normalizeReservationMonthlyEnergySummary).filter((item): item is ReservationMonthlyEnergySummary => item !== null));
+  const monthlyEnergySummaries = useMemo(() => Object.values(energySummaries.data).flat(), [energySummaries.data]);
+  const schoolHolidays = useTimelineSchoolHolidays(timeline.range);
+  const load = timeline.refresh;
+  const openMonth = timeline.open;
+  const jumpToMonth = useCallback(async (key: number, scroll = true) => {
+    if (await openMonth(key)) {
+      setSelectedMonthKey(key);
+      setPendingMonth(scroll ? key : null);
+    }
+  }, [openMonth]);
+
+  const requestedFocusMonth = requestedMonth ? Number(requestedMonth) : 0;
   useEffect(() => {
-    if (!requestedFocusReservationId || requestedYear) return;
+    if (!requestedFocusReservationId || requestedFocusMonth > 0) return;
     const controller = new AbortController();
     void apiFetch<Reservation>(`/reservations/${encodeURIComponent(requestedFocusReservationId)}`, { signal: controller.signal })
       .then((reservation) => {
-        if (controller.signal.aborted) return;
-        setYear(Number(reservation.date_entree.slice(0, 4)));
-        setMonth(0);
+        const entry = toUtcDateOnly(reservation.date_entree);
+        if (!controller.signal.aborted && entry) void jumpToMonth(monthKeyForDate(entry), false);
       })
       .catch((failure) => {
         if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "Réservation indisponible.");
       });
     return () => controller.abort();
-  }, [requestedFocusReservationId, requestedYear]);
+  }, [jumpToMonth, requestedFocusMonth, requestedFocusReservationId]);
 
   const updatePaymentTracking = (
     reservation: Reservation,
@@ -1434,36 +1385,30 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   };
 
   useEffect(() => {
-    const changed = () => { load().catch((err) => setError((err as Error).message)); };
+    const changed = () => { void load(); loadStatistics(); };
     window.addEventListener("reservation:pricing-changed", changed);
     return () => window.removeEventListener("reservation:pricing-changed", changed);
-  }, [year, month, q]);
+  }, [load, loadStatistics]);
 
   useEffect(() => {
-    load().catch((err) => setError((err as Error).message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month, q]);
+    if (q === previousSearch.current) return;
+    previousSearch.current = q;
+    const timer = window.setTimeout(() => { void load(); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [q, load]);
 
   useEffect(() => {
     if (appliedLocationYearMonthKeyRef.current === location.key) return;
     appliedLocationYearMonthKeyRef.current = location.key;
-
-    const nextYear = requestedYear ? Number.parseInt(requestedYear, 10) : NaN;
-    if (Number.isFinite(nextYear) && nextYear > 0) {
-      setYear(nextYear);
+    if (!requestedFocusReservationId || requestedFocusMonth > 0) {
+      void jumpToMonth(locationMonthKey, !requestedFocusReservationId && !createEntryDate);
     }
-
-    const nextMonth = requestedMonth ? Number.parseInt(requestedMonth, 10) : NaN;
-    if (Number.isFinite(nextMonth) && nextMonth >= 0 && nextMonth <= 12) {
-      setMonth(nextMonth as number | 0);
-    }
-  }, [location.key, requestedMonth, requestedYear]);
+  }, [createEntryDate, jumpToMonth, location.key, locationMonthKey, requestedFocusMonth, requestedFocusReservationId]);
 
   useEffect(() => {
-    // Any display filter change should discard pending inline insertion state.
     setInsertRowIndexByMonth({});
     setNewRows({});
-  }, [year, month, q, activeTab]);
+  }, [q, activeTab]);
 
   useEffect(() => {
     if (!gites.length) {
@@ -1629,36 +1574,6 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     return counts;
   }, [reservations]);
 
-  const schoolHolidayRangeFrom = `${year}-01-01`;
-  const schoolHolidayRangeTo = `${year + 1}-01-07`;
-
-  useEffect(() => {
-    if (!schoolHolidayRangeFrom || !schoolHolidayRangeTo) {
-      setSchoolHolidays((previous) => (previous.length > 0 ? [] : previous));
-      return;
-    }
-
-    let cancelled = false;
-    const cancelScheduledFetch = scheduleLazyTask(() => {
-      apiFetch<SchoolHoliday[]>(
-        `/school-holidays?from=${encodeURIComponent(schoolHolidayRangeFrom)}&to=${encodeURIComponent(schoolHolidayRangeTo)}&zone=B`
-      )
-        .then((rows) => {
-          if (cancelled) return;
-          setSchoolHolidays(rows);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setSchoolHolidays([]);
-        });
-    });
-
-    return () => {
-      cancelled = true;
-      cancelScheduledFetch();
-    };
-  }, [schoolHolidayRangeFrom, schoolHolidayRangeTo]);
-
   const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
 
   const holidayNightsByReservationId = useMemo(() => {
@@ -1677,11 +1592,12 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
 
   const holidaySegmentsByMonth = useMemo(() => {
     const byMonth = new Map<number, ReturnType<typeof getSchoolHolidaySegmentsForMonth>>();
-    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
-      byMonth.set(monthIndex, getSchoolHolidaySegmentsForMonth(schoolHolidays, year, monthIndex));
+    for (const key of monthsToRender) {
+      const { year, month } = monthParts(key);
+      byMonth.set(key, getSchoolHolidaySegmentsForMonth(schoolHolidays, year, month));
     }
     return byMonth;
-  }, [schoolHolidays, year]);
+  }, [monthsToRender, schoolHolidays]);
 
   const monthlyEnergySummaryByKey = useMemo(() => {
     const map = new Map<string, ReservationMonthlyEnergySummary>();
@@ -1730,7 +1646,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       if (Number.isNaN(entryDate.getTime())) continue;
 
       const monthIndex = entryDate.getUTCMonth() + 1;
-      const summaryKey = getMonthlyEnergySummaryKey(giteId, year, monthIndex);
+      const summaryKey = getMonthlyEnergySummaryKey(giteId, entryDate.getUTCFullYear(), monthIndex);
       const stayKey = String(reservation.stay_group_id ?? reservation.id).trim() || reservation.id;
       const uniqueKey = `${summaryKey}:${stayKey}`;
       const previous = liveByStayKey.get(uniqueKey);
@@ -1773,7 +1689,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     });
 
     return bySummaryKey;
-  }, [visibleReservations, year]);
+  }, [visibleReservations]);
 
   const renderMonthlyEnergyIndicator = (options: {
     giteId: string | null | undefined;
@@ -1784,16 +1700,17 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     const giteId = String(options.giteId ?? "").trim();
     if (!giteId) return null;
 
+    const { year, month } = monthParts(options.monthIndex);
     const giteName = giteById.get(giteId)?.nom ?? "Gîte";
     const showGiteName = options.showGiteName === true;
     const isCurrentMonthPeriod =
-      year === currentPeriod.year && options.monthIndex === currentPeriod.month;
+      year === currentPeriod.year && month === currentPeriod.month;
     const hasEligibleMonthlyEnergyMeter = monthlyEnergyEligibleGiteIdSet.has(giteId);
-    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, options.monthIndex);
+    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, month);
     const isStartingMonthlyEnergy = Boolean(startingMonthlyEnergyByKey[controlKey]);
     const energySummary = options.summary;
     const liveFallback = monthlyEnergyLiveFallbackByKey.get(
-      getMonthlyEnergySummaryKey(giteId, year, options.monthIndex),
+      getMonthlyEnergySummaryKey(giteId, year, month),
     );
 
     if (energySummary) {
@@ -1941,15 +1858,15 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
 
   const reservationsByMonth = useMemo(() => {
     const map = new Map<number, Reservation[]>();
-    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+    for (const monthIndex of monthsToRender) {
       map.set(monthIndex, []);
     }
 
-    for (const reservation of visibleReservations) {
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
-        if (!reservationOverlapsMonth(reservation, year, monthIndex)) continue;
-        map.get(monthIndex)?.push(reservation);
-      }
+    if (timeline.range) for (const reservation of visibleReservations) {
+      const entry = toUtcDateOnly(reservation.date_entree);
+      const exit = toUtcDateOnly(reservation.date_sortie);
+      if (!entry || !exit) continue;
+      for (const key of overlappingMonthKeys(entry, exit, timeline.range)) map.get(key)?.push(reservation);
     }
 
     for (const list of map.values()) {
@@ -1970,13 +1887,11 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     }
 
     return map;
-  }, [activeTab, giteOrderById, visibleReservations, year]);
+  }, [activeTab, giteOrderById, monthsToRender, timeline.range, visibleReservations]);
 
   const monthlyAmountsByReservationMonthKey = useMemo(() => {
     const byKey = new Map<string, ReservationMonthlyAmounts>();
-    if (!statisticsDataset) return byKey;
-
-    Object.values(statisticsDataset.entriesByGite).forEach((entries) => {
+    Object.values(statistics.data).flatMap((dataset) => Object.values(dataset.entriesByGite)).forEach((entries) => {
       entries.forEach((entry) => {
         const entryYear = entry.debutDate.getUTCFullYear();
         const entryMonth = entry.debutDate.getUTCMonth() + 1;
@@ -1999,49 +1914,51 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     });
 
     return byKey;
-  }, [statisticsDataset]);
+  }, [statistics.data]);
 
   const getReservationMonthlyAmounts = useCallback(
     (reservation: Reservation, monthIndex: number) => {
-      const key = `${reservation.id}:${year}:${monthIndex}`;
+      const { year, month } = monthParts(monthIndex);
+      const key = `${reservation.id}:${year}:${month}`;
       const monthlyAmounts = monthlyAmountsByReservationMonthKey.get(key);
       if (monthlyAmounts) return monthlyAmounts;
-      return getReservationMonthlyAmountsForMonth(reservation, year, monthIndex);
+      return getReservationMonthlyAmountsForMonth(reservation, year, month);
     },
-    [monthlyAmountsByReservationMonthKey, year]
+    [monthlyAmountsByReservationMonthKey]
   );
 
   const occupationByMonthByGite = useMemo(() => {
     const byGite = new Map<string, Map<number, number>>();
     gites.forEach((gite) => {
       const byMonth = new Map<number, number>();
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      for (const monthIndex of monthsToRender) {
         byMonth.set(monthIndex, 0);
       }
       byGite.set(gite.id, byMonth);
     });
 
-    reservations.forEach((reservation) => {
-      if (!reservation.gite_id) return;
-      const byMonth = byGite.get(reservation.gite_id);
-      if (!byMonth) return;
-
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
-        const current = byMonth.get(monthIndex) ?? 0;
-        byMonth.set(monthIndex, current + getReservationNightsInMonth(reservation, year, monthIndex));
+    if (timeline.range) for (const reservation of reservations) {
+      const byMonth = reservation.gite_id ? byGite.get(reservation.gite_id) : undefined;
+      const entry = toUtcDateOnly(reservation.date_entree);
+      const exit = toUtcDateOnly(reservation.date_sortie);
+      if (!byMonth || !entry || !exit) continue;
+      for (const key of overlappingMonthKeys(entry, exit, timeline.range)) {
+        const { year, month } = monthParts(key);
+        byMonth.set(key, (byMonth.get(key) ?? 0) + getReservationNightsInMonth(reservation, year, month));
       }
-    });
+    }
 
     byGite.forEach((byMonth) => {
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      for (const monthIndex of monthsToRender) {
+        const { year, month } = monthParts(monthIndex);
         const totalNights = byMonth.get(monthIndex) ?? 0;
-        const capacity = getDaysInMonth(year, monthIndex);
+        const capacity = getDaysInMonth(year, month);
         byMonth.set(monthIndex, capacity > 0 ? totalNights / capacity : 0);
       }
     });
 
     return byGite;
-  }, [gites, reservations, year]);
+  }, [gites, monthsToRender, reservations, timeline.range]);
 
   const occupationByMonth = useMemo(() => {
     if (!activeTab || activeTab === UNASSIGNED_TAB) {
@@ -2053,25 +1970,20 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       const occupiableGiteCount = gites.length;
       if (occupiableGiteCount <= 0) return byMonth;
 
-      const occupiableReservations = visibleReservations.filter((reservation) => Boolean(reservation.gite_id));
-      for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
-        const totalNights = occupiableReservations.reduce(
-          (sum, reservation) => sum + getReservationNightsInMonth(reservation, year, monthIndex),
-          0
-        );
-        const capacity = getDaysInMonth(year, monthIndex) * occupiableGiteCount;
-        byMonth.set(monthIndex, capacity > 0 ? totalNights / capacity : 0);
+      for (const key of monthsToRender) {
+        const rate = gites.reduce((total, gite) => total + (occupationByMonthByGite.get(gite.id)?.get(key) ?? 0), 0);
+        byMonth.set(key, rate / occupiableGiteCount);
       }
 
       return byMonth;
     }
 
     return occupationByMonthByGite.get(activeTab) ?? new Map<number, number>();
-  }, [activeTab, gites.length, occupationByMonthByGite, visibleReservations, year]);
+  }, [activeTab, gites, monthsToRender, occupationByMonthByGite]);
   const topOccupationGiteIdByMonth = useMemo(() => {
     const leadersByMonth = new Map<number, string | null>();
 
-    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+    for (const monthIndex of monthsToRender) {
       let bestOccupation = -1;
       let leaderId: string | null = null;
 
@@ -2097,19 +2009,10 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     }
 
     return leadersByMonth;
-  }, [giteOrderById, gites, occupationByMonthByGite]);
-
-  const monthsToRender = useMemo(() => {
-    if (month) return [month];
-    return Array.from({ length: 12 }, (_, idx) => idx + 1);
-  }, [month]);
+  }, [giteOrderById, gites, monthsToRender, occupationByMonthByGite]);
 
   const getRecentImportedTabLabel = (count: number) =>
     `${count} nouvelle${count > 1 ? "s" : ""} réservation${count > 1 ? "s" : ""} récemment`;
-
-  useEffect(() => {
-    setMonthExpandedByIndex({});
-  }, [month]);
 
   useEffect(() => {
     if (!activeTab) {
@@ -2214,7 +2117,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [activeTab, gites.length, month]);
+  }, [activeTab, gites.length]);
 
   const pageStyle = useMemo<CSSProperties & Record<`--${string}`, string>>(
     () =>
@@ -2387,7 +2290,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   };
 
   const startMonthlyEnergyTracking = async (giteId: string, targetMonth: number) => {
-    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, targetMonth);
+    const { year, month } = monthParts(targetMonth);
+    const controlKey = getMonthlyEnergyTrackingControlKey(giteId, year, month);
     setError(null);
     setStartingMonthlyEnergyByKey((previous) => ({ ...previous, [controlKey]: true }));
 
@@ -2400,6 +2304,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
         },
       );
       await load();
+      setMonthlyEnergyRevision((revision) => revision + 1);
 
       const messageParts = [...(response.messages ?? []), ...(response.errors ?? [])]
         .filter(Boolean)
@@ -2957,7 +2862,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
 
   const buildSuggestedNewRowDraft = (monthIndex: number, previousReservation: Reservation | null = null) => {
     const baseGite = getNewRowBaseGite();
-    const baseDraft = buildEmptyDraft(year, monthIndex, baseGite);
+    const { year, month } = monthParts(monthIndex);
+    const baseDraft = buildEmptyDraft(year, month, baseGite);
     const suggestedEntry = previousReservation ? addDaysToInputDate(toInputDate(previousReservation.date_sortie), 1) : "";
     const nextEntry = suggestedEntry || baseDraft.date_entree;
     const nextExit = addDaysToInputDate(nextEntry, 1) || baseDraft.date_sortie;
@@ -2999,7 +2905,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const updateNewRow = (monthIndex: number, updater: (draft: ReservationDraft) => ReservationDraft) => {
     setNewRows((previous) => {
       const base =
-        previous[monthIndex] ?? buildEmptyDraft(year, monthIndex, getNewRowBaseGite());
+        previous[monthIndex] ?? buildSuggestedNewRowDraft(monthIndex);
       return {
         ...previous,
         [monthIndex]: updater(base),
@@ -3043,7 +2949,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       if (activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB) {
         setNewRows((previous) => ({
           ...previous,
-          [monthIndex]: applySeasonalPricingToDraft(buildEmptyDraft(year, monthIndex, activeGite), activeGite),
+          [monthIndex]: buildSuggestedNewRowDraft(monthIndex),
         }));
       }
       setInsertRowIndexByMonth((previous) => ({ ...previous, [monthIndex]: null }));
@@ -3055,7 +2961,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
         : (err as Error).message;
       setError(nextError);
     }
-  }, [activeGite, activeTab, month, newRows, startAirbnbCalendarRefreshPolling, year]);
+  }, [activeGite, activeTab, newRows, startAirbnbCalendarRefreshPolling]);
 
   const duplicateIntoNewRow = (reservation: Reservation, monthIndex: number, rowIndex: number) => {
     const source = toDraft(reservation);
@@ -3256,21 +3162,9 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     return giteById.has(activeTab) ? [activeTab] : [];
   }, [activeTab, giteById, gites]);
 
-  const nightSummaries = useReservationNightSummaries(year, reservations, reportsEnabled);
+  const nightSummaries = useReservationNightSummaries(timelineYears, annualDataRevision, reportsEnabled);
 
-  const currentMonthStartUtc = useMemo(() => {
-    const now = new Date();
-    return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-  }, []);
-
-  const isMonthExpandedByDefault = useCallback(
-    (monthIndex: number) => {
-      if (month) return true;
-      const monthStartUtc = Date.UTC(year, monthIndex - 1, 1);
-      return monthStartUtc >= currentMonthStartUtc;
-    },
-    [currentMonthStartUtc, month, year]
-  );
+  const isMonthExpandedByDefault = useCallback((key: number) => key >= nowMonth, [nowMonth]);
 
   const setMonthExpanded = useCallback((monthIndex: number, expanded: boolean) => {
     setMonthExpandedByIndex((previous) => {
@@ -3293,8 +3187,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       };
     }
 
-    const rootStyles = window.getComputedStyle(document.documentElement);
-    const anchorLine = Number.parseFloat(rootStyles.getPropertyValue("--reservations-month-head-top")) || 0;
+    const anchorLine = stickyOffsets.topbar + stickyOffsets.tabs;
     const anchorSection =
       sections.find((section) => {
         const rect = section.getBoundingClientRect();
@@ -3313,7 +3206,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           }
         : null,
     };
-  }, [isMonthExpandedByDefault, monthExpandedByIndex, monthsToRender]);
+  }, [isMonthExpandedByDefault, monthExpandedByIndex, monthsToRender, stickyOffsets.tabs, stickyOffsets.topbar]);
 
   const handleTabChange = useCallback(
     (nextTab: string) => {
@@ -3328,18 +3221,23 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     [activeTab, captureViewSnapshot]
   );
 
-  const handleYearChange = useCallback(
-    (nextYear: number) => {
-      if (!Number.isFinite(nextYear) || nextYear === year) return;
-      const snapshot = captureViewSnapshot();
-      pendingViewSnapshotRef.current = snapshot;
-      flushSync(() => {
-        setMonthExpandedByIndex(snapshot.monthExpandedByIndex);
-        setYear(nextYear);
-      });
-    },
-    [captureViewSnapshot, year]
-  );
+  useEffect(() => {
+    if (!activeTab || pendingMonth === null || !monthsToRender.includes(pendingMonth)) return;
+    if (monthExpandedByIndex[pendingMonth] === false || (pendingMonth < nowMonth && !monthExpandedByIndex[pendingMonth])) {
+      setMonthExpanded(pendingMonth, true);
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const section = timelineListRef.current?.querySelector<HTMLElement>(`[data-timeline-month="${pendingMonth}"]`);
+      if (!section) return;
+      const topbar = document.querySelector(".topbar")?.getBoundingClientRect().height ?? stickyOffsets.topbar;
+      const tabs = document.querySelector(".reservations-tabs--sticky")?.getBoundingClientRect().height ?? stickyOffsets.tabs;
+      window.scrollTo({ top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - topbar - tabs - 8), behavior: "instant" });
+      setPendingMonth(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, monthExpandedByIndex, monthsToRender, nowMonth, pendingMonth, setMonthExpanded, stickyOffsets]);
 
   useEffect(() => {
     const snapshot = pendingViewSnapshotRef.current;
@@ -3379,25 +3277,28 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     if (requestedTab && activeTab !== requestedTab) return;
     if (!requestedTab && activeTab !== targetTab) return;
 
-    const targetMonth = toUtcDateOnly(targetReservation.date_entree)?.getUTCMonth();
-    if (targetMonth !== null && targetMonth !== undefined) {
-      const monthIndex = targetMonth + 1;
-      const isExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedByDefault(monthIndex);
-      if (!isExpanded) {
-        setMonthExpanded(monthIndex, true);
-        return;
-      }
+    const entry = toUtcDateOnly(targetReservation.date_entree);
+    const targetMonth = requestedFocusMonth > 0 ? selectedMonthKey : entry ? monthKeyForDate(entry) : null;
+    const targetKey = targetMonth !== null && monthsToRender.includes(targetMonth) && reservationsByMonth.get(targetMonth)?.some((row) => row.id === targetReservation.id)
+      ? targetMonth
+      : monthsToRender.find((key) => reservationsByMonth.get(key)?.some((row) => row.id === targetReservation.id));
+    if (targetKey === undefined) return;
+    if (!(monthExpandedByIndex[targetKey] ?? isMonthExpandedByDefault(targetKey))) {
+      setMonthExpanded(targetKey, true);
+      return;
     }
 
     const focusSignature = `${location.key}:${requestedFocusReservationId}`;
     if (handledLinkedFocusRef.current === focusSignature) return;
 
     let rafId = window.requestAnimationFrame(() => {
-      const targetRow = document.getElementById(`reservation-${requestedFocusReservationId}`);
+      const targetRow = timelineListRef.current?.querySelector<HTMLElement>(
+        `[data-timeline-month="${targetKey}"] [data-reservation-id="${CSS.escape(requestedFocusReservationId)}"]`
+      );
       if (!targetRow) return;
 
       handledLinkedFocusRef.current = focusSignature;
-      targetRow.scrollIntoView({ block: "center", behavior: requestedPayments || requestedInvoices ? "instant" : "smooth" });
+      targetRow.scrollIntoView({ block: "center", behavior: "instant" });
       if (requestedInvoices && targetReservation.gite_id && canCurrentUserAccessPage("invoices") && canCurrentUserViewAmounts()) {
         setInvoiceSplitReservation({ ...targetReservation, hote_nom: getEditableHostName(targetReservation.hote_nom) });
       }
@@ -3421,11 +3322,15 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     isMonthExpandedByDefault,
     location.key,
     monthExpandedByIndex,
+    monthsToRender,
+    requestedFocusMonth,
     requestedFocusReservationId,
     requestedInvoices,
     requestedPayments,
     requestedTab,
     reservations,
+    reservationsByMonth,
+    selectedMonthKey,
     setMonthExpanded,
   ]);
 
@@ -3492,6 +3397,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
       setImportMap({});
       setImportColumnMap({});
       await load();
+      loadStatistics();
     } catch (err) {
       if (isApiError(err) && Array.isArray((err.payload as any)?.issues)) {
         const issues = (err.payload as any).issues as Array<{ row: number; message: string }>;
@@ -3578,10 +3484,11 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
         : activeTab === UNASSIGNED_TAB
           ? "non-attribuees"
           : normalizeTextKey(gites.find((gite) => gite.id === activeTab)?.nom ?? "gite");
-    const monthLabel = month ? pad2(month) : "tous-mois";
+    const period = timeline.range ? monthRangeDates(timeline.range) : null;
+    const monthLabel = period ? `${period.from.slice(0, 7)}_${period.to.slice(0, 7)}` : `${year}-${pad2(month)}`;
     const stamp = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.download = `reservations-${year}-${monthLabel}-${giteTabLabel}-${stamp}.csv`;
+    link.download = `reservations-${monthLabel}-${giteTabLabel}-${stamp}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -3659,8 +3566,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     const exitDate = parseInputDate(requestedCreateExit);
     if (!entryDate || !exitDate || exitDate.getTime() <= entryDate.getTime()) return;
 
-    const requestedCreateMonthIndex = entryDate.getUTCMonth() + 1;
-    if (month && month !== requestedCreateMonthIndex) return;
+    const requestedCreateMonthIndex = monthKeyForDate(entryDate);
+    if (!monthsToRender.includes(requestedCreateMonthIndex)) return;
 
     const isExpanded = monthExpandedByIndex[requestedCreateMonthIndex] ?? isMonthExpandedByDefault(requestedCreateMonthIndex);
     if (!isExpanded) {
@@ -3678,7 +3585,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     });
     const nextInsertIndex = insertIndex >= 0 ? insertIndex : monthRows.length;
 
-    const nextDraft = buildEmptyDraft(year, requestedCreateMonthIndex, activeGite, {
+    const nextDraft = buildEmptyDraft(entryDate.getUTCFullYear(), entryDate.getUTCMonth() + 1, activeGite, {
       date_entree: requestedCreateEntry,
       date_sortie: requestedCreateExit,
     });
@@ -3700,8 +3607,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     activeTab,
     isMonthExpandedByDefault,
     location.key,
-    month,
     monthExpandedByIndex,
+    monthsToRender,
     requestedCreateEntry,
     requestedCreateExit,
     requestedCreateMode,
@@ -3709,7 +3616,6 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     reservationsByMonth,
     scrollGridCellIntoView,
     setMonthExpanded,
-    year,
   ]);
 
   const ensureEditableExistingRow = (reservation: Reservation) => {
@@ -4151,9 +4057,9 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
         {error && <div className="note">{error}</div>}
         <div className="grid-2 reservations-filters-grid">
           <label className="field field--small">
-            Année
-            <select value={year} onChange={(event) => handleYearChange(Number(event.target.value))}>
-              {availableYears.map((value) => (
+            Aller à l’année
+            <select value={year} onChange={(event) => void jumpToMonth(monthKey(Number(event.target.value), month))}>
+              {[...new Set([...availableYears, ...timelineYears, year])].sort((a, b) => b - a).map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
@@ -4162,9 +4068,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           </label>
 
           <label className="field field--small">
-            Mois
-            <select value={month} onChange={(event) => setMonth(Number(event.target.value))}>
-              <option value={0}>Tous</option>
+            Aller au mois
+            <select value={month} onChange={(event) => void jumpToMonth(monthKey(year, Number(event.target.value)))}>
               {MONTHS.map((label, idx) => (
                 <option key={label} value={idx + 1}>
                   {label}
@@ -4372,7 +4277,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           key={year}
           year={year}
           propertyId={activeTab === ALL_GITES_TAB ? undefined : activeTab}
-          refreshKey={reservations}
+          refreshKey={annualDataRevision}
           currentTimeMs={currentTimeMs}
         />}
 
@@ -4382,14 +4287,19 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
           </div>
         )}
 
-        {!activeTab && <div className="field-hint">Créez un gîte pour commencer à saisir des réservations.</div>}
+        {!timeline.range && timeline.busy && <p role="status">Chargement des réservations…</p>}
+        {timeline.error && <div className="note" role="alert">{timeline.error} <button type="button" className="secondary" onClick={timeline.retry}>Réessayer</button></div>}
+        {timeline.range && !activeTab && <div className="field-hint">Créez un gîte pour commencer à saisir des réservations.</div>}
 
+        <div ref={timelineListRef} className="reservations-timeline">
+        {activeTab && timeline.hasPrevious && <MonthTimelineEdge direction="previous" busy={timeline.busy} onLoad={() => timeline.extend(-1)} />}
         {activeTab &&
           monthsToRender.map((monthIndex) => {
+            const { year, month } = monthParts(monthIndex);
             const list = reservationsByMonth.get(monthIndex) ?? [];
             const summary = monthSummary(list, monthIndex);
             const addAllowed = activeTab !== UNASSIGNED_TAB && activeTab !== ALL_GITES_TAB && Boolean(activeGite?.id);
-            const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, monthIndex, activeGite) : null);
+            const newRow = newRows[monthIndex] ?? (addAllowed && activeGite ? buildEmptyDraft(year, month, activeGite) : null);
             const rawInsertIndex = insertRowIndexByMonth[monthIndex];
             const inlineInsertIndex =
               addAllowed && typeof rawInsertIndex === "number" && rawInsertIndex >= 0 && rawInsertIndex <= list.length
@@ -4415,10 +4325,10 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
             }
             const holidaySegments = holidaySegmentsByMonth.get(monthIndex) ?? [];
             const monthHasZeroTotalReservations =
-              summary.zeroTotalReservationsCount > 0 && isUrssafConcernedMonth(year, monthIndex, currentPeriod);
+              summary.zeroTotalReservationsCount > 0 && isUrssafConcernedMonth(year, month, currentPeriod);
             const isMonthExpandedDefault = isMonthExpandedByDefault(monthIndex);
             const isMonthExpanded = monthExpandedByIndex[monthIndex] ?? isMonthExpandedDefault;
-            const monthPanelId = `reservations-month-panel-${year}-${monthIndex}`;
+            const monthPanelId = `reservations-month-panel-${year}-${month}`;
             const monthOccupation = occupationByMonth.get(monthIndex) ?? null;
             const topOccupationGiteId = topOccupationGiteIdByMonth.get(monthIndex) ?? null;
             const isActiveGiteMonthLeader =
@@ -4426,12 +4336,12 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
             const activeGiteMonthlyEnergy =
               activeTab !== ALL_GITES_TAB && activeTab !== UNASSIGNED_TAB
                 ? monthlyEnergySummaryByKey.get(
-                    getMonthlyEnergySummaryKey(activeTab, year, monthIndex),
+                    getMonthlyEnergySummaryKey(activeTab, year, month),
                   ) ?? null
                 : null;
             const monthEnergySummariesForAllGites = isAllGitesTab
               ? [...monthlyEnergySummaries]
-                  .filter((energySummary) => energySummary.month === monthIndex)
+                  .filter((energySummary) => energySummary.year === year && energySummary.month === month)
                   .sort((a, b) => {
                     const orderA = giteOrderById.get(a.gite_id) ?? Number.MAX_SAFE_INTEGER;
                     const orderB = giteOrderById.get(b.gite_id) ?? Number.MAX_SAFE_INTEGER;
@@ -4447,6 +4357,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
               <section
                 className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
                 key={monthIndex}
+                data-timeline-month={monthIndex}
                 data-month-index={monthIndex}
               >
                 <div
@@ -4463,7 +4374,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                 >
                   <div className="reservations-month__head-main">
                     <div className="reservations-month__title-row">
-                      <div className="section-subtitle reservations-month__title">{MONTHS[monthIndex - 1]}</div>
+                      <div className="section-subtitle reservations-month__title">{MONTHS[month - 1]} {year}</div>
                       {holidaySegments.length > 0 ? (
                         <div className="reservations-month__holiday-list">
                           {holidaySegments.map((segment) => (
@@ -4481,11 +4392,11 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                     <div className="reservations-month__meta">
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.count, "réservation", "réservations")}</span>
                       <span className="reservations-summary-pill">{formatPluralLabel(summary.nights, "nuit", "nuits")}</span>
-                      <ReservationNightBadges summary={nightSummaries} propertyIds={activeGuestNightGiteIds} month={monthIndex} />
+                      <ReservationNightBadges summary={nightSummaries(year)} propertyIds={activeGuestNightGiteIds} month={month} />
                       {renderSummaryPopoverPill({
                         pillClassName: "reservations-summary-pill reservations-summary-pill--revenue",
                         label: `${formatEuro(summary.revenue)} revenus`,
-                        title: `Total du mois ${MONTHS[monthIndex - 1]}`,
+                        title: `Total du mois ${MONTHS[month - 1]}`,
                         rows: [
                           { label: "Nuitées", value: formatEuro(summary.baseRevenue) },
                           { label: "Options", value: formatEuro(summary.fees) },
@@ -4529,7 +4440,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                           Réservation à compléter
                         </span>
                       ) : null}
-                      {reportsEnabled && <Link className="reservations-summary-pill" to={`/rapports?periode=${year}-${String(monthIndex).padStart(2, "0")}`} onClick={event => event.stopPropagation()}>Rapports et déclarations →</Link>}
+                      {reportsEnabled && <Link className="reservations-summary-pill" to={`/rapports?periode=${year}-${pad2(month)}`} onClick={event => event.stopPropagation()}>Rapports et déclarations →</Link>}
 
                     </div>
                   </div>
@@ -4611,7 +4522,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                         groupKey === UNASSIGNED_TAB
                           ? null
                           : monthlyEnergySummaryByKey.get(
-                              getMonthlyEnergySummaryKey(groupKey, year, monthIndex),
+                              getMonthlyEnergySummaryKey(groupKey, year, month),
                             ) ?? null;
                       const groupLabel =
                         groupKey === UNASSIGNED_TAB
@@ -5016,6 +4927,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                           )}
                           <tr
                             id={`reservation-${reservation.id}`}
+                            data-reservation-id={reservation.id}
                             className={`reservations-row ${isEditing ? "reservations-row--editing" : ""} ${
                               isRowSavedFading ? "reservations-row--saved-fade" : ""
                             } ${isCurrentReservation ? "reservations-row--current" : ""} ${
@@ -5812,6 +5724,8 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
               </section>
             );
           })}
+        {activeTab && timeline.hasNext && <MonthTimelineEdge direction="next" busy={timeline.busy} onLoad={() => timeline.extend(1)} />}
+        </div>
       </div>
       {commentDialog && commentDialogReservation ? (
         <div

@@ -1,3 +1,7 @@
+import MonthTimelineEdge from "./shared/MonthTimelineEdge";
+import { mergeTimelineRows, monthKey, monthKeyForDate, monthParts, monthsInRange, timelineMonthIsValid, timelineToday, type MonthRange } from "../utils/monthTimeline";
+import { useMonthTimeline } from "../utils/useMonthTimeline";
+import { useTimelineSchoolHolidays } from "../utils/useTimelineSchoolHolidays";
 import { BOOKING_SOURCES, getBookingSource, type ReservationPaymentTracking } from "@contrats/shared";
 import { reservationPaymentChanged } from "./shared/ReservationPaymentsEditor";
 import MobileReservationInfoDrawer from "./shared/MobileReservationInfoDrawer";
@@ -14,7 +18,7 @@ import {
   getPaymentColorFromMap,
   getPaymentTextColorFromMap,
 } from "../utils/paymentColors";
-import { buildSchoolHolidayDateSet, type SchoolHoliday } from "../utils/schoolHolidays";
+import { buildSchoolHolidayDateSet } from "../utils/schoolHolidays";
 import { getReservationMonthlyAmountsForMonth } from "../utils/reservationMonthlyAmounts";
 import ReservationContractIcon from "./shared/ReservationContractIcon";
 import GiteTabs from "./shared/GiteTabs";
@@ -54,10 +58,6 @@ const DEFAULT_MONTH_SCROLL_OFFSET = 104;
 const DEFAULT_DAY_SCROLL_OFFSET = 76;
 const DEFAULT_MOBILE_TOPBAR_OFFSET = 56;
 const RENDERED_MONTH_RADIUS = 2;
-const MOBILE_FOLLOWING_MONTHS = 6;
-const MONTH_SWITCH_LEAD_RATIO = 0.24;
-const MONTH_SWITCH_LEAD_MIN = 120;
-const MONTH_SWITCH_LEAD_MAX = 260;
 
 const CrownIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -448,11 +448,18 @@ const buildCalendarMonthData = ({
 };
 
 const CalendrierPage = () => {
-  const now = new Date();
+  const now = timelineToday();
   const location = useLocation();
   const navigate = useNavigate();
   const currentYear = now.getUTCFullYear();
-  const currentMonthIndex = now.getUTCMonth();
+  const currentKey = monthKeyForDate(now);
+  const calendarParams = new URLSearchParams(location.search);
+  const linkedYear = Number(calendarParams.get("year") ?? currentYear);
+  const linkedMonth = Number(calendarParams.get("month") ?? now.getUTCMonth() + 1);
+  const validLink = Number.isInteger(linkedYear) && Number.isInteger(linkedMonth) && linkedMonth >= 1 && linkedMonth <= 12 &&
+    timelineMonthIsValid(monthKey(linkedYear, linkedMonth));
+  const locationMonth = validLink ? monthKey(linkedYear, linkedMonth) : currentKey;
+  const hasPeriodLink = validLink && (calendarParams.has("year") || calendarParams.has("month"));
   const todayIso = toIsoDate(new Date(Date.UTC(currentYear, now.getUTCMonth(), now.getUTCDate())));
 
   const [gites, setGites] = useState<CalendarGite[]>([]);
@@ -461,8 +468,7 @@ const CalendrierPage = () => {
   const [reservationDetailsLoadingById, setReservationDetailsLoadingById] = useState<Record<string, boolean>>({});
   const [selectedGiteId, setSelectedGiteId] = useState("");
   const [sourceColors, setSourceColors] = useState<Record<string, string>>(DEFAULT_PAYMENT_SOURCE_COLORS);
-  const [year, setYear] = useState(currentYear);
-  const [activeMonthIndex, setActiveMonthIndex] = useState(currentMonthIndex);
+  const [activeMonthIndex, setActiveMonthIndex] = useState(locationMonth);
   const [hoveredReservation, setHoveredReservation] = useState<HoveredReservationState>(null);
   const [floatingPopoverLayout, setFloatingPopoverLayout] = useState<FloatingPopoverLayout>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<SelectedDateRange>(null);
@@ -471,8 +477,6 @@ const CalendrierPage = () => {
   const [sourceUpdating, setSourceUpdating] = useState(false);
   const [sourceUpdateError, setSourceUpdateError] = useState<string | null>(null);
   const [balanceStatusUpdatingByContractId, setBalanceStatusUpdatingByContractId] = useState<Record<string, boolean>>({});
-  const [schoolHolidays, setSchoolHolidays] = useState<SchoolHoliday[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usesViewportScroll, setUsesViewportScroll] = useState(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -487,14 +491,15 @@ const CalendrierPage = () => {
 
   const heroRef = useRef<HTMLElement | null>(null);
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
+  const monthListRef = useRef<HTMLDivElement | null>(null);
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const monthSectionRefs = useRef<Record<number, HTMLElement | null>>({});
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
   const segmentRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const pendingScrollTargetRef = useRef<PendingCalendarScrollTarget | null>({
-    kind: "date",
-    value: todayIso,
-  });
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<PendingCalendarScrollTarget | null>(
+    hasPeriodLink ? { kind: "month", value: locationMonth } : { kind: "date", value: todayIso },
+  );
+  const appliedLocationKey = useRef(location.key);
 
   const closeMobileReservationActions = () => {
     setMobileActionReservationId(null);
@@ -502,31 +507,33 @@ const CalendrierPage = () => {
     setSourceUpdateError(null);
   };
 
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const monthCount = usesViewportScroll ? 12 + MOBILE_FOLLOWING_MONTHS : 12;
-      const payload = await apiFetch<CalendarPrimaryPayload>(`/reservations/calendar?year=${year}&months=${monthCount}`);
-
-      setGites(payload.gites);
-      setReservations(payload.reservations);
-      setReservationDetailsById({});
-      setReservationDetailsLoadingById({});
-      setSourceColors(payload.source_colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
-      setSelectedGiteId((previous) => previous || payload.gites[0]?.id || "");
-    } catch (err) {
-      if (isApiError(err)) setError(err.message);
-      else setError("Impossible de charger le calendrier.");
-    } finally {
-      setLoading(false);
-    }
-  }, [usesViewportScroll, year]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const loadCalendarMonths = async (batch: MonthRange, mode: "replace" | "extend" | "refresh", signal: AbortSignal) => {
+    const { year, month } = monthParts(batch.first);
+    const months = batch.last - batch.first + 1;
+    const payload = await apiFetch<CalendarPrimaryPayload>(
+      `/reservations/calendar?year=${year}&startMonth=${month}&months=${months}`, { signal },
+    );
+    if (signal.aborted) return;
+    setGites(payload.gites);
+    setReservations((previous) => mode === "extend" ? mergeTimelineRows(previous, payload.reservations) : payload.reservations);
+    setSourceColors(payload.source_colors ?? DEFAULT_PAYMENT_SOURCE_COLORS);
+    setSelectedGiteId((previous) => previous || payload.gites[0]?.id || "");
+  };
+  const timeline = useMonthTimeline({
+    initialMonth: locationMonth,
+    monthsBefore: 3,
+    loadMonths: loadCalendarMonths,
+    listRef: monthListRef,
+    autoPaging: pendingScrollTarget === null,
+    scrollRef: usesViewportScroll ? undefined : boardScrollRef,
+    stickyOffset: viewportStickyOffsets.weekdays + (usesViewportScroll ? viewportStickyOffsets.topbar + viewportStickyOffsets.hero : 0),
+  });
+  const loading = !timeline.range && timeline.busy;
+  const openTimeline = timeline.open;
+  const jumpTo = useCallback(async (target: PendingCalendarScrollTarget) => {
+    const key = target.kind === "month" ? target.value : monthKeyForDate(parseIsoDate(target.value));
+    if (await openTimeline(key)) setPendingScrollTarget(target);
+  }, [openTimeline]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -636,31 +643,21 @@ const CalendrierPage = () => {
   }, [gites, selectedGiteId]);
 
   useEffect(() => {
-    if (!gites.length) return;
-
-    const searchParams = new URLSearchParams(location.search);
-    const nextGiteId = String(searchParams.get("gite") ?? "").trim();
-    const nextYear = Number.parseInt(String(searchParams.get("year") ?? ""), 10);
-    const nextMonth = Number.parseInt(String(searchParams.get("month") ?? ""), 10);
-
-    if (nextGiteId && gites.some((gite) => gite.id === nextGiteId)) {
-      setSelectedGiteId(nextGiteId);
-    }
-
-    if (Number.isInteger(nextYear) && nextYear >= 2000 && nextYear <= 2100) {
-      setYear(nextYear);
-    }
-
-    if (Number.isInteger(nextMonth) && nextMonth >= 1 && nextMonth <= 12) {
-      pendingScrollTargetRef.current = { kind: "month", value: nextMonth - 1 };
-    }
+    const nextGiteId = new URLSearchParams(location.search).get("gite");
+    if (nextGiteId && gites.some((gite) => gite.id === nextGiteId)) setSelectedGiteId(nextGiteId);
   }, [gites, location.search]);
+
+  useEffect(() => {
+    if (appliedLocationKey.current === location.key) return;
+    appliedLocationKey.current = location.key;
+    void jumpTo(hasPeriodLink ? { kind: "month", value: locationMonth } : { kind: "date", value: todayIso });
+  }, [hasPeriodLink, jumpTo, location.key, locationMonth, todayIso]);
 
   useEffect(() => {
     setHoveredReservation(null);
     setSelectedDateRange(null);
     closeMobileReservationActions();
-  }, [selectedGiteId, year]);
+  }, [selectedGiteId]);
 
   const markLinkedContractBalancePaid = useCallback(async (reservation: CalendarReservation) => {
     const linkedContract = reservation.linked_contract;
@@ -756,13 +753,10 @@ const CalendrierPage = () => {
   const paymentColorMap = useMemo(() => buildPaymentColorMap(sourceColors), [sourceColors]);
   const accentColor = selectedGite ? getGiteColor(selectedGite) : "#ff5a5f";
   const todayDate = useMemo(() => parseIsoDate(todayIso), [todayIso]);
-  const calendarMonthSpecs = useMemo(
-    () => Array.from({ length: usesViewportScroll ? 12 + MOBILE_FOLLOWING_MONTHS : 12 }, (_, index) => {
-      const date = new Date(Date.UTC(year, index, 1));
-      return { index, year: date.getUTCFullYear(), monthIndex: date.getUTCMonth(), monthNumber: date.getUTCMonth() + 1 };
-    }),
-    [usesViewportScroll, year]
-  );
+  const calendarMonthSpecs = useMemo(() => timeline.range ? monthsInRange(timeline.range).map((index) => {
+    const { year, month } = monthParts(index);
+    return { index, year, monthIndex: month - 1, monthNumber: month };
+  }) : [], [timeline.range]);
   const monthBoundaries = useMemo(
     () => calendarMonthSpecs.map((month) => ({
       ...month,
@@ -878,8 +872,7 @@ const CalendrierPage = () => {
 
     return leadersByMonth;
   }, [giteOrderById, gites, monthBoundaries, occupationByMonthByGite]);
-  const schoolHolidayRangeFrom = `${year}-01-01`;
-  const schoolHolidayRangeTo = usesViewportScroll ? `${year + 1}-06-30` : `${year}-12-31`;
+  const schoolHolidays = useTimelineSchoolHolidays(timeline.range);
   const schoolHolidayDates = useMemo(() => buildSchoolHolidayDateSet(schoolHolidays), [schoolHolidays]);
 
   useEffect(() => {
@@ -937,26 +930,6 @@ const CalendrierPage = () => {
     });
   }, [hoveredReservation?.reservationId, mobileActionReservationId, reservationDetailsById, reservationDetailsLoadingById]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    apiFetch<SchoolHoliday[]>(
-      `/school-holidays?from=${encodeURIComponent(schoolHolidayRangeFrom)}&to=${encodeURIComponent(schoolHolidayRangeTo)}&zone=B`
-    )
-      .then((rows) => {
-        if (cancelled) return;
-        setSchoolHolidays(rows);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setSchoolHolidays([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [schoolHolidayRangeFrom, schoolHolidayRangeTo]);
-
   const calendarMonths = useMemo(
     () =>
       calendarMonthSpecs.map((month) =>
@@ -973,31 +946,19 @@ const CalendrierPage = () => {
     [calendarMonthSpecs, reservationsForGite, schoolHolidayDates, todayDate, todayIso]
   );
 
-  useEffect(() => {
-    setActiveMonthIndex((current) => Math.min(current, Math.max(0, calendarMonths.length - 1)));
-  }, [calendarMonths.length]);
-
-  const visibleMonth = calendarMonths[activeMonthIndex] ?? calendarMonths[0] ?? null;
-  const visibleYear = visibleMonth?.year ?? year;
-  const goToVisibleYear = useCallback((targetYear: number) => {
-    const targetMonthIndex = Math.max(0, (visibleMonth?.monthNumber ?? 1) - 1);
-    pendingScrollTargetRef.current = { kind: "month", value: targetMonthIndex };
-    setYear(targetYear);
-  }, [visibleMonth?.monthNumber]);
-  const changeVisibleYear = useCallback((offset: number) => {
-    goToVisibleYear(visibleYear + offset);
-  }, [goToVisibleYear, visibleYear]);
+  const calendarMonthsByKey = useMemo(() => new Map(calendarMonths.map((item) => [item.index, item])), [calendarMonths]);
+  const visibleMonth = calendarMonthsByKey.get(activeMonthIndex) ?? calendarMonthsByKey.get(locationMonth) ?? calendarMonths[0] ?? null;
+  const visibleYear = visibleMonth?.year ?? linkedYear;
+  const goToVisibleYear = (targetYear: number) => {
+    setHoveredReservation(null);
+    setSelectedDateRange(null);
+    closeMobileReservationActions();
+    void jumpTo({ kind: "month", value: monthKey(targetYear, visibleMonth?.monthNumber ?? 1) });
+  };
   const mobileYearOptions = useMemo(
-    () => Array.from({ length: 11 }, (_, index) => visibleYear - 5 + index),
+    () => Array.from({ length: 11 }, (_, index) => visibleYear - 5 + index).filter((value) => timelineMonthIsValid(monthKey(value, 1))),
     [visibleYear]
   );
-  const renderedMonthIndexes = useMemo(() => {
-    const indexes = new Set<number>();
-    for (let index = Math.max(0, activeMonthIndex - RENDERED_MONTH_RADIUS); index <= Math.min(calendarMonths.length - 1, activeMonthIndex + RENDERED_MONTH_RADIUS); index += 1) {
-      indexes.add(index);
-    }
-    return indexes;
-  }, [activeMonthIndex, calendarMonths.length]);
 
   const hoveredReservationDetails = useMemo(() => {
     if (!hoveredReservation) return null;
@@ -1005,9 +966,9 @@ const CalendrierPage = () => {
     if (!reservation) return null;
     return {
       reservation,
-      month: calendarMonths[hoveredReservation.monthIndex] ?? null,
+      month: calendarMonthsByKey.get(hoveredReservation.monthIndex) ?? null,
     };
-  }, [calendarMonths, hoveredReservation, reservationsForGite]);
+  }, [calendarMonthsByKey, hoveredReservation, reservationsForGite]);
 
   useEffect(() => {
     if (mobileActionReservationId && !mobileActionReservation) {
@@ -1080,30 +1041,27 @@ const CalendrierPage = () => {
         }
 
         return {
-          monthIndex: calendarMonths.findIndex((month) =>
-            month.year === parseIsoDate(nextStartIso).getUTCFullYear() &&
-            month.monthNumber === parseIsoDate(nextStartIso).getUTCMonth() + 1
-          ),
+          monthIndex: monthKeyForDate(parseIsoDate(nextStartIso)),
           startIso: nextStartIso,
           endIso: nextEndIso,
         };
       });
     },
-    [calendarMonths, isSelectableDateRange, selectableDateSetsByMonth]
+    [isSelectableDateRange, selectableDateSetsByMonth]
   );
 
   const buildCalendarBackHref = useCallback(
-    (monthNumber: number, targetYear = year) =>
+    (monthNumber: number, targetYear = visibleYear) =>
       buildCalendarReservationReturnHref({
         giteId: selectedGiteId,
         year: targetYear,
         month: monthNumber,
       }),
-    [selectedGiteId, year]
+    [selectedGiteId, visibleYear]
   );
 
   const openReservationInsertFromSelection = useCallback(
-    (monthNumber: number, targetYear = year) => {
+    (monthNumber: number, targetYear = visibleYear) => {
       if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return;
 
       const params = new URLSearchParams();
@@ -1115,11 +1073,11 @@ const CalendrierPage = () => {
       params.set("tab", selectedGiteId);
       navigate(`/reservations?${params.toString()}`);
     },
-    [navigate, selectedDateRange, selectedGiteId, selectedRangeNights, year]
+    [navigate, selectedDateRange, selectedGiteId, selectedRangeNights, visibleYear]
   );
 
   const openMobileReservationCreateFromSelection = useCallback(
-    (monthNumber: number, targetYear = year) => {
+    (monthNumber: number, targetYear = visibleYear) => {
       if (!selectedDateRange || !selectedGiteId || selectedRangeNights <= 0) return;
 
       navigate(
@@ -1190,7 +1148,7 @@ const CalendrierPage = () => {
   );
 
   const handleReservationInsertFromSelection = useCallback(
-    (monthNumber: number, targetYear = year) => {
+    (monthNumber: number, targetYear = visibleYear) => {
       if (usesViewportScroll) {
         openMobileReservationCreateFromSelection(monthNumber, targetYear);
         return;
@@ -1198,7 +1156,7 @@ const CalendrierPage = () => {
 
       openReservationInsertFromSelection(monthNumber, targetYear);
     },
-    [openMobileReservationCreateFromSelection, openReservationInsertFromSelection, usesViewportScroll, year]
+    [openMobileReservationCreateFromSelection, openReservationInsertFromSelection, usesViewportScroll, visibleYear]
   );
 
   const getScrollOffset = useCallback(
@@ -1213,12 +1171,6 @@ const CalendrierPage = () => {
     },
     [usesViewportScroll, viewportStickyOffsets.hero, viewportStickyOffsets.topbar, viewportStickyOffsets.weekdays]
   );
-
-  const getMonthSwitchLead = useCallback(() => {
-    const viewportHeight = usesViewportScroll ? window.innerHeight : boardScrollRef.current?.clientHeight ?? 0;
-    if (viewportHeight <= 0) return 0;
-    return clamp(Math.round(viewportHeight * MONTH_SWITCH_LEAD_RATIO), MONTH_SWITCH_LEAD_MIN, MONTH_SWITCH_LEAD_MAX);
-  }, [usesViewportScroll]);
 
   const scrollToMonth = useCallback((monthIndex: number, behavior: ScrollBehavior = "smooth") => {
     const target = monthSectionRefs.current[monthIndex];
@@ -1268,61 +1220,40 @@ const CalendrierPage = () => {
         });
       }
 
-      const date = parseIsoDate(isoDate);
-      const targetMonthIndex = calendarMonths.findIndex(
-        (month) => month.year === date.getUTCFullYear() && month.monthNumber === date.getUTCMonth() + 1
-      );
-      setActiveMonthIndex(targetMonthIndex >= 0 ? targetMonthIndex : date.getUTCMonth());
+      setActiveMonthIndex(monthKeyForDate(parseIsoDate(isoDate)));
       return true;
     },
-    [calendarMonths, getScrollOffset, usesViewportScroll]
+    [getScrollOffset, usesViewportScroll]
   );
 
   useEffect(() => {
-    if (loading || !calendarMonths.length) return;
-    if (pendingScrollTargetRef.current == null) return;
-
-    let frameId = 0;
-
-    const runPendingScroll = () => {
-      const target = pendingScrollTargetRef.current;
-      if (target == null) return;
-
-      const didScroll = target.kind === "date" ? scrollToDate(target.value, "auto") : scrollToMonth(target.value, "auto");
-
-      if (didScroll) {
-        pendingScrollTargetRef.current = null;
-        return;
+    if (loading || !calendarMonths.length || !pendingScrollTarget) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = pendingScrollTarget;
+      if (target.kind === "date") {
+        if (!scrollToDate(target.value, "instant")) scrollToMonth(monthKeyForDate(parseIsoDate(target.value)), "instant");
+      } else {
+        scrollToMonth(target.value, "instant");
       }
-
-      frameId = window.requestAnimationFrame(runPendingScroll);
-    };
-
-    frameId = window.requestAnimationFrame(runPendingScroll);
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [calendarMonths.length, loading, scrollToDate, scrollToMonth, year]);
+      setPendingScrollTarget(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [calendarMonths, loading, pendingScrollTarget, scrollToDate, scrollToMonth]);
 
   useEffect(() => {
     let frameId = 0;
 
     const updateVisibleMonth = () => {
-      const monthSwitchLead = getMonthSwitchLead();
-      const currentTop = usesViewportScroll
-        ? getViewportScrollTop() + getScrollOffset("month") + monthSwitchLead
-        : (() => {
-            const container = boardScrollRef.current;
-            if (!container) return 0;
-            return container.scrollTop + getScrollOffset("month") + monthSwitchLead;
-          })();
-      let nextActiveMonthIndex = 0;
+      const container = boardScrollRef.current;
+      if (pendingScrollTarget || !calendarMonths.length || !container) return;
+      const offset = getScrollOffset("month") + 2;
+      const currentTop = (usesViewportScroll ? getViewportScrollTop() : container.scrollTop) + offset;
+      let nextActiveMonthIndex = calendarMonths[0].index;
 
       for (const monthData of calendarMonths) {
         const section = monthSectionRefs.current[monthData.index];
         if (!section) continue;
-        const sectionTop = usesViewportScroll ? getViewportScrollTargetTop(section, 0) : section.offsetTop;
+        const sectionTop = usesViewportScroll ? getViewportScrollTargetTop(section, 0) : getContainerScrollTargetTop(container, section, 0);
         if (sectionTop <= currentTop) nextActiveMonthIndex = monthData.index;
         else break;
       }
@@ -1350,7 +1281,7 @@ const CalendrierPage = () => {
       window.removeEventListener("resize", handleScroll);
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [calendarMonths, getMonthSwitchLead, getScrollOffset, selectedGiteId, usesViewportScroll]);
+  }, [calendarMonths, getScrollOffset, pendingScrollTarget, selectedGiteId, usesViewportScroll]);
 
   useEffect(() => {
     if (usesViewportScroll || !hoveredReservation?.segmentKey) {
@@ -1439,11 +1370,12 @@ const CalendrierPage = () => {
     );
   }
 
-  if (error) {
+  if (!timeline.range && timeline.error) {
     return (
       <div className="card">
         <div className="section-title">Calendrier</div>
-        <p>{error}</p>
+        <p role="alert">{timeline.error}</p>
+        <button type="button" className="secondary" onClick={timeline.retry}>Réessayer</button>
       </div>
     );
   }
@@ -1470,14 +1402,12 @@ const CalendrierPage = () => {
         <div className="calendar-hero__header">
           {!usesViewportScroll ? (
             <label className="calendar-month-trigger">
-              <span>{MONTHS[activeMonthIndex].toLocaleLowerCase("fr-FR")}</span>
+              <span>{MONTHS[(visibleMonth?.monthNumber ?? 1) - 1].toLocaleLowerCase("fr-FR")}</span>
               <select
                 id="calendar-month-select"
-                value={activeMonthIndex + 1}
+                value={visibleMonth?.monthNumber ?? 1}
                 onChange={(event) => {
-                  const nextMonthIndex = Number(event.target.value) - 1;
-                  pendingScrollTargetRef.current = null;
-                  scrollToMonth(nextMonthIndex);
+                  void jumpTo({ kind: "month", value: monthKey(visibleYear, Number(event.target.value)) });
                 }}
                 aria-label="Sélection du mois"
               >
@@ -1526,15 +1456,7 @@ const CalendrierPage = () => {
                 type="button"
                 className="calendar-today-button"
                 onClick={() => {
-                  if (year === currentYear) {
-                    pendingScrollTargetRef.current = null;
-                    if (!scrollToDate(todayIso)) {
-                      scrollToMonth(currentMonthIndex);
-                    }
-                  } else {
-                    pendingScrollTargetRef.current = { kind: "date", value: todayIso };
-                    setYear(currentYear);
-                  }
+                  void jumpTo({ kind: "date", value: todayIso });
                   setHoveredReservation(null);
                 }}
               >
@@ -1547,7 +1469,7 @@ const CalendrierPage = () => {
                 type="button"
                 className="calendar-year-switch__button"
                 onClick={() => {
-                  changeVisibleYear(-1);
+                  goToVisibleYear(visibleYear - 1);
                 }}
                 aria-label="Année précédente"
               >
@@ -1571,7 +1493,7 @@ const CalendrierPage = () => {
                 type="button"
                 className="calendar-year-switch__button"
                 onClick={() => {
-                  changeVisibleYear(1);
+                  goToVisibleYear(visibleYear + 1);
                 }}
                 aria-label="Année suivante"
               >
@@ -1582,6 +1504,8 @@ const CalendrierPage = () => {
         </div>
       </section>
 
+      {error && <p className="note" role="alert">{error}</p>}
+      {timeline.error && <div className="note" role="alert">{timeline.error} <button type="button" className="secondary" onClick={timeline.retry}>Réessayer</button></div>}
       <div className="calendar-layout">
         <section className="card calendar-board">
           <div ref={boardScrollRef} className="calendar-board__scroll">
@@ -1596,15 +1520,17 @@ const CalendrierPage = () => {
               ))}
             </div>
 
-            <div className="calendar-months">
+            <div className="calendar-months" ref={monthListRef}>
+              {timeline.hasPrevious && <MonthTimelineEdge direction="previous" busy={timeline.busy} onLoad={() => timeline.extend(-1)} />}
               {calendarMonths.map((monthData) => {
-                const shouldRenderSegments = renderedMonthIndexes.has(monthData.index);
+                const shouldRenderSegments = Math.abs(monthData.index - activeMonthIndex) <= RENDERED_MONTH_RADIUS;
                 const selectedRangeForMonth = selectedDateRange;
                 const isSelectedGiteMonthLeader = topOccupationGiteIdByMonth.get(`${monthData.year}-${monthData.monthNumber}`) === selectedGiteId;
 
                 return (
                   <section
-                    key={`${monthData.year}-${monthData.monthNumber}`}
+                    key={monthData.index}
+                    data-timeline-month={monthData.index}
                     ref={(node) => {
                       monthSectionRefs.current[monthData.index] = node;
                     }}
@@ -1832,6 +1758,7 @@ const CalendrierPage = () => {
                   </section>
                 );
               })}
+              {timeline.hasNext && <MonthTimelineEdge direction="next" busy={timeline.busy} onLoad={() => timeline.extend(1)} />}
             </div>
           </div>
         </section>
@@ -1906,7 +1833,7 @@ const CalendrierPage = () => {
                     {formatEuro(
                       getReservationMonthlyAmountsForMonth(
                         hoveredReservationDetails.reservation,
-                        hoveredReservationDetails.month?.year ?? year,
+                        hoveredReservationDetails.month?.year ?? visibleYear,
                         (hoveredReservationDetails.month?.monthNumber ?? activeMonthIndex + 1)
                       ).total
                     )}
@@ -1986,7 +1913,7 @@ const CalendrierPage = () => {
                   {formatEuro(
                     getReservationMonthlyAmountsForMonth(
                       hoveredReservationDetails.reservation,
-                      hoveredReservationDetails.month?.year ?? year,
+                      hoveredReservationDetails.month?.year ?? visibleYear,
                       hoveredReservationDetails.month?.monthNumber ?? activeMonthIndex + 1
                     ).total
                   )}
@@ -2014,7 +1941,7 @@ const CalendrierPage = () => {
           giteName={selectedGite?.nom}
           total={getReservationMonthlyAmountsForMonth(
             mobileActionReservation,
-            visibleMonth?.year ?? year,
+            visibleYear,
             visibleMonth?.monthNumber ?? activeMonthIndex + 1
           ).total}
           onToggleSource={() => {
@@ -2025,7 +1952,7 @@ const CalendrierPage = () => {
           onEdit={() =>
             openMobileReservationEditPage(mobileActionReservation, {
               monthNumber: visibleMonth?.monthNumber ?? activeMonthIndex + 1,
-              year: visibleMonth?.year ?? year,
+              year: visibleYear,
             })
           }
           highlightedCard={
