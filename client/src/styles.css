@@ -15818,6 +15818,16 @@ button.personal-expenses-status:disabled {
   justify-content: flex-end;
 }
 
+.invoice-list__table-scroll {
+  overflow-x: auto;
+}
+
+.invoice-list__table .table-actions-cell {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .table-action {
   display: inline-flex;
   align-items: center;

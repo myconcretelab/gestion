@@ -391,7 +391,32 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   assert.doesNotMatch(await issuedRow.innerText(), /à compléter/);
   assert.equal(await issuedRow.getByRole("link", { name: "Modifier", exact: true }).count(), 0);
   assert.equal(await page.getByRole("row").filter({ hasText: "Client avec avoir" }).getByRole("link", { name: "Modifier", exact: true }).count(), 0);
-  await page.getByRole("row").filter({ hasText: "Client avec deux points" }).getByRole("link", { name: "Modifier", exact: true }).click();
+  const draftRow = page.getByRole("row").filter({ hasText: "Client avec deux points" });
+  const invoiceTable = page.getByRole("region", { name: "Tableau des factures" });
+  for (const width of [1440, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [row, count] of [[draftRow, 3], [issuedRow, 2]]) {
+      const positions = await row.locator(".table-actions > *").evaluateAll((actions) =>
+        actions.map((action) => {
+          const { left, right, top, height } = action.getBoundingClientRect();
+          return { left, right, center: top + height / 2 };
+        }),
+      );
+      assert.equal(positions.length, count);
+      for (const [index, action] of positions.entries()) {
+        assert.ok(Math.abs(action.center - positions[0].center) < 2, `Actions alignées à ${width} px`);
+        if (index) assert.ok(positions[index - 1].right < action.left);
+      }
+    }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  }
+  assert.ok(await invoiceTable.evaluate((table) => table.scrollWidth > table.clientWidth));
+  await issuedRow.getByRole("button", { name: /Actions pour la facture/ }).click();
+  await page.getByRole("menuitem", { name: "Envoyer par email" }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("menu").waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await draftRow.getByRole("link", { name: "Modifier", exact: true }).click();
   await page.waitForURL("**/factures/draft-1/edition");
   await page.waitForFunction(() => document.querySelector("#invoice-buyer-name")?.value === "Client de test");
 

@@ -343,105 +343,107 @@ const FacturesListPage = () => {
             </span>
           </Link>
         </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Document</th>
-              <th>Dates</th>
-              <th>Gîte</th>
-              <th>Client</th>
-              <th>Total</th>
-              <th>Envoyée le</th>
-              <th>Réglée</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {factures.map((facture) => {
-              const totalMontant =
-                Number(facture.solde_montant ?? 0) +
-                Number(facture.arrhes_montant ?? 0);
-              const remaining = facture.lifecycle_status === "draft" ? facture.fiscal_issues?.length : undefined;
-              const editable = facture.lifecycle_status === "draft" && facture.document_kind !== "credit_note";
-              return (
-                <tr key={facture.id}>
-                  <td>
-                    <Link to={`/factures/${facture.id}`}>{invoiceDisplayNumber(facture)}</Link>
-                    <br />
-                    {facture.document_kind === "credit_note" ? "Avoir · " : ""}
-                    {invoiceLifecycleLabel(facture)}
-                    {remaining !== undefined && (
-                      <div className="field-hint">
-                        {remaining === 0
-                          ? "Aucun point fiscal à compléter"
-                          : `${remaining} point${remaining > 1 ? "s" : ""} à compléter`}
+        <div className="invoice-list__table-scroll" role="region" aria-label="Tableau des factures" tabIndex={0}>
+          <table className="table invoice-list__table">
+            <thead>
+              <tr>
+                <th>Document</th>
+                <th>Dates</th>
+                <th>Gîte</th>
+                <th>Client</th>
+                <th>Total</th>
+                <th>Envoyée le</th>
+                <th>Réglée</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {factures.map((facture) => {
+                const totalMontant =
+                  Number(facture.solde_montant ?? 0) +
+                  Number(facture.arrhes_montant ?? 0);
+                const remaining = facture.lifecycle_status === "draft" ? facture.fiscal_issues?.length : undefined;
+                const editable = facture.lifecycle_status === "draft" && facture.document_kind !== "credit_note";
+                return (
+                  <tr key={facture.id}>
+                    <td>
+                      <Link to={`/factures/${facture.id}`}>{invoiceDisplayNumber(facture)}</Link>
+                      <br />
+                      {facture.document_kind === "credit_note" ? "Avoir · " : ""}
+                      {invoiceLifecycleLabel(facture)}
+                      {remaining !== undefined && (
+                        <div className="field-hint">
+                          {remaining === 0
+                            ? "Aucun point fiscal à compléter"
+                            : `${remaining} point${remaining > 1 ? "s" : ""} à compléter`}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {facture.reservation_items?.length >= 2
+                        ? `${facture.reservation_items.length} réservations`
+                        : <>{formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}</>}
+                    </td>
+                    <td>
+                      {facture.reservation_items?.length >= 2
+                        ? `${new Set(facture.reservation_items.map((item) => item.gite_id)).size} gîtes`
+                        : facture.gite?.nom ?? ""}
+                    </td>
+                    <td>{facture.locataire_nom}</td>
+                    <td>{formatEuro(totalMontant)}</td>
+                    <td>
+                      {facture.date_envoi_email
+                        ? formatDate(facture.date_envoi_email)
+                        : "—"}
+                    </td>
+                    <td>
+                      <div className="switch-group switch-group--table">
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={facture.statut_paiement === "reglee"}
+                            disabled={Boolean(statusUpdating[facture.id])}
+                            onChange={() => togglePayment(facture)}
+                          />
+                          <span className="slider" />
+                        </label>
+                        <span>
+                          {facture.statut_paiement === "reglee" ? "Oui" : "Non"}
+                        </span>
                       </div>
-                    )}
-                  </td>
-                  <td>
-                    {facture.reservation_items?.length >= 2
-                      ? `${facture.reservation_items.length} réservations`
-                      : <>{formatDate(facture.date_debut)} - {formatDate(facture.date_fin)}</>}
-                  </td>
-                  <td>
-                    {facture.reservation_items?.length >= 2
-                      ? `${new Set(facture.reservation_items.map((item) => item.gite_id)).size} gîtes`
-                      : facture.gite?.nom ?? ""}
-                  </td>
-                  <td>{facture.locataire_nom}</td>
-                  <td>{formatEuro(totalMontant)}</td>
-                  <td>
-                    {facture.date_envoi_email
-                      ? formatDate(facture.date_envoi_email)
-                      : "—"}
-                  </td>
-                  <td>
-                    <div className="switch-group switch-group--table">
-                      <label className="switch">
-                        <input
-                          type="checkbox"
-                          checked={facture.statut_paiement === "reglee"}
-                          disabled={Boolean(statusUpdating[facture.id])}
-                          onChange={() => togglePayment(facture)}
-                        />
-                        <span className="slider" />
-                      </label>
-                      <span>
-                        {facture.statut_paiement === "reglee" ? "Oui" : "Non"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="table-actions-cell">
-                    <div className="table-actions table-actions--menu">
-                      {editable && (
+                    </td>
+                    <td className="table-actions-cell">
+                      <div className="table-actions">
+                        {editable && (
+                          <Link
+                            className="table-action table-action--neutral"
+                            to={`/factures/${facture.id}/edition`}
+                          >
+                            Modifier
+                          </Link>
+                        )}
                         <Link
                           className="table-action table-action--neutral"
-                          to={`/factures/${facture.id}/edition`}
+                          to={`/factures/${facture.id}`}
                         >
-                          Modifier
+                          Détails
                         </Link>
-                      )}
-                      <Link
-                        className="table-action table-action--neutral"
-                        to={`/factures/${facture.id}`}
-                      >
-                        Détails
-                      </Link>
-                      <ActionMenu
-                        ariaLabel={`Actions pour la facture ${invoiceDisplayNumber(facture)}`}
-                        context={invoiceDisplayNumber(facture)}
-                        items={[
-                          { id: "email", label: emailSending[facture.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(facture); }, disabled: facture.lifecycle_status === "draft" || !facture.locataire_email || Boolean(emailSending[facture.id]), description: facture.lifecycle_status === "draft" ? "Validez le brouillon avant envoi" : !facture.locataire_email ? "Email du client non renseigné" : undefined },
-                          ...(facture.lifecycle_status === "draft" ? [{ id: "delete", label: "Supprimer le brouillon", icon: "trash", danger: true, separatorBefore: true, onSelect: () => { void remove(facture); }, disabled: deletingId === facture.id } satisfies ActionMenuItem] : []),
-                        ]}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                        <ActionMenu
+                          ariaLabel={`Actions pour la facture ${invoiceDisplayNumber(facture)}`}
+                          context={invoiceDisplayNumber(facture)}
+                          items={[
+                            { id: "email", label: emailSending[facture.id] ? "Envoi en cours…" : "Envoyer par email", icon: "email", onSelect: () => { void openEmailComposer(facture); }, disabled: facture.lifecycle_status === "draft" || !facture.locataire_email || Boolean(emailSending[facture.id]), description: facture.lifecycle_status === "draft" ? "Validez le brouillon avant envoi" : !facture.locataire_email ? "Email du client non renseigné" : undefined },
+                            ...(facture.lifecycle_status === "draft" ? [{ id: "delete", label: "Supprimer le brouillon", icon: "trash", danger: true, separatorBefore: true, onSelect: () => { void remove(facture); }, disabled: deletingId === facture.id } satisfies ActionMenuItem] : []),
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
