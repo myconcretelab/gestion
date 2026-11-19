@@ -11,6 +11,7 @@ type SyncReservationFromDocumentParams = {
   existingReservationId?: string | null;
   giteId: string;
   locataireNom: string;
+  locataireAdresse?: string;
   locataireTel: string;
   locataireEmail?: string | null;
   dateDebut: Date;
@@ -200,6 +201,7 @@ export const syncReservationFromDocument = async (params: SyncReservationFromDoc
     data: {
       ...buildReservationOriginData({ originSystem: "app", exportToIcal: true }),
       ...reservationData,
+      adresse: params.locataireAdresse?.trim() || null,
       booking_source: "Direct",
       source_paiement: "Direct",
       commentaire: null,

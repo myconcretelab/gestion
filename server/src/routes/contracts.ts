@@ -145,6 +145,7 @@ const reservationPaymentSourceValues = [
   "Gites de France",
 ] as const;
 const LATE_CHECKOUT_DEPARTURE_TIME = "17:00";
+const reservationContactSelect = { adresse: true, email: true, telephone: true } as const;
 
 const returnProcessingSchema = z.object({
   nb_adultes: z.number().int().min(0).optional(),
@@ -161,6 +162,11 @@ const returnProcessingSchema = z.object({
       booking_source: z.enum(BOOKING_SOURCES).optional(),
       source_paiement: z.preprocess(emptyStringToNull, z.enum(reservationPaymentSourceValues).nullable()).optional(),
       options: optionsSchema.optional(),
+      contact: z.object({
+        adresse: z.string().trim().max(500).optional(),
+        email: z.preprocess(emptyStringToNull, z.string().email().max(254).nullable()).optional(),
+        telephone: z.preprocess(emptyStringToNull, z.string().max(100).nullable()).optional(),
+      }).optional(),
     })
     .optional(),
 });
@@ -708,7 +714,16 @@ router.get("/:id", async (req, res, next) => {
       include: { gite: true },
     });
     if (!contrat) return res.status(404).json({ error: "Contrat introuvable" });
-    res.json({ ...hydrateContract(contrat), payments_managed: await isManagedReservation(contrat.reservation_id) });
+    const reservation = contrat.reservation_id ? await prisma.reservation.findUnique({
+      where: { id: contrat.reservation_id },
+      select: { ...reservationContactSelect, payments_managed: true },
+    }) : null;
+    const { payments_managed = false, ...contact } = reservation ?? {};
+    res.json({
+      ...hydrateContract(contrat),
+      payments_managed,
+      reservation_contact: reservation ? contact : null,
+    });
   } catch (err) {
     next(err);
   }
@@ -800,6 +815,7 @@ router.post("/", async (req, res, next) => {
       explicitReservationId: data.reservation_id ?? null,
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
+      locataireAdresse: data.locataire_adresse,
       locataireTel: data.locataire_tel,
       locataireEmail: data.locataire_email ?? null,
       dateDebut,
@@ -949,6 +965,7 @@ router.put("/:id", async (req, res, next) => {
       existingReservationId: existing.reservation_id ?? null,
       giteId: data.gite_id,
       locataireNom: data.locataire_nom,
+      locataireAdresse: data.locataire_adresse,
       locataireTel: data.locataire_tel,
       locataireEmail: data.locataire_email ?? null,
       dateDebut,
@@ -1172,6 +1189,11 @@ router.patch("/:id/return-processing", async (req, res, next) => {
       include: { gite: true },
     });
     if (!existing) return res.status(404).json({ error: "Contrat introuvable" });
+    const contact = data.reservation?.contact;
+    const contactChanged = contact && Object.keys(contact).length > 0;
+    if (contactChanged && !existing.reservation_id) {
+      return res.status(409).json({ error: "Liez une réservation avant d’enregistrer les coordonnées du locataire." });
+    }
 
     if ((data.statut_paiement_arrhes !== undefined && data.statut_paiement_arrhes !== existing.statut_paiement_arrhes) ||
       (data.mode_paiement_arrhes !== undefined && data.mode_paiement_arrhes !== existing.mode_paiement_arrhes) ||
@@ -1226,7 +1248,13 @@ router.patch("/:id/return-processing", async (req, res, next) => {
           throw new Error("Réservation liée introuvable.");
         }
 
-        const reservationUpdate: Record<string, unknown> = {};
+        const reservationUpdate: Record<string, unknown> = reservation.stay_group_id ? {} : { ...contact };
+        if (reservation.stay_group_id && contactChanged) {
+          await tx.reservation.updateMany({
+            where: { stay_group_id: reservation.stay_group_id },
+            data: contact,
+          });
+        }
         const nextReservationAdults = data.nb_adultes ?? reservation.nb_adultes;
         if (data.nb_adultes !== undefined) {
           reservationUpdate.nb_adultes = nextReservationAdults;
@@ -1394,6 +1422,7 @@ router.post("/:id/create-linked-reservation", async (req, res, next) => {
     const reservationId = await syncReservationFromDocument({
       giteId: existing.gite_id,
       locataireNom: existing.locataire_nom,
+      locataireAdresse: existing.locataire_adresse,
       locataireTel: existing.locataire_tel,
       locataireEmail: existing.locataire_email ?? null,
       dateDebut: existing.date_debut,

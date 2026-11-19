@@ -59,7 +59,7 @@ export const buildReservationDocumentPrefill = (reservation: Reservation): Reser
     linkedReservationId: reservation.id,
     giteId: reservation.gite_id,
     locataireNom: reservation.hote_nom,
-    locataireAdresse: "",
+    locataireAdresse: reservation.adresse ?? "",
     locataireTel: reservation.telephone ?? "",
     locataireEmail: reservation.email ?? "",
     nbAdultes: Math.max(0, reservation.nb_adultes ?? 1),

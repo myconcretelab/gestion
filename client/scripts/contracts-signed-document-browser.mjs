@@ -59,6 +59,23 @@ const originalContract = {
   gite: { id: "g1", nom: "La Libellule", prefixe_contrat: "LIB" },
 };
 let contract = structuredClone(originalContract);
+let linkedReservation = {
+  id: "reservation-a",
+  gite_id: "g1",
+  hote_nom: originalContract.locataire_nom,
+  adresse: null,
+  email: "camille@example.com",
+  telephone: null,
+  booking_source: "Direct",
+  payments_managed: true,
+  date_entree: originalContract.date_debut,
+  date_sortie: originalContract.date_fin,
+  nb_nuits: originalContract.nb_nuits,
+  nb_adultes: originalContract.nb_adultes,
+  nb_enfants_2_17: originalContract.nb_enfants_2_17,
+  prix_par_nuit: originalContract.prix_par_nuit,
+  options: {},
+};
 let failUpload = false;
 let uploads = 0;
 const returnUpdates = [];
@@ -86,7 +103,7 @@ try {
           id: "test",
           status: "custom",
           displayName: "Compte de test",
-          pageAccess: ["contracts"],
+          pageAccess: ["contracts", "invoices"],
           permissions: { isOwner: false, canWrite: true, canViewAmounts: true },
         },
       };
@@ -106,7 +123,7 @@ try {
         },
         modules: {
           contracts: true,
-          invoices: false,
+          invoices: true,
           reservations: false,
           ical: false,
           pump_airbnb: false,
@@ -117,7 +134,18 @@ try {
     } else if (pathname === "/api/contracts") {
       body = [contract];
     } else if (pathname === "/api/contracts/contract-a") {
-      body = contract;
+      const { adresse, email, telephone } = linkedReservation;
+      body = { ...contract, reservation_contact: contract.reservation_id ? { adresse, email, telephone } : null };
+    } else if (["/api/reservations/reservation-a", "/api/reservations/prefill/reservation-a"].includes(pathname)) {
+      body = linkedReservation;
+    } else if (pathname === "/api/reservations/invoice-options") {
+      body = [linkedReservation];
+    } else if (pathname === "/api/invoices") {
+      body = [];
+    } else if (pathname === "/api/invoices/fiscal-preview") {
+      body = { fiscal_input: { lines: [], tourist_taxes: [] }, validation_options: {} };
+    } else if (pathname === "/api/settings/tourist-tax-collection/defaults") {
+      body = { rules: [], sources: [] };
     } else if (
       pathname === "/api/contracts/contract-a/return-processing" &&
       method === "PATCH"
@@ -125,6 +153,7 @@ try {
       const input = request.postDataJSON();
       returnUpdates.push(input);
       const { reservation, ...tracking } = input;
+      linkedReservation = { ...linkedReservation, ...reservation?.contact };
       contract = { ...contract, ...tracking };
       body = contract;
     } else if (
@@ -387,10 +416,61 @@ try {
   await dialog.waitFor({ state: "hidden" });
   assert.equal(returnUpdates.length, 1);
   assert.equal(contract.statut_reception_contrat, "recu");
+  assert.equal(returnUpdates[0].reservation.contact, undefined);
+
+  contract = { ...originalContract, statut_reception_contrat: "non_recu" };
+  await page.goto(`${origin}/contrats`);
+  await page.getByRole("button", { name: "Traiter le retour", exact: true }).click();
+  const contactSummary = dialog.getByText("Coordonnées du locataire", { exact: true });
+  const address = dialog.getByLabel("Adresse postale");
+  const email = dialog.getByLabel("Adresse e-mail");
+  const phone = dialog.getByLabel("Téléphone");
+  const saveReturn = dialog.getByRole("button", { name: "Enregistrer", exact: true });
+  await contactSummary.waitFor();
+  assert.equal(await address.isVisible(), false);
+  await contactSummary.focus();
+  await contactSummary.press("Enter");
+  assert.equal(await address.inputValue(), originalContract.locataire_adresse);
+  assert.equal(await email.inputValue(), "camille@example.com");
+  await email.fill("invalide");
+  await contactSummary.click();
+  await saveReturn.click();
+  await email.waitFor();
+  assert.equal(returnUpdates.length, 1);
+  await email.fill("nouvelle.adresse@example.com");
+  await address.fill("12 rue des Lilas\n35000 Rennes");
+  await phone.fill("+33 6 12 34 56 78");
+  await page.screenshot({ path: path.join(screenshots, "coordonnees-locataire.png") });
+  await saveReturn.click();
+  await dialog.waitFor({ state: "hidden" });
+  const savedContact = {
+    adresse: "12 rue des Lilas\n35000 Rennes",
+    email: "nouvelle.adresse@example.com",
+    telephone: "+33 6 12 34 56 78",
+  };
+  assert.deepEqual(returnUpdates[1].reservation.contact, savedContact);
+  assert.equal(contract.locataire_adresse, originalContract.locataire_adresse);
+
+  await page.getByRole("button", { name: "Traiter le retour", exact: true }).click();
+  await contactSummary.click();
+  assert.equal(await address.inputValue(), savedContact.adresse);
+  assert.equal(await email.inputValue(), savedContact.email);
+  assert.equal(await phone.inputValue(), savedContact.telephone);
+  await saveReturn.click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(returnUpdates[2].reservation.contact, undefined);
+
+  for (const source of ["fromContractId=contract-a", "fromReservationId=reservation-a"]) {
+    await page.goto(`${origin}/factures/nouvelle?${source}`);
+    await page.getByText(/Facture préremplie depuis/).waitFor();
+    assert.equal(await page.locator("#buyer-address").inputValue(), "12 rue des Lilas 35000 Rennes");
+    assert.equal(await page.locator("#invoice-buyer-phone").inputValue(), savedContact.telephone);
+    assert.equal(await page.locator("#invoice-buyer-email").inputValue(), savedContact.email);
+  }
   assert.deepEqual(unexpectedRequests, []);
   assert.deepEqual(errors, []);
   console.log(
-    `Contrat signé : ajout après validation, menu, formats, limite, erreur/reprise, persistance, consultation, remplacement et mobile validés. Captures : ${screenshots}`,
+    `Contrat signé, coordonnées du locataire et préremplissage de facture validés. Captures : ${screenshots}`,
   );
 } catch (error) {
   const page = browser?.contexts()[0]?.pages()[0];

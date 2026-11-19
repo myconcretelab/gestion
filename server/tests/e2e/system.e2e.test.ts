@@ -28,6 +28,7 @@ test("le service expose une santé exploitable sans fuite d'information", async 
 
   for (const documentPdfPath of [
     "/api/contracts/not-a-real-contract/pdf",
+    "/api/contracts/not-a-real-contract/signed-document",
     "/api/invoices/not-a-real-invoice/pdf",
   ]) {
     const documentPdf = await api.get(documentPdfPath);

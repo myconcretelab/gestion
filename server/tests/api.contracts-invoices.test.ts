@@ -424,6 +424,79 @@ test("API handlers calculent le solde correct sur create/update contrat/facture"
   }
 });
 
+test("le retour enregistre les coordonnées du séjour et conserve celles du contrat envoyé", async () => {
+  const { default: prisma } = await import("../src/db/prisma.ts");
+  const { default: router } = await import("../src/routes/contracts.ts");
+  const gite = await prisma.gite.create({ data: {
+    nom: "Gîte de test", prefixe_contrat: "TEST", adresse_ligne1: "",
+    capacite_max: 4, nb_adultes_max: 4, proprietaires_noms: "",
+    proprietaires_adresse: "", telephones: "", taxe_sejour_par_personne_par_nuit: 0,
+    iban: "", titulaire: "",
+  } });
+  const stayGroupId = crypto.randomUUID();
+  const start = new Date("2027-01-15T00:00:00Z");
+  const end = new Date("2027-01-16T00:00:00Z");
+  const originalContact = {
+    locataire_adresse: "10 rue des Lilas",
+    locataire_tel: "0600000000",
+    locataire_email: "ancienne@example.com",
+  };
+
+  try {
+    const reservationData = {
+      gite_id: gite.id, stay_group_id: stayGroupId, hote_nom: "Camille Martin",
+      telephone: originalContact.locataire_tel, email: originalContact.locataire_email,
+      nb_nuits: 1, nb_adultes: 2, prix_par_nuit: 100, prix_total: 100,
+    };
+    const reservation = await prisma.reservation.create({
+      data: { ...reservationData, date_entree: start, date_sortie: end },
+    });
+    await prisma.reservation.create({
+      data: { ...reservationData, date_entree: end, date_sortie: new Date("2027-01-17T00:00:00Z") },
+    });
+    const contract = await prisma.contrat.create({ data: {
+      numero_contrat: `TEST-${stayGroupId}`, gite_id: gite.id, reservation_id: reservation.id,
+      locataire_nom: reservation.hote_nom, ...originalContact, nb_adultes: 2, nb_enfants_2_17: 0,
+      date_debut: start, date_fin: end, heure_arrivee: "17:00", heure_depart: "12:00",
+      nb_nuits: 1, prix_par_nuit: 100, arrhes_montant: 20, arrhes_date_limite: start,
+      solde_montant: 80, caution_montant: 0, cheque_menage_montant: 0, options: "{}", clauses: "{}",
+      pdf_path: "brouillon.pdf", pdf_sent_path: "contrat-envoye.pdf", snapshot_json: "{}",
+    } });
+    const patchReturn = getRouteHandler(router, "patch", "/:id/return-processing");
+    const getContract = getRouteHandler(router, "get", "/:id");
+    const response = createMockResponse();
+    const next = (error?: unknown) => { if (error) throw error; };
+    const params = { id: contract.id };
+    const address = "12 rue des Lilas\n35000 Rennes";
+    await patchReturn({ params, body: {
+      reservation: { contact: { adresse: ` ${address} `, email: " " } },
+    } }, response, next);
+    assert.equal(response.statusCode, 200);
+
+    const expectedContact = { adresse: address, telephone: originalContact.locataire_tel, email: null };
+    const reservations = await prisma.reservation.findMany({
+      where: { stay_group_id: stayGroupId },
+      select: { adresse: true, telephone: true, email: true },
+    });
+    assert.deepEqual(reservations, [expectedContact, expectedContact]);
+
+    const contractResponse = createMockResponse();
+    await getContract({ params }, contractResponse, next);
+    assert.equal(contractResponse.statusCode, 200);
+    const stored = contractResponse.body as typeof contract & { reservation_contact: typeof expectedContact };
+    assert.deepEqual(stored.reservation_contact, expectedContact);
+    assert.equal(stored.locataire_adresse, originalContact.locataire_adresse);
+    assert.equal(stored.locataire_email, originalContact.locataire_email);
+    assert.equal(stored.locataire_tel, originalContact.locataire_tel);
+    assert.equal(stored.pdf_sent_path, contract.pdf_sent_path);
+    assert.equal(stored.snapshot_json, contract.snapshot_json);
+  } finally {
+    await prisma.contrat.deleteMany({ where: { gite_id: gite.id } });
+    await prisma.reservation.deleteMany({ where: { stay_group_id: stayGroupId } });
+    await prisma.gite.delete({ where: { id: gite.id } });
+  }
+});
+
 test("API contrats initialise la date et le mode quand les arrhes sont deja recues a la creation", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "contrats-arrhes-recu-test-"));
   const envBackup = {

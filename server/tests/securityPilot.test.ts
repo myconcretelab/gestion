@@ -111,9 +111,11 @@ test("un PDF privé, la liste de comptes et les API hors rôle sont refusés", a
     assert.ok(address && typeof address === "object");
     const origin = `http://127.0.0.1:${address.port}`;
 
-    const pdf = await fetch(`${origin}/api/contracts/private-id/pdf`);
-    assert.equal(pdf.status, 401);
-    assert.equal(pdf.headers.get("cache-control"), null);
+    for (const path of ["pdf", "signed-document"]) {
+      const pdf = await fetch(`${origin}/api/contracts/private-id/${path}`);
+      assert.equal(pdf.status, 401);
+      assert.equal(pdf.headers.get("cache-control"), null);
+    }
 
     const users = await fetch(`${origin}/api/auth/users`);
     assert.equal(users.status, 404);

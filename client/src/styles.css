@@ -16362,6 +16362,33 @@ button.personal-expenses-status:disabled {
   font-size: 0.84rem;
 }
 
+.contract-return-drawer__contact {
+  display: block;
+}
+
+.contract-return-drawer__contact > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.contract-return-drawer__contact > summary:hover,
+.contract-return-drawer__contact > summary:focus-visible {
+  color: var(--primary-strong);
+}
+
+.contract-return-drawer__contact > .contract-return-drawer__grid {
+  margin-top: 16px;
+}
+
+.contract-return-drawer__contact-address {
+  grid-column: 1 / -1;
+}
+
+.contract-return-drawer__contact-address textarea {
+  font-family: inherit;
+  resize: vertical;
+}
+
 .contract-return-drawer__empty-state {
   display: grid;
   gap: 10px;

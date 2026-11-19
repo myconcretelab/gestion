@@ -39,6 +39,12 @@ const SIGNED_DOCUMENT_ALLOWED_EXTENSIONS = new Map<string, string>([
 
 const todayInputValue = () => new Date().toISOString().slice(0, 10);
 
+const getReservationContact = (reservation: Reservation, contract: Contrat) => ({
+  adresse: reservation.adresse ?? contract.locataire_adresse,
+  email: reservation.email ?? "",
+  telephone: reservation.telephone ?? "",
+});
+
 const formatFileSize = (size: number) => {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} Ko`;
   return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
@@ -85,7 +91,10 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
   const documentOnly = mode === "signed-document";
   const titleId = useId();
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  const contactDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  const contactEmailRef = useRef<HTMLInputElement | null>(null);
   const [reservation, setReservation] = useState<Reservation | null>(null);
+  const [contact, setContact] = useState({ adresse: "", email: "", telephone: "" });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [linkingReservation, setLinkingReservation] = useState(false);
@@ -169,6 +178,7 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
       .then((data) => {
         if (!active) return;
         setReservation(data);
+        setContact(getReservationContact(data, contract));
         setReservationPaymentSource(getBookingSource(data));
         setOptions(mergeReservationOptions(data.options ?? contract.options));
       })
@@ -247,6 +257,20 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
 
   const submit = async () => {
     if (!contract || (documentOnly && !pendingSignedDocument)) return;
+    const initialContact = reservation ? getReservationContact(reservation, contract) : null;
+    const contactChanges: Partial<typeof contact> = {};
+    if (!documentOnly && initialContact) {
+      for (const field of ["adresse", "email", "telephone"] as const) {
+        if (contact[field].trim() !== initialContact[field].trim()) {
+          contactChanges[field] = contact[field].trim();
+        }
+      }
+    }
+    if (contactChanges.email !== undefined && contactEmailRef.current?.validity.typeMismatch) {
+      if (contactDetailsRef.current) contactDetailsRef.current.open = true;
+      contactEmailRef.current.reportValidity();
+      return;
+    }
     setSaving(true);
     try {
       let updated = contract;
@@ -267,6 +291,7 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
             reservation: {
               booking_source: reservationPaymentSource || undefined,
               options,
+              contact: Object.keys(contactChanges).length ? contactChanges : undefined,
             },
           },
         });
@@ -468,6 +493,48 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
             </div>
           </section>
 
+          {reservation ? (
+            <details key={contract.id} ref={contactDetailsRef} className="contract-return-drawer__section contract-return-drawer__contact">
+              <summary>Coordonnées du locataire</summary>
+              <div className="contract-return-drawer__grid">
+                <label className="field contract-return-drawer__contact-address">
+                  Adresse postale
+                  <textarea
+                    value={contact.adresse}
+                    autoComplete="street-address"
+                    rows={2}
+                    maxLength={500}
+                    disabled={saving}
+                    onChange={(event) => setContact({ ...contact, adresse: event.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  Adresse e-mail
+                  <input
+                    ref={contactEmailRef}
+                    type="email"
+                    autoComplete="email"
+                    value={contact.email}
+                    maxLength={254}
+                    disabled={saving}
+                    onChange={(event) => setContact({ ...contact, email: event.target.value })}
+                  />
+                </label>
+                <label className="field">
+                  Téléphone
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={contact.telephone}
+                    maxLength={100}
+                    disabled={saving}
+                    onChange={(event) => setContact({ ...contact, telephone: event.target.value })}
+                  />
+                </label>
+              </div>
+            </details>
+          ) : null}
+
           <section className="contract-return-drawer__section">
             <div className="contract-return-drawer__section-head">
               <strong>Réservation actuelle</strong>
@@ -537,7 +604,7 @@ const ContractReturnDrawer = ({ open, contract, mode = "return", onClose, onUpda
               </>
             ) : (
               <div className="contract-return-drawer__empty-state">
-                <p>Aucune réservation liée pour ce contrat.</p>
+                <p>Liez une réservation pour renseigner les coordonnées du locataire.</p>
                 <button
                   type="button"
                   className="table-action table-action--neutral contract-return-drawer__link-btn"

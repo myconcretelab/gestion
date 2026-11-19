@@ -96,6 +96,7 @@ const FactureFormPage = () => {
   const [giteId, setGiteId] = useState("");
   const [locataireNom, setLocataireNom] = useState("");
   const [locataireAdresse, setLocataireAdresse] = useState("");
+  const prefilledAddressRef = useRef("");
   const [locataireTel, setLocataireTel] = useState("");
   const [locataireEmail, setLocataireEmail] = useState("");
   const [nbAdultes, setNbAdultes] = useState(1);
@@ -209,6 +210,7 @@ const FactureFormPage = () => {
     setGiteId(prefill.giteId);
     if (ids.length === 1 || !locataireNom.trim()) {
       setLocataireNom(prefill.locataireNom);
+      setLocataireAdresse(prefill.locataireAdresse);
       setLocataireTel(prefill.locataireTel);
       setLocataireEmail(prefill.locataireEmail);
     }
@@ -323,9 +325,10 @@ const FactureFormPage = () => {
         setPrefilledContractGiteId(data.gite_id);
         setGiteId(data.gite_id);
         setLocataireNom(data.locataire_nom);
-        setLocataireAdresse(data.locataire_adresse);
-        setLocataireTel(data.locataire_tel);
-        setLocataireEmail(data.locataire_email ?? "");
+        const contact = data.reservation_contact;
+        setLocataireAdresse(contact?.adresse ?? data.locataire_adresse);
+        setLocataireTel(contact ? contact.telephone ?? "" : data.locataire_tel);
+        setLocataireEmail(contact ? contact.email ?? "" : data.locataire_email ?? "");
         setNbAdultes(data.nb_adultes);
         setNbEnfants(data.nb_enfants_2_17);
         setDateDebut(toDateInputValue(data.date_debut));
@@ -373,6 +376,7 @@ const FactureFormPage = () => {
     setLoadingFromReservation(false);
     setLinkedReservationId(null);
     setSelectedReservationIds([]);
+    setLocataireAdresse("");
     setLocataireEmail("");
     setFraisSupplementaires([]);
   }, [isEdit, fromContractId, fromReservationId]);
@@ -648,8 +652,14 @@ const FactureFormPage = () => {
   ]);
 
   useEffect(() => {
-    if (!locataireAdresse) return;
-    setFiscalInput((previous) => previous.buyer.address_line1 ? previous : { ...previous, buyer: { ...previous.buyer, address_line1: locataireAdresse } });
+    const previousAddress = prefilledAddressRef.current;
+    const address = locataireAdresse.replace(/[\r\n]+/g, " ").trim();
+    prefilledAddressRef.current = address;
+    setFiscalInput((previous) => {
+      const currentAddress = previous.buyer.address_line1;
+      if (currentAddress === address || (currentAddress && currentAddress !== previousAddress)) return previous;
+      return { ...previous, buyer: { ...previous.buyer, address_line1: address } };
+    });
   }, [locataireAdresse]);
 
   const pricingContextKey = JSON.stringify({ split_invoice_id: splitInvoiceId, gite_id: giteId, date_debut: dateDebut, date_fin: dateFin, prix_par_nuit: prixParNuit,

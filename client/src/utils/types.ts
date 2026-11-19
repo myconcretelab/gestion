@@ -374,6 +374,7 @@ export type Reservation = {
   export_to_ical?: boolean;
   airbnb_url?: string | null;
   hote_nom: string;
+  adresse?: string | null;
   telephone?: string | null;
   email?: string | null;
   date_entree: string;
@@ -562,6 +563,7 @@ export type InvoiceExtraFee = {
 
 export type Contrat = {
   payments_managed?: boolean;
+  reservation_contact?: Pick<Reservation, "adresse" | "email" | "telephone"> | null;
   id: string;
   numero_contrat: string;
   gite_id: string;

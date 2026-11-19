@@ -95,10 +95,12 @@ export const createApp = () => {
   if (env.TRUST_PROXY) app.set("trust proxy", 1);
 
   app.use((req, res, next) => {
-    // Document previews are same-origin iframes. Keep every other response
-    // non-embeddable, while allowing these PDFs to render inside their detail pages.
+    // Document previews use same-origin iframes.
     const isDocumentPdfPreview =
-      req.method === "GET" && /^\/api\/(?:contracts|invoices)\/[^/]+\/pdf$/.test(req.path);
+      req.method === "GET" && (
+        /^\/api\/(?:contracts|invoices)\/[^/]+\/pdf$/.test(req.path) ||
+        /^\/api\/contracts\/[^/]+\/signed-document$/.test(req.path)
+      );
     const frameAncestors = isDocumentPdfPreview ? "'self'" : "'none'";
     const requestId = String(req.headers["x-request-id"] ?? "").trim().slice(0, 128) || crypto.randomUUID();
     res.setHeader("X-Request-Id", requestId);
