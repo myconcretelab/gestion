@@ -343,12 +343,19 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
     { ...savedInvoice, id: "draft-2", locataire_nom: "Client avec un point", fiscal_issues: ["Adresse"] },
     { ...savedInvoice, id: "draft-3", locataire_nom: "Client avec zéro point", fiscal_issues: [] },
     { ...savedInvoice, id: "issued-1", numero_facture: "2027-01", locataire_nom: "Client facturé", lifecycle_status: "issued", fiscal_issues: ["Adresse"] },
+    { ...savedInvoice, id: "credit-1", locataire_nom: "Client avec avoir", document_kind: "credit_note", fiscal_issues: [] },
   ];
   await page.goto(`${fixtureUrl}?view=list`);
   await page.getByRole("row").filter({ hasText: "Client avec deux points" }).getByText("2 points à compléter", { exact: true }).waitFor();
   await page.getByRole("row").filter({ hasText: "Client avec un point" }).getByText("1 point à compléter", { exact: true }).waitFor();
   await page.getByRole("row").filter({ hasText: "Client avec zéro point" }).getByText("Aucun point fiscal à compléter", { exact: true }).waitFor();
-  assert.doesNotMatch(await page.getByRole("row").filter({ hasText: "Client facturé" }).innerText(), /à compléter/);
+  const issuedRow = page.getByRole("row").filter({ hasText: "Client facturé" });
+  assert.doesNotMatch(await issuedRow.innerText(), /à compléter/);
+  assert.equal(await issuedRow.getByRole("link", { name: "Modifier", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("row").filter({ hasText: "Client avec avoir" }).getByRole("link", { name: "Modifier", exact: true }).count(), 0);
+  await page.getByRole("row").filter({ hasText: "Client avec deux points" }).getByRole("link", { name: "Modifier", exact: true }).click();
+  await page.waitForURL("**/factures/draft-1/edition");
+  await page.waitForFunction(() => document.querySelector("#invoice-buyer-name")?.value === "Client de test");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, saveAttempts, screenshots }));
 } finally {

@@ -362,6 +362,7 @@ const FacturesListPage = () => {
                 Number(facture.solde_montant ?? 0) +
                 Number(facture.arrhes_montant ?? 0);
               const remaining = facture.lifecycle_status === "draft" ? facture.fiscal_issues?.length : undefined;
+              const editable = facture.lifecycle_status === "draft" && facture.document_kind !== "credit_note";
               return (
                 <tr key={facture.id}>
                   <td>
@@ -412,6 +413,14 @@ const FacturesListPage = () => {
                   </td>
                   <td className="table-actions-cell">
                     <div className="table-actions table-actions--menu">
+                      {editable && (
+                        <Link
+                          className="table-action table-action--neutral"
+                          to={`/factures/${facture.id}/edition`}
+                        >
+                          Modifier
+                        </Link>
+                      )}
                       <Link
                         className="table-action table-action--neutral"
                         to={`/factures/${facture.id}`}
