@@ -10,7 +10,7 @@
       }
 
       :root {
-        --invoice-brand-size: 31pt;
+        --invoice-brand-size: 22pt;
         --invoice-number-size: 18.5pt;
         --invoice-date-size: 18.8pt;
         --paper: #fbf8f0;
@@ -115,7 +115,7 @@
         align-items: flex-start;
         gap: 0.1mm;
         color: var(--sage-deep);
-        line-height: 0.92;
+        line-height: 1.05;
       }
 
       .brand-logo__small,
@@ -160,6 +160,7 @@
       .brand-logo__large {
         margin-top: -1mm;
         font-size: var(--invoice-brand-size);
+        overflow-wrap: anywhere;
       }
 
       .subtitle {
@@ -168,6 +169,7 @@
         font-size: 13.4pt;
         font-weight: 700;
         color: var(--ink);
+        overflow-wrap: anywhere;
       }
 
       .muted,
@@ -695,10 +697,10 @@
       {{{sandboxNoticeHtml}}}
       <div class="hero">
         <div class="hero-main">
-          <div class="brand-logo" aria-label="{{organizationName}}">
-            <span class="brand-logo__large">{{organizationName}}</span>
+          <div class="brand-logo" aria-label="{{giteName}}">
+            <span class="brand-logo__large">{{giteName}}</span>
           </div>
-          <div class="subtitle">{{giteName}}</div>
+          <div class="subtitle">{{organizationName}}</div>
           <div class="muted">{{giteAdresse}}</div>
           <div class="host-block">
             <div class="muted">{{proprietairesNoms}}</div>

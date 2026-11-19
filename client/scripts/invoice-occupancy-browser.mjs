@@ -124,7 +124,12 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
       body = [reservation];
     else if (pathname === "/api/reservations/prefill/r1") body = reservation;
     else if (pathname === "/api/invoices" && method === "GET") body = listInvoices;
-    else if (pathname === "/api/invoices/draft-1") body = savedInvoice;
+    else if (pathname === "/api/invoices/draft-1" && method === "GET") body = savedInvoice;
+    else if (pathname === "/api/invoices/draft-1" && method === "PUT") {
+      const payload = route.request().postDataJSON();
+      assert.equal(payload.revision, savedInvoice.revision);
+      body = savedInvoice = { ...savedInvoice, ...payload, revision: savedInvoice.revision + 1 };
+    }
     else if (pathname === "/api/invoices/address-suggestions" && method === "POST") {
       const input = route.request().postDataJSON();
       addressQueries.push(input.query);
@@ -153,10 +158,11 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
       };
     }
     else if (pathname === "/api/invoices/preview-html") {
+      const theme = route.request().postDataJSON().clauses?.invoice_theme ?? "heritage";
       await route.fulfill({
         status: 200,
         contentType: "text/html",
-        body: "<!doctype html><title>Facture</title><p>Brouillon de test</p>",
+        body: `<!doctype html><title>Facture</title><body data-invoice-theme="${theme}"><p>Brouillon de test</p></body>`,
       });
       return;
     } else if (pathname === "/api/invoices" && method === "POST") {
@@ -333,6 +339,13 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   assert.equal(await fiscalReview.isChecked(), false, "Le montant encaissé a changé.");
   assert.equal(await taxReview.isChecked(), true);
   await fiscalReview.check();
+  const themePicker = page.getByRole("group", { name: "Modèle de facture" });
+  const heritageTheme = themePicker.getByRole("button", { name: /^Héritage Par défaut/ });
+  const signatureTheme = themePicker.getByRole("button", { name: /^Signature/ });
+  const invoicePreview = page.frameLocator('iframe[title="Prévisualisation facture"]');
+  assert.equal(await heritageTheme.getAttribute("aria-pressed"), "true");
+  await signatureTheme.click();
+  await invoicePreview.locator('body[data-invoice-theme="signature"]').waitFor();
   await save.click();
   await page
     .getByRole("link", { name: /Ouvrir la fiche pour vérifier/ })
@@ -343,6 +356,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   assert.equal(savedPayloads[1].locataire_nom, "Client de test");
   assert.equal(savedPayloads[1].fiscal_input.reviewed, true);
   assert.equal(savedPayloads[1].fiscal_input.tourist_tax_reviewed, true);
+  assert.equal(savedPayloads[1].clauses.invoice_theme, "signature");
 
   const restoredPreview = page.waitForResponse((response) => response.url().endsWith("/invoices/fiscal-preview"));
   await page.goto(`${fixtureUrl}?view=edit`);
@@ -350,6 +364,17 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   await page.waitForFunction(() => !document.querySelector("#invoice-save button")?.disabled);
   assert.equal(await fiscalReview.isChecked(), true, "La réouverture conserve la validation enregistrée.");
   assert.equal(await taxReview.isChecked(), true);
+  assert.equal(await signatureTheme.getAttribute("aria-pressed"), "true");
+
+  await themePicker.getByRole("button", { name: /^Horizon/ }).click();
+  await invoicePreview.locator('body[data-invoice-theme="horizon"]').waitFor();
+  await heritageTheme.click();
+  assert.equal(await heritageTheme.getAttribute("aria-pressed"), "true");
+  await invoicePreview.locator('body[data-invoice-theme="heritage"]').waitFor();
+  assert.equal(await fiscalReview.isChecked(), true);
+  await page.getByRole("button", { name: "Enregistrer les modifications", exact: true }).click();
+  await page.getByRole("link", { name: /Ouvrir la fiche pour vérifier/ }).waitFor();
+  assert.equal(savedInvoice.clauses.invoice_theme, "heritage");
 
   listInvoices = [
     { ...savedInvoice, locataire_nom: "Client avec deux points", fiscal_issues: ["Adresse", "TVA"] },
@@ -375,6 +400,12 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   const city = page.locator("#buyer-city");
   const complement = page.getByLabel("Complément d’adresse");
   const suggestions = page.getByRole("listbox", { name: "Suggestions d’adresses" });
+  for (const field of [
+    address, postalCode, city, complement, page.locator("#buyer-country"),
+    page.locator("#invoice-buyer-name"), page.locator("#invoice-buyer-phone"), page.locator("#invoice-buyer-email"),
+  ]) {
+    assert.equal(await field.getAttribute("autocomplete"), "off");
+  }
   assert.equal(addressQueries.length, 0);
   await complement.fill("Appartement 4");
   await address.fill("cin");
@@ -410,6 +441,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   await address.fill("Rue manuelle en Belgique");
   await page.waitForTimeout(450);
   assert.equal(addressQueries.length, requestsWithFrance);
+  assert.equal(await address.getAttribute("autocomplete"), "off");
   assert.equal(await address.inputValue(), "Rue manuelle en Belgique");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, saveAttempts, screenshots }));

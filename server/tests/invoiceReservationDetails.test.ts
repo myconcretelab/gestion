@@ -290,6 +290,8 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
     options: {},
   };
   const html = await buildInvoiceHtml({ invoice, gite, totals });
+  assert.match(html, /class="brand-logo__large">2 gîtes<\/span>/);
+  assert.match(html, /class="subtitle">Loueur fictif<\/div>/);
   assert.match(html, /Le Chêne &lt;test&gt;/);
   assert.match(html, /3 nuitées × 70,00/);
   assert.match(html, /Draps/);
@@ -318,6 +320,14 @@ test("le PDF détaille chaque séjour et son prix unitaire, sans confondre nuit�
       `${theme} conserve tout le contenu de la facture`,
     );
     assert.match(themed, new RegExp(`data-invoice-theme="${theme}"`));
+
+    const singleGite = await buildInvoiceHtml({
+      invoice: { ...invoice, reservation_items: [], clauses: { invoice_theme: theme } },
+      gite: { ...gite, nom: "Le Chêne & les Prés" },
+      totals,
+    });
+    assert.match(singleGite, /class="brand-logo__large">Le Chêne &amp; les Prés<\/span>/);
+    assert.match(singleGite, /class="subtitle">Loueur fictif<\/div>/);
   }
 
   // Fiscal PDFs must explain the reduction while their lines and VAT still

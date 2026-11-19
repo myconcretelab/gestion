@@ -1,4 +1,5 @@
 import {
+  defaultInvoiceTheme,
   invoiceThemeIds,
   invoiceThemes,
   type InvoiceThemeId,
@@ -65,7 +66,12 @@ export default function InvoiceThemePicker({
                 </span>
               </span>
               <span className="invoice-theme__title">
-                {theme.name}
+                <span>
+                  {theme.name}
+                  {id === defaultInvoiceTheme && (
+                    <small className="invoice-theme__default">Par défaut</small>
+                  )}
+                </span>
                 <span className="invoice-theme__check" aria-hidden="true">
                   {value === id ? "✓" : ""}
                 </span>

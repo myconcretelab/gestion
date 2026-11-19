@@ -75,6 +75,7 @@ export default function InvoiceBuyerEditor({
           {fieldLabel("Pays")}
           <select
             id="buyer-country"
+            autoComplete="off"
             value={value.buyer.country_code}
             onChange={(e) => updateBuyer({ country_code: e.target.value })}
           >
@@ -104,6 +105,7 @@ export default function InvoiceBuyerEditor({
         <label className="field">
           Complément d’adresse
           <input
+            autoComplete="off"
             value={value.buyer.address_line2}
             maxLength={500}
             onChange={(e) => updateBuyer({ address_line2: e.target.value })}
@@ -113,6 +115,7 @@ export default function InvoiceBuyerEditor({
           {fieldLabel("Code postal")}
           <input
             id="buyer-postal-code"
+            autoComplete="off"
             value={value.buyer.postal_code}
             onChange={(e) => updateBuyer({ postal_code: e.target.value })}
           />
@@ -121,6 +124,7 @@ export default function InvoiceBuyerEditor({
           {fieldLabel("Ville")}
           <input
             id="buyer-city"
+            autoComplete="off"
             value={value.buyer.city}
             onChange={(e) => updateBuyer({ city: e.target.value })}
           />

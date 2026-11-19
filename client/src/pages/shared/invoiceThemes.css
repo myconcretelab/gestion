@@ -163,10 +163,18 @@
 .invoice-theme__check {
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   width: 20px;
   height: 20px;
   border-radius: 50%;
   color: var(--primary-ink);
+}
+.invoice-theme__default {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 500;
 }
 .is-selected .invoice-theme__check {
   background: var(--primary-soft);

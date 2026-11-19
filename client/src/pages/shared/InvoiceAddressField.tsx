@@ -75,7 +75,7 @@ export default function InvoiceAddressField({
         id="buyer-address"
         value={value}
         maxLength={500}
-        autoComplete={enabled ? "off" : undefined}
+        autoComplete="off"
         role={enabled ? "combobox" : undefined}
         aria-autocomplete={enabled ? "list" : undefined}
         aria-expanded={enabled ? expanded : undefined}

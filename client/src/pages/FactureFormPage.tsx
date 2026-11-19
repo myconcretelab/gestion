@@ -1418,6 +1418,7 @@ const FactureFormPage = () => {
             {fiscalInput.buyer.kind === "business" ? "Raison sociale" : "Nom et prénom"}
             <input
               id="invoice-buyer-name"
+              autoComplete="off"
               value={locataireNom}
               onChange={(e) => {
                 clearFieldError("locataire_nom");
@@ -1430,6 +1431,7 @@ const FactureFormPage = () => {
             Téléphone client (optionnel)
             <input
               id="invoice-buyer-phone"
+              autoComplete="off"
               value={locataireTel}
               onChange={(e) => {
                 clearFieldError("locataire_tel");
@@ -1443,6 +1445,7 @@ const FactureFormPage = () => {
             <input
               id="invoice-buyer-email"
               type="email"
+              autoComplete="off"
               value={locataireEmail}
               onChange={(e) => {
                 clearFieldError("locataire_email");

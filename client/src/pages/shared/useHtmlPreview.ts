@@ -30,10 +30,10 @@ export const useHtmlPreview = (params: {
     }
 
     const controller = new AbortController();
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewOverflow(null);
     const timeout = window.setTimeout(async () => {
-      setPreviewLoading(true);
-      setPreviewError(null);
-      setPreviewOverflow(null);
       try {
         const response = await fetch(params.url, {
           method: "POST",
@@ -56,15 +56,15 @@ export const useHtmlPreview = (params: {
         const overflowBefore = response.headers.get(params.overflowHeader) === "1";
         const overflowAfter = response.headers.get(params.overflowAfterHeader) === "1";
         const compact = response.headers.get(params.compactHeader) === "1";
-        setPreviewOverflow({ before: overflowBefore, after: overflowAfter, compact });
-
         const html = await response.text();
+        if (controller.signal.aborted) return;
+        setPreviewOverflow({ before: overflowBefore, after: overflowAfter, compact });
         setPreviewHtml(html);
       } catch (err: any) {
-        if (err?.name === "AbortError") return;
+        if (controller.signal.aborted || err?.name === "AbortError") return;
         setPreviewError(err?.message ?? "Erreur lors de la previsualisation.");
       } finally {
-        setPreviewLoading(false);
+        if (!controller.signal.aborted) setPreviewLoading(false);
       }
     }, params.delayMs ?? 600);
 
