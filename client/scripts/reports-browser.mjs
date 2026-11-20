@@ -763,9 +763,11 @@ try {
           status = 503;
           body = { error: "Enregistrement indisponible" };
         } else if (fixture.conflict) {
+          const change = fixture.conflict;
           fixture.conflict = false;
           fixture.cachedState = structuredClone(fixture.state);
-          fixture.state.revision++;
+          if (typeof change === "function") change(fixture.state);
+          else fixture.state.revision++;
           status = 409;
           body = {
             error: "Les données ont changé. Votre brouillon est conservé.",
@@ -1435,10 +1437,7 @@ try {
       resolutionFixture.failMutation = 1;
       await save().click();
       await dialog
-        .getByText(
-          "La résolution n’a pas été enregistrée. Vérifiez les données et réessayez.",
-          { exact: true },
-        )
+        .getByText("Enregistrement indisponible", { exact: true })
         .waitFor();
       assert.equal(
         await dialog.getByLabel("Justification de la résolution").inputValue(),
@@ -1446,7 +1445,11 @@ try {
       );
       assert.equal(state.progress[key].resolutions, undefined);
     } else {
-      resolutionFixture.conflict = true;
+      resolutionFixture.conflict = (fresh) => {
+        fresh.operations[0].paymentDate = "2026-10-11";
+        fresh.factsRevision = "resolution-date-changed";
+      };
+      const commandsBeforeConflict = resolutionFixture.commands.length;
       await save().click();
       await dialog
         .getByText(/Les données ont changé pendant l’examen/)
@@ -1456,28 +1459,59 @@ try {
         await dialog.getByLabel("Justification de la résolution").inputValue(),
         note,
       );
+      assert.equal(
+        resolutionFixture.commands.length,
+        commandsBeforeConflict + 1,
+      );
+      await dialog.getByText(/11\/10\/2026/).waitFor();
       assert.equal(await save().isDisabled(), true);
+      await noOverflow(resolutionPage);
+      assert.equal(
+        await dialog.evaluate(
+          (element) => element.scrollWidth > element.clientWidth,
+        ),
+        false,
+      );
       await dialog
-        .getByRole("button", { name: "Revenir au rapport", exact: true })
-        .click();
-      await resolutionPage
         .getByRole("button", {
-          name: "Examiner et résoudre l’écart",
+          name: "J’ai relu la comparaison actualisée",
           exact: true,
         })
         .click();
-      dialog = resolutionPage.getByRole("dialog", {
-        name: "Examiner l’écart",
-        exact: true,
-      });
-      await dialog.getByRole("radio", { name: new RegExp(label) }).check();
-      await dialog.getByLabel("Justification de la résolution").fill(note);
+      assert.equal(
+        await dialog.getByLabel("Justification de la résolution").inputValue(),
+        note,
+      );
+      assert.equal(
+        await dialog
+          .getByRole("radio", { name: new RegExp(label) })
+          .isChecked(),
+        true,
+      );
+      assert.equal(await save().isEnabled(), true);
     }
+    resolutionFixture.conflict = (fresh) => {
+      fresh.operations.push({
+        ...baseOperation,
+        id: "unrelated-november-payment",
+        paymentDate: "2026-11-21",
+        paymentDateEstimated: true,
+        channel: "Airbnb",
+        paymentMethod: "platform",
+      });
+      fresh.factsRevision = "resolution-unrelated-change";
+    };
+    const commandsBeforeRetry = resolutionFixture.commands.length;
     await save().click();
     await resolutionPage
       .getByText("Écart résolu", { exact: true })
       .first()
       .waitFor();
+    const retries = resolutionFixture.commands.slice(commandsBeforeRetry);
+    assert.equal(retries.length, 2);
+    assert.deepEqual(retries[0], retries[1]);
+    assert.equal(retries[1].note, note);
+    assert.equal(resolutionFixture.reportRefreshQueries.at(-1), "1");
     assert.deepEqual(state.progress[key].snapshot, original);
     assert.equal(state.progress[key].resolutions.length, 1);
     assert.equal(

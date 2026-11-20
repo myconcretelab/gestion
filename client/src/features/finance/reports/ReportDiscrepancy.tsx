@@ -45,15 +45,23 @@ export default function ReportDiscrepancy({
   progress: ReportProgress | undefined;
   month: string;
 }) {
-  const { state, canEdit, saving, loading, mutate, notify, propertyName } =
-    workspace;
+  const {
+    state,
+    canEdit,
+    saving,
+    loading,
+    mutate,
+    notify,
+    propertyName,
+    error,
+  } = workspace;
   const [opened, setOpened] = useState<{
     revision: number;
     factsRevision: string;
   } | null>(null);
   const [outcome, setOutcome] = useState<ReportResolution["outcome"] | "">("");
   const [note, setNote] = useState("");
-  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
   const fieldId = useId();
   const reference = reportReference(progress);
   const pending = reportHasPendingChanges(progress, result);
@@ -71,10 +79,17 @@ export default function ReportDiscrepancy({
     reportPaymentReviewRequired(result) ||
     saving ||
     loading;
+  const reviewCurrent = () => {
+    setOpened({
+      revision: state.revision,
+      factsRevision: state.factsRevision,
+    });
+    setFailed(false);
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (blocked || !canEdit || !outcome || note.trim().length < 3) return;
-    setError("");
+    setFailed(false);
     if (
       await mutate(
         { type: "resolve", reportId: report.id, outcome, note: note.trim() },
@@ -84,9 +99,7 @@ export default function ReportDiscrepancy({
       setOpened(null);
       notify("Écart résolu. Ce rapport a été retiré des rapports à traiter.");
     } else {
-      setError(
-        "La résolution n’a pas été enregistrée. Vérifiez les données et réessayez.",
-      );
+      setFailed(true);
     }
   };
   const operationValue = (row: EvaluatedOperation | undefined) =>
@@ -118,13 +131,9 @@ export default function ReportDiscrepancy({
         className="rp-button"
         disabled={saving || loading}
         onClick={() => {
-          setOpened({
-            revision: state.revision,
-            factsRevision: state.factsRevision,
-          });
+          reviewCurrent();
           setOutcome("");
           setNote("");
-          setError("");
         }}
       >
         <ReportIcon name="check" />
@@ -225,10 +234,25 @@ export default function ReportDiscrepancy({
             })}
           </div>
           {stale && (
-            <p className="rp-notice" role="alert">
-              Les données ont changé pendant l’examen. Fermez puis rouvrez
-              l’écart pour examiner la nouvelle comparaison.
-            </p>
+            <div className="rp-notice">
+              <div>
+                <p role="alert">
+                  {pending
+                    ? "Les données ont changé pendant l’examen. Relisez la comparaison actualisée avant d’enregistrer. Votre justification est conservée."
+                    : "Cet écart n’est plus à résoudre."}
+                </p>
+                {pending && canEdit && (
+                  <button
+                    type="button"
+                    className="rp-text-button"
+                    disabled={saving || loading}
+                    onClick={reviewCurrent}
+                  >
+                    J’ai relu la comparaison actualisée
+                  </button>
+                )}
+              </div>
+            </div>
           )}
           {result.reviewCount > 0 && (
             <p className="rp-notice" role="alert">
@@ -289,9 +313,9 @@ export default function ReportDiscrepancy({
                 n’envoie aucune déclaration. Le rapport sortira de « À traiter »
                 et réapparaîtra si les données changent à nouveau.
               </p>
-              {error && (
+              {failed && !stale && (
                 <p className="rp-notice" role="alert">
-                  {error}
+                  {error || "La résolution n’a pas été enregistrée. Réessayez."}
                 </p>
               )}
               <div className="rp-dialog__actions">

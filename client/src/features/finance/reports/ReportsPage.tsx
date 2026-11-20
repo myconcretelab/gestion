@@ -27,6 +27,7 @@ import ReportsOverview from "./ReportsOverview";
 import ReportAllocationEditor from "./ReportAllocationEditor";
 import ReportDetail from "./ReportDetail";
 import ReportEditor from "./ReportEditor";
+import { evaluateWorkspaceReport } from "./reportModel";
 import "./reports.css";
 
 export type ReportWorkspace = {
@@ -63,6 +64,30 @@ function readDrafts(organizationId: string) {
     return {};
   }
 }
+
+function resolutionUnchanged(
+  before: ReportWorkspaceData,
+  after: ReportWorkspaceData,
+  reportId: string,
+  month: string,
+) {
+  if (
+    before.organizationId !== after.organizationId ||
+    before.year !== after.year ||
+    before.revision !== after.revision ||
+    before.factsRevision === after.factsRevision
+  )
+    return false;
+  const report = before.reports.find((item) => item.id === reportId);
+  // Night registers are part of the archived resolution and need their own verification.
+  return Boolean(
+    report &&
+    report.kind !== "tourist" &&
+    JSON.stringify(evaluateWorkspaceReport(before, report, month)) ===
+      JSON.stringify(evaluateWorkspaceReport(after, report, month)),
+  );
+}
+
 export default function ReportsPage() {
   const location = useLocation();
   const [state, setState] = useState<ReportWorkspaceData | null>(null);
@@ -93,14 +118,15 @@ export default function ReportsPage() {
           `/reports?year=${year}${force ? "&refresh=1" : ""}`,
           { signal },
         );
-        if (!signal?.aborted)
-          setState((previous) => ({
-            ...data,
-            drafts:
-              previous?.organizationId === data.organizationId
-                ? previous.drafts
-                : readDrafts(data.organizationId),
-          }));
+        if (signal?.aborted) return null;
+        setState((previous) => ({
+          ...data,
+          drafts:
+            previous?.organizationId === data.organizationId
+              ? previous.drafts
+              : readDrafts(data.organizationId),
+        }));
+        return data;
       } catch (failure) {
         if (!signal?.aborted)
           setError(
@@ -108,6 +134,7 @@ export default function ReportsPage() {
               ? failure.message
               : "Chargement des rapports impossible.",
           );
+        return null;
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -152,7 +179,7 @@ export default function ReportsPage() {
     lock.current = true;
     setSaving(true);
     setError("");
-    try {
+    const submit = async (base: ReportWorkspaceData) => {
       const data = await apiFetch<ReportWorkspaceData | ReportWorkspaceChanges>(
         command.type === "remittance-receipt"
           ? "/reports/receipts?response=changes"
@@ -162,21 +189,35 @@ export default function ReportsPage() {
           json: {
             command,
             month: period,
-            revision: before.revision,
-            factsRevision: before.factsRevision,
+            revision: base.revision,
+            factsRevision: base.factsRevision,
           },
         },
       );
-      const next =
-        "type" in data && data.type === "report-workspace-changes"
-          ? applyReportWorkspaceChanges(current.current ?? before, data)
-          : (data as ReportWorkspaceData);
-      setState((previous) => ({ ...next, drafts: previous?.drafts ?? {} }));
-      return true;
-    } catch (failure) {
-      if (isApiError(failure) && failure.status === 409) {
-        await refresh(undefined, true);
+      return "type" in data && data.type === "report-workspace-changes"
+        ? applyReportWorkspaceChanges(base, data)
+        : (data as ReportWorkspaceData);
+    };
+    try {
+      for (let base = before; ;) {
+        try {
+          const next = await submit(base);
+          setState((previous) => ({ ...next, drafts: previous?.drafts ?? {} }));
+          return true;
+        } catch (failure) {
+          if (!isApiError(failure) || failure.status !== 409) throw failure;
+          const refreshed = await refresh(undefined, true);
+          if (
+            base !== before ||
+            command.type !== "resolve" ||
+            !refreshed ||
+            !resolutionUnchanged(before, refreshed, command.reportId, period)
+          )
+            throw failure;
+          base = refreshed;
+        }
       }
+    } catch (failure) {
       setError(
         failure instanceof Error
           ? failure.message
@@ -197,7 +238,9 @@ export default function ReportsPage() {
           mutate,
           saving,
           loading,
-          refresh: () => refresh(undefined, true),
+          refresh: async () => {
+            await refresh(undefined, true);
+          },
           setDraft: (key, definition) =>
             setState((previous) => {
               if (!previous) return previous;
