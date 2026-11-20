@@ -1,5 +1,6 @@
 import { Router, urlencoded, type Request, type Response } from "express";
 import { z } from "zod";
+import { paymentTouristTaxInputSchema } from "@contrats/shared";
 import { bookingStripeConfig } from "./provider.js";
 import { runWithOrganization } from "../organizations/context.js";
 import {
@@ -33,12 +34,21 @@ reservationPaymentLinksRouter.post(
   "/:id/payment-links",
   async (req, res, next) => {
     try {
-      const { purpose } = z
-        .object({ purpose: z.enum(["deposit", "balance"]) })
+      const { purpose, tourist_tax } = z
+        .object({
+          purpose: z.enum(["deposit", "balance"]),
+          tourist_tax: paymentTouristTaxInputSchema.nullable().optional(),
+        })
         .parse(req.body);
       res
         .status(201)
-        .json(await createReservationPaymentLink(req.params.id, purpose));
+        .json(
+          await createReservationPaymentLink(
+            req.params.id,
+            purpose,
+            tourist_tax,
+          ),
+        );
     } catch (error) {
       next(error);
     }

@@ -20,6 +20,8 @@ import {
 import { bookingStripeConfig, getBookingStripe } from "./provider.js";
 import { assertTransactionAvailability, lockBookingGite } from "./locking.js";
 import { bookingReservationData } from "./reservation.js";
+import { getReservationPaymentTracking } from "../reservationPayments/ledger.js";
+import { checkoutStayLines, confirmedStripeTax } from "./touristTax.js";
 import {
   BookedValidationError,
   hydrateBookingRequest,
@@ -52,6 +54,8 @@ export const prepareBookingPayment = (
   const { amount, total } = paymentAmounts(quote, purpose);
   const token = crypto.randomBytes(32).toString("base64url");
   const expires = Math.floor(Date.now() / 1000) + 31 * 60;
+  const tax =
+    purpose === "full" ? cents(quote.tourist_tax_result?.host_amount ?? 0) : 0;
   return {
     token,
     data: {
@@ -60,6 +64,7 @@ export const prepareBookingPayment = (
       purpose,
       amount_cents: amount,
       total_cents: total,
+      quoted_tourist_tax_cents: tax > 0 && tax <= amount ? tax : 0,
       access_token_hash: tokenHash(token),
       expires_at: new Date(expires * 1000),
     },
@@ -101,19 +106,12 @@ export const createBookingCheckout = async (
         organization_id: getOrganizationId(),
       },
       payment_intent_data: { metadata: { booking_payment_id: payment.id } },
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "eur",
-            unit_amount: amount,
-            product_data: {
-              name: `${purpose === "deposit" ? "Arrhes" : "Séjour complet"} — ${request.gite.nom}`,
-              description: `${request.date_entree.toISOString().slice(0, 10)} au ${request.date_sortie.toISOString().slice(0, 10)} · ${quote.nb_nuits} nuits · options incluses dans le total du séjour`,
-            },
-          },
-        },
-      ],
+      line_items: checkoutStayLines(
+        amount,
+        payment.quoted_tourist_tax_cents ?? 0,
+        `${purpose === "deposit" ? "Arrhes" : "Séjour complet"} — ${request.gite.nom}`,
+        `${request.date_entree.toISOString().slice(0, 10)} au ${request.date_sortie.toISOString().slice(0, 10)} · ${quote.nb_nuits} nuits · options incluses dans le total du séjour`,
+      ),
       expires_at: expires,
       success_url: resultUrl("success"),
       cancel_url: resultUrl("cancel"),
@@ -237,6 +235,18 @@ export const applyVerifiedSession = async (
         decision_note: `Confirmation automatique après paiement Stripe (${current.purpose === "deposit" ? "arrhes" : "totalité"}).`,
       },
     });
+    if (current.quoted_tourist_tax_cents) {
+      const tracking = await getReservationPaymentTracking(reservation.id, tx);
+      const tax =
+        tracking.tourist_tax?.expectedCents === current.quoted_tourist_tax_cents
+          ? confirmedStripeTax(tracking, current.quoted_tourist_tax_cents)
+          : null;
+      if (tax)
+        await tx.bookingPayment.update({
+          where: { id: current.id },
+          data: { tourist_tax_details: JSON.stringify(tax) },
+        });
+    }
     return "confirmed";
   });
 };

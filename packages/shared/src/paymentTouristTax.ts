@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { ReservationPaymentTracking } from "./reservationPayments.js";
+import type {
+  ReservationPaymentEntry,
+  ReservationPaymentTracking,
+} from "./reservationPayments.js";
 
 export const paymentTouristTaxInputSchema = z
   .object({
@@ -30,6 +33,17 @@ export type PaymentTouristTaxContext = {
   needsReview: boolean;
   hasUnassignedPayments: boolean;
 };
+
+export const canEditPaymentTouristTax = (entry: ReservationPaymentEntry) =>
+  !entry.voided_at &&
+  !entry.ota &&
+  entry.method !== "Versement plateforme" &&
+  (entry.origin === "manual" ||
+    entry.origin === "legacy" ||
+    (entry.origin === "stripe" &&
+      entry.amount > 0 &&
+      Boolean(entry.paid_on) &&
+      !entry.refunded_amount));
 
 /** A proposal is not collection evidence until the operator confirms it with the payment. */
 export function suggestPaymentTouristTax(

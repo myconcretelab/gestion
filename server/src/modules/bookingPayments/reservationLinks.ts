@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
 import type Stripe from "stripe";
+import {
+  recordedPaymentTouristTaxSchema,
+  suggestPaymentTouristTax,
+  type PaymentTouristTaxInput,
+} from "@contrats/shared";
 import prisma from "../../db/prisma.js";
 import { env } from "../../config/env.js";
 import { getOrganizationId } from "../organizations/context.js";
@@ -18,6 +23,8 @@ import {
   reservationPaymentPrefill,
 } from "./contracts.js";
 import { fromJsonString } from "../../utils/jsonFields.js";
+import { validatePaymentTaxCollection } from "../reservationPayments/taxCollection.js";
+import { checkoutStayLines, confirmedStripeTax } from "./touristTax.js";
 
 export const paymentLinkUrl = (code: string) => {
   const base = new URL(env.APP_PUBLIC_URL);
@@ -37,14 +44,36 @@ export const paymentLinkUrl = (code: string) => {
     );
   return new URL(`/p/${code}`, base).href;
 };
+const linkTax = (terms: string) =>
+  recordedPaymentTouristTaxSchema.safeParse(JSON.parse(terms).touristTax).data;
 const dto = (row: any) => ({
   id: row.id,
   purpose: row.purpose,
   amount: row.amount_cents / 100,
+  tourist_tax: (linkTax(row.terms_json)?.amountCents ?? 0) / 100,
   status: row.status,
   expires_at: row.expires_at,
   url: paymentLinkUrl(row.code),
 });
+function linkTaxProposal(
+  state: Awaited<ReturnType<typeof reservationBalance>>,
+  purpose: "deposit" | "balance",
+) {
+  const amount = purpose === "deposit" ? state.depositDue : state.balanceDue;
+  const proposal = suggestPaymentTouristTax(
+    state.tracking,
+    amount / 100,
+    purpose,
+  );
+  return proposal
+    ? {
+        ...proposal,
+        checked:
+          proposal.checked &&
+          Math.round(state.tracking.total * 100) === state.total,
+      }
+    : null;
+}
 export const paymentLinkChoices = async (reservationId: string) => {
   const state = await reservationBalance(reservationId);
   const links = await prisma.reservationPaymentLink.findMany({
@@ -63,6 +92,10 @@ export const paymentLinkChoices = async (reservationId: string) => {
     received: state.received / 100,
     deposit_due: state.depositDue / 100,
     balance_due: state.balanceDue / 100,
+    tax_proposals: {
+      deposit: linkTaxProposal(state, "deposit"),
+      balance: linkTaxProposal(state, "balance"),
+    },
     source: state.contract ? "contract" : "reservation",
     platform: /airbnb|booking\.com/i.test(
       state.reservation.source_paiement || "",
@@ -73,6 +106,7 @@ export const paymentLinkChoices = async (reservationId: string) => {
 export const createReservationPaymentLink = async (
   reservationId: string,
   purpose: "deposit" | "balance",
+  taxInput?: PaymentTouristTaxInput | null,
 ) => {
   if (!bookingPaymentsEnabled())
     throw paymentError(
@@ -90,6 +124,22 @@ export const createReservationPaymentLink = async (
       throw paymentError(
         "Ce montant est déjà réglé ou inférieur au minimum de paiement par carte.",
       );
+    const proposed =
+      taxInput === undefined ? linkTaxProposal(state, purpose) : null;
+    const touristTax = taxInput
+      ? validatePaymentTaxCollection(
+          state.tracking,
+          amount,
+          "Carte · Stripe",
+          taxInput,
+        )
+      : proposed?.checked
+        ? confirmedStripeTax(
+            state.tracking,
+            proposed.amountCents,
+            proposed.sourceRevision,
+          )
+        : null;
     const active = await tx.reservationPaymentLink.findFirst({
       where: {
         reservation_id: reservationId,
@@ -108,7 +158,9 @@ export const createReservationPaymentLink = async (
       if (
         active.expires_at > new Date() &&
         active.purpose === purpose &&
-        JSON.parse(active.terms_json).fingerprint === state.fingerprint
+        JSON.parse(active.terms_json).fingerprint === state.fingerprint &&
+        JSON.stringify(linkTax(active.terms_json) ?? null) ===
+          JSON.stringify(touristTax)
       )
         return dto(active);
       if (active.payments.length)
@@ -133,6 +185,7 @@ export const createReservationPaymentLink = async (
         terms_json: JSON.stringify({
           ...state.terms,
           fingerprint: state.fingerprint,
+          touristTax,
         }),
         expires_at: new Date(Date.now() + 7 * 86400000),
       },
@@ -180,6 +233,18 @@ export const startReservationLinkCheckout = async (code: string) => {
       throw paymentError(
         "La réservation ou ses règlements ont changé. Contactez le propriétaire pour actualiser le lien.",
       );
+    const planned = linkTax(link.terms_json);
+    if (
+      planned &&
+      !confirmedStripeTax(
+        state.tracking,
+        planned.amountCents,
+        planned.sourceRevision,
+      )
+    )
+      throw paymentError(
+        "La part de taxe a changé. Contactez le propriétaire pour actualiser le lien.",
+      );
     const pending = await tx.bookingPayment.findFirst({
       where: {
         payment_link_id: link.id,
@@ -195,6 +260,12 @@ export const startReservationLinkCheckout = async (code: string) => {
         purpose: link.purpose,
         amount_cents: link.amount_cents,
         total_cents: link.total_cents,
+        quoted_tourist_tax_cents: Object.hasOwn(
+          JSON.parse(link.terms_json),
+          "touristTax",
+        )
+          ? (planned?.amountCents ?? 0)
+          : null,
         access_token_hash: crypto.randomBytes(32).toString("hex"),
         status: "creating",
         expires_at: new Date(Math.floor(Date.now() / 1000) * 1000 + 31 * 60000),
@@ -232,19 +303,12 @@ export const startReservationLinkCheckout = async (code: string) => {
         organization_id: getOrganizationId(),
       },
       payment_intent_data: { metadata: { booking_payment_id: payment.id } },
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "eur",
-            unit_amount: payment.amount_cents,
-            product_data: {
-              name: `${link.purpose === "deposit" ? "Arrhes" : "Règlement du séjour"} — ${link.reservation.gite?.nom || "Gîte"}`,
-              description: `Du ${link.reservation.date_entree.toISOString().slice(0, 10)} au ${link.reservation.date_sortie.toISOString().slice(0, 10)}`,
-            },
-          },
-        },
-      ],
+      line_items: checkoutStayLines(
+        payment.amount_cents,
+        payment.quoted_tourist_tax_cents ?? 0,
+        `${link.purpose === "deposit" ? "Arrhes" : "Règlement du séjour"} — ${link.reservation.gite?.nom || "Gîte"}`,
+        `Du ${link.reservation.date_entree.toISOString().slice(0, 10)} au ${link.reservation.date_sortie.toISOString().slice(0, 10)}`,
+      ),
       expires_at: Math.floor(+payment.expires_at / 1000),
       success_url: url + "?retour=succes",
       cancel_url: url + "?retour=annulation",
@@ -318,6 +382,15 @@ export const applyReservationLinkSession = async (
       if (!(error instanceof Error && "statusCode" in error)) throw error;
       review = error.message;
     }
+    const planned = linkTax(link.terms_json);
+    const tax =
+      !review && state && planned && planned.amountCents <= payment.amount_cents
+        ? confirmedStripeTax(
+            state.tracking,
+            planned.amountCents,
+            planned.sourceRevision,
+          )
+        : null;
     await tx.bookingPayment.update({
       where: { id: paymentId },
       data: {
@@ -327,6 +400,7 @@ export const applyReservationLinkSession = async (
         paid_at: new Date(),
         status: review ? "requires_review" : "paid",
         review_reason: review,
+        tourist_tax_details: tax ? JSON.stringify(tax) : null,
       },
     });
     await tx.reservationPaymentLink.update({

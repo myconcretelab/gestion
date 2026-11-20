@@ -18,12 +18,14 @@ import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import Editor from "/src/pages/shared/ReservationPaymentsEditor.tsx";
+import LinkDialog from "/src/pages/shared/ReservationPaymentLinkDialog.tsx";
 import { setCurrentAuthUser } from "/src/utils/auth.ts";
 import "/src/styles.css";
 if (location.search.includes("readonly")) setCurrentAuthUser({permissions:{canWrite:false,canViewAmounts:true,isOwner:false},pageAccess:["reservations"]});
 function App() {
  const [tracking, setTracking] = useState();
  useEffect(()=>{fetch("/api/test-tracking").then(r=>r.json()).then(setTracking)},[]);
+ if (location.search.includes("link")) return React.createElement(LinkDialog,{reservation:{id:"r1",hote_nom:"Client test",date_entree:"2026-10-10",date_sortie:"2026-10-12",nb_nuits:2,options:{}},onClose:()=>{}});
  return tracking ? React.createElement("main", {className:"reservation-payment-popover", style:{position:"relative",inset:"auto",margin:"24px auto",width:"min(640px, calc(100vw - 32px))",maxHeight:"none"}}, React.createElement(Editor,{reservation:{id:"r1",booking_source:"Direct",source_paiement:null,options:"{}"},tracking,onUpdated:setTracking})) : null;
 }
 createRoot(document.getElementById("root")).render(React.createElement(BrowserRouter,null,React.createElement(App)));
@@ -67,6 +69,7 @@ try {
   });
   const errors = [],
     posts = [],
+    links = [],
     patches = [];
   page.on("pageerror", (error) => errors.push(error.message));
   let state,
@@ -76,6 +79,40 @@ try {
       url = new URL(request.url());
     if (url.pathname === "/api/test-tracking")
       return route.fulfill({ json: state });
+    if (url.pathname.endsWith("/payment-links")) {
+      if (request.method() === "POST") {
+        const input = request.postDataJSON();
+        links.push(input);
+        return route.fulfill({
+          json: {
+            id: "stripe-link",
+            purpose: input.purpose,
+            amount: 106,
+            tourist_tax: input.tourist_tax.amount_cents / 100,
+            status: "active",
+            expires_at: "2026-10-12",
+            url: "https://example.test/p/stripe-link",
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          enabled: true,
+          mode: "test",
+          total: 106,
+          received: 0,
+          deposit_due: 20,
+          balance_due: 106,
+          source: "reservation",
+          platform: false,
+          links: [],
+          tax_proposals: {
+            deposit: { checked: false, amountCents: 600, sourceRevision },
+            balance: { checked: true, amountCents: 600, sourceRevision },
+          },
+        },
+      });
+    }
     if (request.method() === "POST") {
       const input = request.postDataJSON();
       posts.push(input);
@@ -279,6 +316,35 @@ try {
     ),
     "Pas de débordement horizontal sur mobile",
   );
+  const stripe = structuredClone(recorded);
+  stripe.entries[0].method = "Carte · Stripe";
+  stripe.entries[0].origin = "stripe";
+  state = stripe;
+  await page.goto(origin + "/__payment_tax_test.html");
+  await page
+    .getByRole("button", { name: "Vérifier ou modifier la part de taxe" })
+    .click();
+  await page.getByLabel("Dont taxe de séjour (€)").fill("4");
+  await page.getByRole("button", { name: "Confirmer la part de taxe" }).click();
+  await page
+    .getByRole("form", { name: "Part de taxe du règlement" })
+    .waitFor({ state: "hidden" });
+  assert.equal(patches.at(-1).tourist_tax.amount_cents, 400);
+  assert.equal(state.entries[0].method, "Carte · Stripe");
+  await page.goto(origin + "/__payment_tax_test.html?link");
+  await checked().waitFor();
+  assert.equal(await checked().isChecked(), false);
+  await page.getByRole("radio", { name: /Totalité du séjour/ }).check();
+  assert.equal(await checked().isChecked(), true);
+  await page.getByLabel("Dont taxe de séjour (€)").fill("5");
+  await page.getByRole("button", { name: /Créer le lien/ }).click();
+  await page.getByText(/Dont taxe de séjour 5,00/).waitFor();
+  assert.deepEqual(links, [
+    {
+      purpose: "balance",
+      tourist_tax: { amount_cents: 500, source_revision: sourceRevision },
+    },
+  ]);
   state = recorded;
   await page.goto(origin + "/__payment_tax_test.html?readonly");
   await page.getByText("Dont taxe de séjour :").waitFor();

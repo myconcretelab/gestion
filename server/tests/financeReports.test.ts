@@ -2956,6 +2956,66 @@ const registerTax = {
   exempt_adults: 0,
   exemption_reason: "",
 };
+test("un paiement Stripe historique peut alimenter le registre et invalider le calcul en cache", () =>
+  fixture(async ({ gite }) => {
+    const month = "2026-09";
+    const reservation = await stay(gite, {
+      date_entree: new Date("2026-09-10"),
+      date_sortie: new Date("2026-09-12"),
+      nb_nuits: 2,
+      prix_total: 100,
+      options: JSON.stringify({ tourist_tax: registerTax }),
+    });
+    const payment = await db.default.bookingPayment.create({
+      data: {
+        reservation_id: reservation.id,
+        stripe_mode: "live",
+        purpose: "full",
+        amount_cents: 10400,
+        total_cents: 10400,
+        paid_amount_cents: 10400,
+        status: "paid",
+        access_token_hash: randomUUID(),
+        expires_at: new Date("2026-09-13"),
+        paid_at: new Date("2026-09-12T12:00:00Z"),
+      },
+    });
+    const definition = {
+      ...createReport("tourist", "stripe-tax-register"),
+      propertyIds: [gite],
+      nightDeclaration: true,
+      nightRegistrations: { [gite]: { number: "", notApplicable: true } },
+    };
+    const state = await reports.getReportWorkspace();
+    await mutate(state, { type: "save", definition }, month);
+    assert.equal(
+      (await nightRegister.getNightRegister(definition.id, month))
+        .incompleteCount,
+      1,
+    );
+    const tracking = await ledger.getReservationPaymentTracking(reservation.id);
+    const before = await db.default.financeReportCache.findFirstOrThrow();
+    await ledger.updateReservationPaymentTouristTax(
+      reservation.id,
+      payment.id,
+      {
+        tourist_tax: {
+          amount_cents: 400,
+          source_revision: tracking.tourist_tax!.sourceRevision,
+        },
+        expected_revision: null,
+      },
+    );
+    const after = await db.default.financeReportCache.findFirstOrThrow();
+    assert.ok(after.source_revision > before.source_revision);
+    const register = await nightRegister.getNightRegister(definition.id, month);
+    assert.equal(register.incompleteCount, 0);
+    assert.equal(register.rows[0].collectedTaxCents, 400);
+    assert.equal(register.rows[0].collectionDate, "2026-09-12");
+    const current = await reports.getReportWorkspace();
+    assert.equal(result(current, month).total, 10000);
+  }));
+
 test("un règlement global confirme sa taxe sans doubler l’encaissement ni réduire les recettes de l’acompte", async () => {
   await fixture(async ({ gite }) => {
     const reservation = await stay(gite, {

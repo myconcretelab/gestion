@@ -395,7 +395,8 @@ export async function loadReportFacts(
     );
     const remaining = components.map((row) => row.amount);
     const explicitTaxMode = ledger.entries.some(
-      (entry) => !entry.voided_at && entry.tourist_tax,
+      (entry) =>
+        !entry.voided_at && !testCardIds.has(entry.id) && entry.tourist_tax,
     );
     for (const entry of ledger.entries.filter(
       (entry) =>

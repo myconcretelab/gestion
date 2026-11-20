@@ -1745,6 +1745,8 @@ model BookingPayment {
   stripe_payment_intent String?  @unique
   paid_amount_cents     Int      @default(0)
   refunded_amount_cents Int      @default(0)
+  quoted_tourist_tax_cents Int?
+  tourist_tax_details   String?
   expires_at            DateTime
   paid_at               DateTime?
   review_reason         String?

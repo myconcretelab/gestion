@@ -7,6 +7,10 @@ import { spawnSync } from "node:child_process";
 import { before, after, test } from "node:test";
 import express from "express";
 import type Stripe from "stripe";
+import {
+  createTouristTaxStayForSource,
+  DEFAULT_TOURIST_TAX_COLLECTION,
+} from "@contrats/shared";
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "reservation-links-"));
 const org = "links-test";
 let db: typeof import("../src/db/prisma.js");
@@ -51,6 +55,9 @@ before(async () => {
     await import("../src/modules/bookingPayments/reservationBalance.js");
   service = await import("../src/modules/bookingPayments/service.js");
   contracts = await import("../src/modules/bookingPayments/contracts.js");
+  await db.systemPrisma.organization.create({
+    data: { id: org, slug: org, name: "Organisme de test" },
+  });
   await inOrg(() =>
     db.default.gite.create({
       data: {
@@ -93,8 +100,9 @@ const fixture = () =>
 const attempt = async (
   id: string,
   purpose: "deposit" | "balance" = "deposit",
+  tax?: Parameters<typeof links.createReservationPaymentLink>[2],
 ) => {
-  const dto = await links.createReservationPaymentLink(id, purpose);
+  const dto = await links.createReservationPaymentLink(id, purpose, tax);
   const row = await db.default.reservationPaymentLink.findUniqueOrThrow({
     where: { id: dto.id },
   });
@@ -105,6 +113,7 @@ const attempt = async (
       purpose,
       amount_cents: row.amount_cents,
       total_cents: row.total_cents,
+      quoted_tourist_tax_cents: Math.round(dto.tourist_tax * 100),
       access_token_hash: crypto.randomBytes(32).toString("hex"),
       status: "pending",
       expires_at: new Date(Date.now() + 1800000),
@@ -124,6 +133,7 @@ const attempt = async (
   } as unknown as Stripe.Checkout.Session;
   return { dto, row, payment, session };
 };
+
 test("lien court, options incluses, réutilisation et isolation des organismes", () =>
   inOrg(async () => {
     const r = await fixture();
@@ -413,3 +423,66 @@ test("le formulaire conserve son origine et refuse les origines étrangères ou 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("un lien Stripe ventile la part choisie et le règlement reste modifiable après encaissement", () =>
+  inOrg(async () => {
+    const r = await fixture();
+    const tourist_tax = createTouristTaxStayForSource(
+      {
+        version: 1,
+        classified: true,
+        stars: 2,
+        included: true,
+        fixed_rate: 0.75,
+        percentage: 0,
+        cap: 4,
+        additional_percentage: 0,
+        accommodation_vat_rate: 0,
+        authority: "Test",
+        effective_from: "2039-01-01",
+      },
+      "Direct",
+      DEFAULT_TOURIST_TAX_COLLECTION,
+    );
+    await db.default.reservation.update({
+      where: { id: r.id },
+      data: { options: JSON.stringify({ tourist_tax }) },
+    });
+    const quote = (await links.paymentLinkChoices(r.id)).tax_proposals;
+    assert.equal(quote.deposit?.checked, false);
+    assert.equal(quote.balance?.checked, true);
+    assert.equal(quote.balance?.amountCents, 600);
+    const paid = await attempt(r.id, "balance", {
+      amount_cents: 500,
+      source_revision: quote.balance!.sourceRevision,
+    });
+    assert.equal(paid.dto.amount, 360);
+    assert.equal(paid.dto.tourist_tax, 5);
+    assert.equal(await service.applyVerifiedSession(paid.session), "recorded");
+    assert.equal(await service.applyVerifiedSession(paid.session), "duplicate");
+    const ledger = await import("../src/modules/reservationPayments/ledger.js");
+    const state = await ledger.getReservationPaymentTracking(r.id);
+    const entry = state.entries[0];
+    assert.equal(entry.tourist_tax?.amountCents, 500);
+    assert.equal(entry.tourist_tax_stale, false);
+    const changed = await ledger.updateReservationPaymentTouristTax(
+      r.id,
+      entry.id,
+      {
+        expected_revision: entry.tourist_tax_revision!,
+        tourist_tax: {
+          amount_cents: 600,
+          source_revision: state.tourist_tax!.sourceRevision,
+        },
+      },
+    );
+    assert.equal(changed.entries[0].tourist_tax?.amountCents, 600);
+    assert.equal(changed.entries[0].paid_on, entry.paid_on);
+    assert.equal(changed.received, 360);
+    assert.equal(
+      await db.default.reservationRecordedPayment.count({
+        where: { reservation_id: r.id },
+      }),
+      0,
+    );
+  }));

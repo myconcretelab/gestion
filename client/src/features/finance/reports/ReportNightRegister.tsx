@@ -7,34 +7,46 @@ import ReportNightSummary from "./ReportNightSummary";
 import ReportNightRegisterCompletion from "./ReportNightRegisterCompletion";
 import type { ReportWorkspace } from "./ReportsPage";
 
-export default function ReportNightRegister({
+type RegisterArchive = { key: string; resolution?: number };
+
+export function useReportNightRegister({
   reportId,
   month,
   workspace,
   archive,
 }: {
-  reportId: string;
+  reportId?: string;
   month: string;
   workspace: ReportWorkspace;
-  archive?: { key: string; resolution?: number };
+  archive?: RegisterArchive;
 }) {
-  const [open, setOpen] = useState(false);
-  const [data, setData] = useState<NightRegister | null>(null);
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    data: NightRegister;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
-  const path = `/reports/${encodeURIComponent(reportId)}/night-register`;
+  const path =
+    reportId && `/reports/${encodeURIComponent(reportId)}/night-register`;
   const archiveKey = archive?.key;
   const archiveResolution = archive?.resolution;
   const sourcesKey = archiveKey
     ? "archive"
     : `${workspace.state.revision}:${workspace.state.factsRevision}`;
+  const requestKey = JSON.stringify([
+    path,
+    month,
+    refresh,
+    archiveKey,
+    archiveResolution,
+    sourcesKey,
+  ]);
   useEffect(() => {
-    const controller = new AbortController();
-    setData(null);
-    setLoading(true);
     setError("");
+    if (!path) return;
+    const controller = new AbortController();
+    setLoading(true);
     const params = new URLSearchParams({ month });
     if (archiveKey) {
       params.set("source", "confirmed");
@@ -46,7 +58,8 @@ export default function ReportNightRegister({
       signal: controller.signal,
     })
       .then((register) => {
-        if (!controller.signal.aborted) setData(register);
+        if (!controller.signal.aborted)
+          setLoaded({ key: requestKey, data: register });
       })
       .catch((failure) => {
         if (!isAbortError(failure))
@@ -60,11 +73,45 @@ export default function ReportNightRegister({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [path, month, refresh, archiveKey, archiveResolution, sourcesKey]);
+  }, [path, month, archiveKey, archiveResolution, requestKey]);
+  return {
+    data: loaded?.key === requestKey ? loaded.data : null,
+    loading,
+    error,
+    invalidate: () => setLoaded(null),
+    reload: () => setRefresh((value) => value + 1),
+  };
+}
+
+export default function ReportNightRegister({
+  reportId,
+  month,
+  workspace,
+  archive,
+  register,
+}: {
+  reportId: string;
+  month: string;
+  workspace: ReportWorkspace;
+  archive?: RegisterArchive;
+  register: ReturnType<typeof useReportNightRegister>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const { data, loading, reload } = register;
+  const error = downloadError || register.error;
+  const path = `/reports/${encodeURIComponent(reportId)}/night-register`;
+  const archiveKey = archive?.key;
+  const archiveResolution = archive?.resolution;
+  const reloadPreview = () => {
+    setDownloadError("");
+    reload();
+  };
   async function download(format: "pdf" | "csv" | "summary-csv") {
     if (!data || downloading) return;
     setDownloading(true);
-    setError("");
+    setDownloadError("");
     try {
       const params = new URLSearchParams({
         month,
@@ -81,7 +128,7 @@ export default function ReportNightRegister({
         credentials: "include",
       });
       if (!response.ok) {
-        if (response.status === 409) setData(null);
+        if (response.status === 409) register.invalidate();
         const failure = await response.json().catch(() => ({}));
         throw new Error(
           failure.error ?? "Téléchargement impossible. Réessayez.",
@@ -107,7 +154,7 @@ export default function ReportNightRegister({
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (failure) {
-      setError(
+      setDownloadError(
         failure instanceof Error
           ? failure.message
           : "Le téléchargement a échoué.",
@@ -144,8 +191,12 @@ export default function ReportNightRegister({
           {data.incompleteCount > 0 && (
             <p className="rp-notice">
               {data.incompleteCount} séjour(s) à compléter avant de finaliser
-              une déclaration de taxe de séjour. Consultez le registre pour
-              vérifier les informations manquantes.
+              une déclaration de taxe de séjour.{" "}
+              {archive ? (
+                "Consultez le registre pour voir les informations manquantes."
+              ) : (
+                <a href="#rp-night-issues">Voir les séjours à compléter</a>
+              )}
             </p>
           )}
           {data.archivedAt && (
@@ -233,7 +284,7 @@ export default function ReportNightRegister({
                   data={data}
                   workspace={workspace}
                   month={month}
-                  onSaved={() => setRefresh((value) => value + 1)}
+                  onSaved={reloadPreview}
                 />
               )}
               <ul
@@ -284,7 +335,7 @@ export default function ReportNightRegister({
               type="button"
               className="rp-text-button"
               disabled={loading || downloading}
-              onClick={() => setRefresh((value) => value + 1)}
+              onClick={reloadPreview}
             >
               Recharger l’aperçu
             </button>

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  canEditPaymentTouristTax,
   suggestPaymentTouristTax,
   type ReservationPaymentEntry,
   type ReservationPaymentTracking,
@@ -32,12 +33,14 @@ export function PaymentTaxFields({
   maxCents,
   disabled,
   unassigned = false,
+  description = "Cette part est comprise dans le montant du règlement. Elle reprend sa date d’encaissement. Enregistrer confirme ces informations pour le registre des séjours.",
 }: {
   draft: PaymentTaxDraft;
   onChange: (draft: PaymentTaxDraft) => void;
   maxCents: number;
   disabled: boolean;
   unassigned?: boolean;
+  description?: string;
 }) {
   return (
     <div className="reservation-tax-fields">
@@ -69,11 +72,7 @@ export function PaymentTaxFields({
           />
         </label>
       )}
-      <small>
-        Cette part est comprise dans le montant du règlement. Elle reprend sa
-        date d’encaissement. Enregistrer confirme ces informations pour le
-        registre des séjours.
-      </small>
+      <small>{description}</small>
       {unassigned && (
         <small>
           Des paiements précédents n’ont pas de part de taxe identifiée.
@@ -106,11 +105,7 @@ export default function ReservationPaymentTax({
   const [error, setError] = useState("");
   const lock = useRef(false);
   const quote = tracking.tourist_tax;
-  const eligible =
-    !entry.voided_at &&
-    ["manual", "legacy"].includes(entry.origin) &&
-    !entry.ota &&
-    entry.method !== "Versement plateforme";
+  const eligible = canEditPaymentTouristTax(entry);
   const visible = Boolean(
     entry.tourist_tax ||
     entry.tourist_tax_stale ||

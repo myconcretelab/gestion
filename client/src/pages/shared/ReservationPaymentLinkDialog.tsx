@@ -5,11 +5,16 @@ import { formatDate, formatEuro } from "../../utils/format";
 import { getPaymentLinkStaySummary, type PaymentLinkReservation } from "../../utils/reservationPaymentSharing";
 import ReservationDetailsDrawer from "./ReservationDetailsDrawer";
 import ReservationPaymentLinkShareActions from "./ReservationPaymentLinkShareActions";
+import {
+  PaymentTaxFields,
+  type PaymentTaxDraft,
+} from "./ReservationPaymentTax";
 
 type PaymentLink = {
   id: string;
   purpose: "deposit" | "balance";
   amount: number;
+  tourist_tax?: number;
   status: string;
   expires_at: string;
   url: string;
@@ -23,6 +28,10 @@ type Choices = {
   balance_due: number;
   source: string;
   platform: boolean;
+  tax_proposals?: Record<
+    "deposit" | "balance",
+    { amountCents: number; checked: boolean; sourceRevision: string } | null
+  >;
   links: PaymentLink[];
 };
 export default function ReservationPaymentLinkDialog({
@@ -35,6 +44,7 @@ export default function ReservationPaymentLinkDialog({
   const [choices, setChoices] = useState<Choices | null>(null);
   const [purpose, setPurpose] = useState<"deposit" | "balance">("balance");
   const [link, setLink] = useState<PaymentLink | null>(null);
+  const [editedTax, setEditedTax] = useState<PaymentTaxDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -44,6 +54,7 @@ export default function ReservationPaymentLinkDialog({
     const controller = new AbortController();
     setChoices(null);
     setLink(null);
+    setEditedTax(null);
     setError("");
     apiFetch<Choices>(path, { signal: controller.signal })
       .then((data) => {
@@ -56,6 +67,13 @@ export default function ReservationPaymentLinkDialog({
       });
     return () => controller.abort();
   }, [path]);
+  const proposal = choices?.tax_proposals?.[purpose];
+  const taxDraft = proposal
+    ? (editedTax ?? {
+        ...proposal,
+        amount: (proposal.amountCents / 100).toFixed(2),
+      })
+    : null;
   const generate = async () => {
     setBusy(true);
     setError("");
@@ -64,7 +82,19 @@ export default function ReservationPaymentLinkDialog({
       setLink(
         await apiFetch<PaymentLink>(path, {
           method: "POST",
-          json: { purpose },
+          json: {
+            purpose,
+            ...(taxDraft
+              ? {
+                  tourist_tax: taxDraft.checked
+                    ? {
+                        amount_cents: Math.round(Number(taxDraft.amount) * 100),
+                        source_revision: taxDraft.sourceRevision,
+                      }
+                    : null,
+                }
+              : {}),
+          },
         }),
       );
     } catch (error) {
@@ -83,6 +113,7 @@ export default function ReservationPaymentLinkDialog({
     try {
       await apiFetch(path + `/${link.id}/revoke`, { method: "POST" });
       setLink(null);
+      setEditedTax(null);
       setChoices(await apiFetch<Choices>(path));
       setNotice("Le lien a été annulé. Il ne permet plus de payer.");
     } catch (error) {
@@ -174,6 +205,9 @@ export default function ReservationPaymentLinkDialog({
                   : "Montant restant à régler"}{" "}
                 : {formatEuro(link.amount)}
               </h3>
+              {Boolean(link.tourist_tax) && (
+                <p>Dont taxe de séjour {formatEuro(link.tourist_tax ?? 0)}</p>
+              )}
               <label className="field">
                 Lien à partager
                 <input
@@ -233,7 +267,12 @@ export default function ReservationPaymentLinkDialog({
           ) : choices.balance_due < 0.5 ? (
             <p>Cette réservation est déjà réglée.</p>
           ) : (
-            <>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void generate();
+              }}
+            >
               <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: "24px 0" }}
@@ -246,7 +285,10 @@ export default function ReservationPaymentLinkDialog({
                         type="radio"
                         name="payment-link-purpose"
                         checked={purpose === "deposit"}
-                        onChange={() => setPurpose("deposit")}
+                        onChange={() => {
+                          setPurpose("deposit");
+                          setEditedTax(null);
+                        }}
                       />{" "}
                       Arrhes restant à régler —{" "}
                       {formatEuro(choices.deposit_due)}
@@ -259,7 +301,10 @@ export default function ReservationPaymentLinkDialog({
                       type="radio"
                       name="payment-link-purpose"
                       checked={purpose === "balance"}
-                      onChange={() => setPurpose("balance")}
+                      onChange={() => {
+                        setPurpose("balance");
+                        setEditedTax(null);
+                      }}
                     />{" "}
                     {choices.received > 0
                       ? "Solde du séjour"
@@ -268,16 +313,21 @@ export default function ReservationPaymentLinkDialog({
                   </span>
                 </label>
               </fieldset>
-              <button
-                type="button"
-                disabled={busy || !amount || amount < 0.5}
-                onClick={() => void generate()}
-              >
+              {taxDraft && proposal && (
+                <PaymentTaxFields
+                  draft={taxDraft}
+                  onChange={setEditedTax}
+                  maxCents={proposal.amountCents}
+                  disabled={busy}
+                  description="La part saisie est comprise dans le total demandé. Elle sera inscrite au registre lorsque Stripe confirmera le paiement."
+                />
+              )}
+              <button type="submit" disabled={busy || !amount || amount < 0.5}>
                 {busy
                   ? "Création…"
                   : `Créer le lien de ${formatEuro(amount || 0)}`}
               </button>
-            </>
+            </form>
           )}
         </>
       ) : null}

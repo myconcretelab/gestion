@@ -2422,6 +2422,31 @@ try {
   await quickReader.context().close();
   await grouped.setViewportSize({ width: 1440, height: 1050 });
   await open(grouped, "/nights-a");
+  const staysToComplete = grouped.getByRole("region", {
+    name: "Séjours à compléter (1)",
+    exact: true,
+  });
+  await staysToComplete
+    .getByText("Date et montant de perception à compléter.")
+    .waitFor();
+  assert.match(
+    await staysToComplete
+      .getByRole("link", { name: "Voir les règlements" })
+      .getAttribute("href"),
+    /focus=reservation-a.*payments=1/,
+  );
+  await staysToComplete
+    .getByRole("button", {
+      name: "Compléter les perceptions et leur ventilation",
+      exact: true,
+    })
+    .click();
+  await staysToComplete
+    .getByRole("heading", { name: "Compléments justifiés du registre" })
+    .waitFor();
+  await grouped.setViewportSize({ width: 390, height: 844 });
+  await noOverflow(grouped);
+  await grouped.setViewportSize({ width: 1440, height: 1050 });
   await grouped
     .getByRole("button", { name: "Télécharger le registre", exact: true })
     .click();

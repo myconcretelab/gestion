@@ -16,6 +16,7 @@ import {
   validOtaPriceSnapshot,
   allocateCents,
   recordedPaymentTouristTaxSchema,
+  canEditPaymentTouristTax,
   buildNightTaxBasis,
   type PaymentTouristTaxInput,
   type OtaAmounts,
@@ -81,6 +82,18 @@ async function loadStays(ids: string[], db: Db) {
 }
 const stayKey = (row: { id: string; stay_group_id: string | null }) =>
   row.stay_group_id || row.id;
+
+function recordedTaxFields(details: string | null) {
+  if (!details) return {};
+  const raw = fromJsonString<unknown>(details, null);
+  const checked = recordedPaymentTouristTaxSchema.safeParse(raw);
+  return {
+    tourist_tax_revision: paymentTaxRevision(raw),
+    ...(checked.success
+      ? { tourist_tax: checked.data }
+      : { tourist_tax_stale: true }),
+  };
+}
 
 export const loadReservationPaymentTracking = async (
   ids: string[],
@@ -198,6 +211,11 @@ export const loadReservationPaymentTracking = async (
         Math.max(0, row.paid_amount_cents - row.refunded_amount_cents),
       ),
     );
+    const stripeWithoutTax = new Set(
+      stripe
+        .filter((row) => row.quoted_tourist_tax_cents === 0)
+        .map((row) => row.id),
+    );
     const entries: ReservationPaymentEntry[] = stripe.map((row) => ({
       id: row.id,
       amount:
@@ -209,6 +227,7 @@ export const loadReservationPaymentTracking = async (
       origin: "stripe",
       voided_at: null,
       refunded_amount: row.refunded_amount_cents / 100,
+      ...recordedTaxFields(row.tourist_tax_details),
     }));
     if (managed) {
       entries.push(
@@ -222,21 +241,7 @@ export const loadReservationPaymentTracking = async (
           origin: row.origin === "legacy" ? "legacy" : "manual",
           voided_at: iso(row.voided_at),
           reservation_id: row.reservation_id,
-          ...(row.tourist_tax_details
-            ? (() => {
-                const raw = fromJsonString<unknown>(
-                  row.tourist_tax_details,
-                  null,
-                );
-                const checked = recordedPaymentTouristTaxSchema.safeParse(raw);
-                return {
-                  tourist_tax_revision: paymentTaxRevision(raw),
-                  ...(checked.success
-                    ? { tourist_tax: checked.data }
-                    : { tourist_tax_stale: true }),
-                };
-              })()
-            : {}),
+          ...recordedTaxFields(row.tourist_tax_details),
           ...(row.ota_details
             ? {
                 ota: fromJsonString<OtaAmounts>(
@@ -566,6 +571,7 @@ export const loadReservationPaymentTracking = async (
             !entry.tourist_tax &&
             entry.purpose !== "tourist_tax" &&
             entry.origin !== "platform" &&
+            !stripeWithoutTax.has(entry.id) &&
             entry.method !== "Versement plateforme",
         ),
       },
@@ -968,15 +974,9 @@ export const updateReservationPaymentTouristTax = async (
     const stay = await lockedStay(id, tx);
     const tracking = await getReservationPaymentTracking(id, tx);
     const entry = tracking.entries.find((row) => row.id === paymentId);
-    if (
-      !entry ||
-      entry.voided_at ||
-      !["manual", "legacy"].includes(entry.origin) ||
-      entry.ota ||
-      entry.method === "Versement plateforme"
-    )
+    if (!entry || !canEditPaymentTouristTax(entry))
       throw ledgerError(
-        "Seuls les règlements manuels ou historiques actifs peuvent recevoir une part de taxe.",
+        "Ce règlement ne peut pas recevoir de part de taxe.",
         400,
       );
     if ((entry.tourist_tax_revision ?? null) !== input.expected_revision)
@@ -992,15 +992,18 @@ export const updateReservationPaymentTouristTax = async (
           entry,
         )
       : null;
-    await materializeHistory(stay, tracking, tx);
-    await tx.reservationRecordedPayment.update({
-      where: { id: paymentId },
-      data: {
-        tourist_tax_details: taxCollection
-          ? JSON.stringify(taxCollection)
-          : null,
-      },
-    });
+    const data = {
+      tourist_tax_details: taxCollection ? JSON.stringify(taxCollection) : null,
+    };
+    if (entry.origin === "stripe") {
+      await tx.bookingPayment.update({ where: { id: paymentId }, data });
+    } else {
+      await materializeHistory(stay, tracking, tx);
+      await tx.reservationRecordedPayment.update({
+        where: { id: paymentId },
+        data,
+      });
+    }
     await tx.auditLog.create({
       data: {
         user_id: userId ?? null,

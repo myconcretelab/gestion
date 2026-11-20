@@ -6,7 +6,10 @@ import ReportCopyAmount from "./ReportCopyAmount";
 import ReportPlatformAmounts from "./ReportPlatformAmounts";
 import ReportPageHeader from "./ReportPageHeader";
 import ReportProgressActions from "./ReportProgressActions";
-import ReportNightRegister from "./ReportNightRegister";
+import ReportNightRegister, {
+  useReportNightRegister,
+} from "./ReportNightRegister";
+import ReportNightRegisterIssues from "./ReportNightRegisterIssues";
 import ReportDiscrepancy, { resolutionLabel } from "./ReportDiscrepancy";
 import ReportPaymentAlerts from "./ReportPaymentAlerts";
 import ReservationPaymentPopover from "../../../pages/shared/ReservationPaymentPopover";
@@ -118,6 +121,35 @@ export default function ReportDetail({
       : [],
     `${state.organizationId}:${state.factsRevision}:${state.revision}`,
   );
+  const selectedProgress = snapshotKey
+    ? state.progress[snapshotKey]
+    : undefined;
+  const resolution =
+    resolutionIndex !== null
+      ? selectedProgress?.resolutions?.[resolutionIndex]
+      : undefined;
+  const snapshot = resolution
+    ? { ...resolution, confirmedAt: resolution.resolvedAt }
+    : selectedProgress?.snapshot;
+  const displayedMonth =
+    snapshot && snapshotKey && report
+      ? snapshotKey.slice(report.id.length + 1, report.id.length + 8)
+      : month;
+  const archive =
+    snapshot && snapshotKey
+      ? { key: snapshotKey, resolution: resolutionIndex ?? undefined }
+      : undefined;
+  const registerReportId =
+    (snapshot?.definition ?? report)?.kind === "tourist" &&
+    (!snapshot || snapshot.nightRegister)
+      ? report?.id
+      : undefined;
+  const nightRegister = useReportNightRegister({
+    reportId: registerReportId,
+    month: displayedMonth,
+    workspace,
+    archive,
+  });
   if (!report || !result)
     return (
       <div className="rp-empty">
@@ -135,22 +167,8 @@ export default function ReportDetail({
     .sort((a, b) =>
       b[1].snapshot!.confirmedAt.localeCompare(a[1].snapshot!.confirmedAt),
     );
-  const selectedProgress = snapshotKey
-    ? state.progress[snapshotKey]
-    : undefined;
-  const resolution =
-    resolutionIndex !== null
-      ? selectedProgress?.resolutions?.[resolutionIndex]
-      : undefined;
-  const snapshot = resolution
-    ? { ...resolution, confirmedAt: resolution.resolvedAt }
-    : selectedProgress?.snapshot;
   const displayedReport = snapshot?.definition ?? report;
   const displayedResult = snapshot?.result ?? result;
-  const displayedMonth =
-    snapshot && snapshotKey
-      ? snapshotKey.slice(report.id.length + 1, report.id.length + 8)
-      : month;
   const currentStatus = reportStatus(progress, result);
   const differs = reportHasPendingChanges(progress, result);
   const reference = reportReference(progress);
@@ -589,25 +607,16 @@ export default function ReportDetail({
         result={displayedResult}
         archived={Boolean(snapshot)}
       />
-      {displayedReport.kind === "tourist" &&
-        (!snapshot || snapshot.nightRegister) && (
-          <ReportNightRegister
-            key={`${report.id}:${displayedMonth}:${snapshotKey}:${resolutionIndex}`}
-            reportId={report.id}
-            month={displayedMonth}
-            workspace={workspace}
-            archive={
-              snapshot && snapshotKey
-                ? {
-                    key: snapshotKey,
-                    ...(resolutionIndex !== null
-                      ? { resolution: resolutionIndex }
-                      : {}),
-                  }
-                : undefined
-            }
-          />
-        )}
+      {registerReportId && (
+        <ReportNightRegister
+          key={`${report.id}:${displayedMonth}:${snapshotKey}:${resolutionIndex}`}
+          reportId={report.id}
+          month={displayedMonth}
+          workspace={workspace}
+          archive={archive}
+          register={nightRegister}
+        />
+      )}
       <section
         ref={operationsSection}
         tabIndex={-1}
@@ -794,6 +803,17 @@ export default function ReportDetail({
             </ReportEmpty>
           )}
         </div>
+        {!snapshot &&
+          nightRegister.data &&
+          nightRegister.data.incompleteCount > 0 && (
+            <ReportNightRegisterIssues
+              data={nightRegister.data}
+              operations={result.rows}
+              workspace={workspace}
+              month={month}
+              onSaved={nightRegister.reload}
+            />
+          )}
       </section>
       {selectedRow && (
         <OperationDialog

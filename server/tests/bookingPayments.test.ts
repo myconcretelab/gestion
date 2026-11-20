@@ -8,6 +8,11 @@ import { before, after, test, type TestContext } from "node:test";
 import express from "express";
 import nodemailer from "nodemailer";
 import Stripe from "stripe";
+import {
+  computeTouristTax,
+  createTouristTaxStayForSource,
+  DEFAULT_TOURIST_TAX_COLLECTION,
+} from "@contrats/shared";
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "booking-payments-"));
 const org = "booking-payment-test",
@@ -67,11 +72,14 @@ const quote = {
   options_unit_prices: { chiens: 15 },
 };
 let sequence = 0;
-const fixture = async (purpose: "deposit" | "full" = "deposit") =>
+const fixture = async (
+  purpose: "deposit" | "full" = "deposit",
+  pricing = quote,
+) =>
   inOrg(async () => {
     const n = ++sequence;
     const date = new Date(Date.UTC(2040, 0, n * 8));
-    const prepared = service.prepareBookingPayment(quote as any, purpose);
+    const prepared = service.prepareBookingPayment(pricing as any, purpose);
     const request = await db.default.bookingRequest.create({
       data: {
         gite_id: "gite-payment-test",
@@ -81,7 +89,7 @@ const fixture = async (purpose: "deposit" | "full" = "deposit") =>
         nb_nuits: 4,
         nb_adultes: 2,
         options: JSON.stringify({ chiens: { enabled: true, nb: 1 } }),
-        pricing_snapshot: JSON.stringify(quote),
+        pricing_snapshot: JSON.stringify(pricing),
         hold_expires_at: new Date(Date.now() + 34 * 60000),
         payment: { create: prepared.data },
       },
@@ -105,6 +113,7 @@ const fixture = async (purpose: "deposit" | "full" = "deposit") =>
     } as Stripe.Checkout.Session;
     return { request, session, token: prepared.token };
   });
+
 before(async () => {
   Object.assign(process.env, {
     NODE_ENV: "test",
@@ -1450,4 +1459,67 @@ test("production réelle simulée : arrhes et totalité, liens et affichage du m
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test("un paiement complet du formulaire conserve la ventilation du devis Stripe", async () => {
+  const tourist_tax = createTouristTaxStayForSource(
+    {
+      version: 1,
+      classified: true,
+      stars: 2,
+      included: false,
+      fixed_rate: 0.75,
+      percentage: 0,
+      cap: 4,
+      additional_percentage: 0,
+      accommodation_vat_rate: 0,
+      authority: "Test",
+      effective_from: "2039-01-01",
+    },
+    "Direct",
+    DEFAULT_TOURIST_TAX_COLLECTION,
+  );
+  const tourist_tax_result = computeTouristTax({
+    stay: tourist_tax,
+    nights: 4,
+    adults: 2,
+    children: 0,
+    accommodation: 300,
+    start: "2040-01-01",
+  });
+  const pricing = {
+    ...quote,
+    total_global: 366,
+    tourist_tax,
+    tourist_tax_result,
+  };
+  const full = await fixture("full", pricing);
+  const deposit = await fixture("deposit", pricing);
+  assert.equal(deposit.request.payment!.quoted_tourist_tax_cents, 0);
+  assert.equal(full.request.payment!.quoted_tourist_tax_cents, 600);
+  const { checkoutStayLines } =
+    await import("../src/modules/bookingPayments/touristTax.js");
+  const lines = checkoutStayLines(
+    full.session.amount_total!,
+    600,
+    "Séjour",
+    "Quatre nuits",
+  );
+  assert.deepEqual(
+    lines.map((row) => row.price_data?.unit_amount),
+    [36000, 600],
+  );
+  await inOrg(async () => {
+    assert.equal(await service.applyVerifiedSession(full.session), "confirmed");
+    const request = await db.default.bookingRequest.findUniqueOrThrow({
+      where: { id: full.request.id },
+    });
+    const ledger = await import("../src/modules/reservationPayments/ledger.js");
+    const tracking = await ledger.getReservationPaymentTracking(
+      request.approved_reservation_id!,
+    );
+    assert.equal(tracking.received, 366);
+    assert.equal(tracking.entries[0].tourist_tax?.amountCents, 600);
+    assert.equal(tracking.entries[0].tourist_tax_stale, false);
+  });
 });

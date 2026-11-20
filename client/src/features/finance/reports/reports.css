@@ -2836,6 +2836,35 @@
   margin: 8px 0 0;
   padding-left: 20px;
 }
+.rp-night-issues {
+  margin-top: 22px;
+  scroll-margin-top: 90px;
+}
+.rp-night-issues h3 {
+  margin: 0 0 12px;
+}
+.rp-night-issues__stays {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.rp-night-issues__stays > li {
+  padding: 12px 16px;
+}
+.rp-night-issues__stays > li + li {
+  border-top: 1px solid var(--border);
+}
+.rp-night-issues__stays small {
+  display: block;
+  color: var(--muted);
+}
+.rp-night-issues__stays ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  color: var(--rp-attention);
+}
 .rp-grouped-list .rp-grouped-row .rp-report-row__actions {
   position: static;
   grid-column: auto;

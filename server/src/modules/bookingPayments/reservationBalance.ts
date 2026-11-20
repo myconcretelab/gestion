@@ -96,10 +96,9 @@ export const reservationBalance = async (
   const platform = (AUTOMATIC_PAYMENT_PLATFORMS as readonly string[]).includes(
     getBookingSource(reservation),
   );
+  const tracking = await getReservationPaymentTracking(id, db);
   const managedTracking =
-    reservation.payments_managed || platform
-      ? await getReservationPaymentTracking(id, db)
-      : null;
+    reservation.payments_managed || platform ? tracking : null;
   const total = managedTracking
     ? cents(managedTracking.total)
     : contract
@@ -174,6 +173,7 @@ export const reservationBalance = async (
     reservation,
     contract,
     receipts,
+    tracking,
     terms,
     fingerprint,
     total,
