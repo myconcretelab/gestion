@@ -13269,6 +13269,12 @@ button.personal-expenses-status:disabled {
   }
 }
 
+.reservations-declaration-slot {
+  display: flow-root;
+  /* Keep the scroll target in place while the declaration reminder loads. */
+  min-height: 1px;
+}
+
 .reservations-month {
   container: reservation-table / inline-size;
   margin-top: 20px;

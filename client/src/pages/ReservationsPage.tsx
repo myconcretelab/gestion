@@ -1115,6 +1115,7 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
   const savedRowFadeTimers = useRef<Record<string, number>>({});
   const backgroundEnergyRequests = useRef(new Set<() => void>());
   const timelineListRef = useRef<HTMLDivElement>(null);
+  const declarationRemindersRef = useRef<HTMLDivElement>(null);
   const previousSearch = useRef(q);
   const pendingViewSnapshotRef = useRef<ReservationsViewSnapshot | null>(null);
   const restoreViewRafRef = useRef<number | null>(null);
@@ -3229,11 +3230,12 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
     }
 
     const frame = window.requestAnimationFrame(() => {
-      const section = timelineListRef.current?.querySelector<HTMLElement>(`[data-timeline-month="${pendingMonth}"]`);
-      if (!section) return;
+      const target = (pendingMonth === nowMonth ? declarationRemindersRef.current : null) ??
+        timelineListRef.current?.querySelector<HTMLElement>(`[data-timeline-month="${pendingMonth}"]`);
+      if (!target) return;
       const topbar = document.querySelector(".topbar")?.getBoundingClientRect().height ?? stickyOffsets.topbar;
       const tabs = document.querySelector(".reservations-tabs--sticky")?.getBoundingClientRect().height ?? stickyOffsets.tabs;
-      window.scrollTo({ top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - topbar - tabs - 8), behavior: "instant" });
+      window.scrollTo({ top: Math.max(0, window.scrollY + target.getBoundingClientRect().top - topbar - tabs - 8), behavior: "instant" });
       setPendingMonth(null);
     });
     return () => window.cancelAnimationFrame(frame);
@@ -4273,14 +4275,6 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
 
         <GiteTabs activeId={activeTab} items={reservationTabItems} onChange={handleTabChange} sticky />
 
-        {reportsEnabled && activeTab && <ReservationDeclarationReminders
-          key={year}
-          year={year}
-          propertyId={activeTab === ALL_GITES_TAB ? undefined : activeTab}
-          refreshKey={annualDataRevision}
-          currentTimeMs={currentTimeMs}
-        />}
-
         {activeTab === UNASSIGNED_TAB && placeholders.length > 0 && (
           <div className="field-hint reservations-unassigned-hint">
             {placeholders.length} placeholder(s) détecté(s). Attribuez-les depuis la page Gîtes.
@@ -4353,10 +4347,9 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                   })
               : [];
 
-            return (
+            const monthSection = (
               <section
                 className={`reservations-month ${isAllGitesTab ? "reservations-month--all-gites" : ""} ${!isMonthExpanded ? "reservations-month--collapsed" : ""}`}
-                key={monthIndex}
                 data-timeline-month={monthIndex}
                 data-month-index={monthIndex}
               >
@@ -5722,6 +5715,22 @@ const ReservationsPage = ({ reportsEnabled = true }: { reportsEnabled?: boolean 
                   </div>
                 )}
               </section>
+            );
+
+            return (
+              <Fragment key={monthIndex}>
+                {reportsEnabled && monthIndex === nowMonth && (
+                  <div className="reservations-declaration-slot" ref={declarationRemindersRef}>
+                    <ReservationDeclarationReminders
+                      year={year}
+                      propertyId={activeTab === ALL_GITES_TAB ? undefined : activeTab}
+                      refreshKey={annualDataRevision}
+                      currentTimeMs={currentTimeMs}
+                    />
+                  </div>
+                )}
+                {monthSection}
+              </Fragment>
             );
           })}
         {activeTab && timeline.hasNext && <MonthTimelineEdge direction="next" busy={timeline.busy} onLoad={() => timeline.extend(1)} />}

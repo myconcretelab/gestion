@@ -77,7 +77,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
   React.createElement("div", {className: "app"},
     React.createElement("header", {className: "topbar", style: {height:"64px"}}, "Gestion"),
     React.createElement("main", {className: "content"},
-      React.createElement(calendar ? Calendar : Reservations, {reportsEnabled: false})))));
+      React.createElement(calendar ? Calendar : Reservations, {reportsEnabled: !calendar})))));
 </script></body></html>`,
     { flag: "wx" },
   );
@@ -138,6 +138,12 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
         return route.fulfill({ json: { colors: {} } });
       if (url.pathname === "/api/reservations/live-energy")
         return route.fulfill({ json: {} });
+      if (url.pathname === "/api/reports/reminders") {
+        assert.equal(url.searchParams.get("year"), "2026");
+        return route.fulfill({ json: { reminders: [], stale: true, calculatedAt: null } });
+      }
+      if (url.pathname === "/api/reports/night-summaries")
+        return route.fulfill({ json: { properties: [], report: null } });
       return route.fulfill({ json: [] });
     });
     const start = vite.resolvedUrls.local[0] + path.basename(fixture);
@@ -161,9 +167,11 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
           }
           const top =
             document
-              .querySelector(`[data-timeline-month="${november}"]`)
+              .querySelector(".reservation-declarations")
               ?.getBoundingClientRect().top ?? 1000;
-          return window.scrollY > 0 && top > 64 && top < 200;
+          const tabsBottom = document.querySelector(".reservations-tabs--sticky")
+            ?.getBoundingClientRect().bottom ?? 1000;
+          return window.scrollY > 0 && top >= tabsBottom && top < tabsBottom + 40;
         },
         { isCalendar, desktopCalendar, november },
       )
@@ -177,7 +185,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
             scroll: window.scrollY,
             sticky: [
               ...document.querySelectorAll(
-                ".topbar,.calendar-hero,.calendar-weekdays,.reservations-tabs--sticky",
+                ".topbar,.calendar-hero,.calendar-weekdays,.reservations-tabs--sticky,.reservation-declarations",
               ),
             ].map((node) => ({
               className: node.className,
@@ -206,7 +214,18 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
         ? { year: "2026", startMonth: "8", months: "7" }
         : { from: "2026-11-01", to: "2027-02-28" },
     ]);
+    const assertReminderMonth = async () => {
+      assert.equal(await page.locator(".reservation-declarations").count(), 1);
+      assert.equal(
+        await month(november).evaluate((section) =>
+          Boolean(section.previousElementSibling?.querySelector(".reservation-declarations")),
+        ),
+        true,
+        "Le rappel reste juste au-dessus du mois civil en cours",
+      );
+    };
     if (!isCalendar) {
+      await assertReminderMonth();
       assert.equal(
         await month(key(2026, 12))
           .getByText(stay.hote_nom, { exact: true })
@@ -264,6 +283,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
       await page.locator("[data-timeline-month]").count(),
       initialMonths + 6,
     );
+    if (!isCalendar) await assertReminderMonth();
     assert.deepEqual(errors, []);
     console.log(
       `${view} ${width}px · fenêtre initiale et pagination dans les deux sens vérifiées`,
@@ -286,6 +306,7 @@ createRoot(document.getElementById("root")).render(React.createElement(BrowserRo
       const arrival = month(key(2027, 1)).locator('input[data-grid-col="1"][value="2027-01-06"]');
       await arrival.waitFor({ state: "visible" });
       assert.equal(await arrival.inputValue(), "2027-01-06");
+      assert.equal(await page.locator(".reservation-declarations").count(), 0);
       console.log("Préremplissage depuis le calendrier en janvier vérifié");
 
     }

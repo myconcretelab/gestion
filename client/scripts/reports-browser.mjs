@@ -665,11 +665,12 @@ try {
         fixture.extraReservationDetailsReads++;
         body = fixture.extraReservation;
       } else if (pathname === "/api/reservations") {
-        const requestedYear = new URL(request.url()).searchParams.get("year");
-        fixture.listingReservationRequests.push(requestedYear);
+        const { from, to } = Object.fromEntries(new URL(request.url()).searchParams);
+        fixture.listingReservationRequests.push(from);
         body =
           fixture.showListingReservation &&
-          fixture.extraReservation.date_entree.startsWith(requestedYear)
+          fixture.extraReservation.date_entree <= to &&
+          fixture.extraReservation.date_sortie >= from
             ? [fixture.extraReservation]
             : [];
       } else if (
@@ -3663,7 +3664,7 @@ try {
     .getByRole("dialog", { name: "Règlements", exact: true })
     .waitFor();
   assert.ok(otaFixture.extraReservationDetailsReads > 0);
-  assert.ok(otaFixture.listingReservationRequests.includes("2027"));
+  assert.ok(otaFixture.listingReservationRequests.includes("2027-04-01"));
   await otaPage.getByRole("button", { name: /Ajouter un règlement/ }).click();
   await otaPage
     .getByLabel("Moyen", { exact: true })
